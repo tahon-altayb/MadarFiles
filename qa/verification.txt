@@ -1,0 +1,15 @@
+MadarFiles 1.0.0 source candidate
+Local checks passed:
+- Shared interface JavaScript syntax
+- Native bridge and interface flow contract tests
+- Java syntax parser (7 source files)
+- Android manifest/resources XML parsing
+- GitHub Actions workflow YAML parsing
+
+Pending, requires new GitHub repository and Actions:
+- Android SDK compilation and type checking
+- Gradle unit tests and Android lint
+- Emulator image / PDF / video processing tests
+- On-device visual inspection and Samsung codec compatibility
+
+No APK has been generated or uploaded yet.

@@ -1,0 +1,30 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.madar.files'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.madar.files'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildTypes {
+        release {
+            // Personal APK. A persistent signing secret can replace this before public distribution.
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+    lint { abortOnError true }
+}
+dependencies {
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.media3:media3-transformer:1.5.1'
+    implementation 'androidx.media3:media3-effect:1.5.1'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}
