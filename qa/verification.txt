@@ -1,15 +1,19 @@
-MadarFiles 1.0.0 source candidate
-Local checks passed:
-- Shared interface JavaScript syntax
-- Native bridge and interface flow contract tests
-- Java syntax parser (7 source files)
-- Android manifest/resources XML parsing
-- GitHub Actions workflow YAML parsing
+MadarFiles 1.0.0 verification
 
-Pending, requires new GitHub repository and Actions:
-- Android SDK compilation and type checking
-- Gradle unit tests and Android lint
-- Emulator image / PDF / video processing tests
-- On-device visual inspection and Samsung codec compatibility
+GitHub: https://github.com/tahon-altayb/MadarFiles
 
-No APK has been generated or uploaded yet.
+Passed:
+- Shared interface JavaScript syntax and bridge contract tests
+- Android SDK compilation, three JVM unit tests and Android lint
+- Five Android 35 emulator tests, zero failures/errors/skips:
+  sharedInterfaceLoadsAndFitsPhone
+  resizeBackgroundAndPdfRoundTrip
+  cropAndRotateRetainPixels
+  videoTrimMuteResizeAndAudio
+  rejectsTraversalAndBadPdfRange
+- Release APK installation and launch
+- Archive integrity and downloaded artifact SHA-256
+
+Last code revision additionally insets the parent container around system bars.
+See the latest successful GitHub Actions run for its reports and release screenshot.
+No claim of physical Samsung S26 Ultra testing is made.
