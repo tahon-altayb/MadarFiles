@@ -34,8 +34,11 @@ public class MainActivity extends Activity {
         super.onCreate(saved);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         web=new WebView(this);web.setBackgroundColor(Color.rgb(248,244,237));
-        // Android 15 forces edge-to-edge; keep all controls inside system insets.
-        web.setOnApplyWindowInsetsListener((v,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets b=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());v.setPadding(b.left,b.top,b.right,b.bottom);}else{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());}return insets;});
+        // A parent container must own the insets: WebView padding does not inset HTML content.
+        FrameLayout root=new FrameLayout(this);
+        root.setBackgroundColor(Color.rgb(248,244,237));
+        root.addView(web,new FrameLayout.LayoutParams(-1,-1));
+        root.setOnApplyWindowInsetsListener((v,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets b=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());v.setPadding(b.left,b.top,b.right,b.bottom);}else{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());}return insets;});
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setDomStorageEnabled(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setBlockNetworkLoads(true);
         web.addJavascriptInterface(new Bridge(),"Android");
         web.setWebViewClient(new WebViewClient(){
@@ -49,7 +52,7 @@ public class MainActivity extends Activity {
                 }return blocked();
             }
         });
-        setContentView(web);web.loadUrl("https://madar.local/");
+        setContentView(root);root.requestApplyInsets();web.loadUrl("https://madar.local/");
         IntentFilter filter=new IntentFilter(VideoExportService.EVENT);
         androidx.core.content.ContextCompat.registerReceiver(this,updates,filter,androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered=true;
