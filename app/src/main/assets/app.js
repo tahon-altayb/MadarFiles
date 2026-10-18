@@ -29,7 +29,7 @@ document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>selectKind(b.d
 // Interactive previews and text tools, all using local data.
 function options(){const o={kind:state.kind,tool:state.tool};for(const el of $('form').querySelectorAll('input,select'))if(el.id&&el.id!=='seek')o[el.id]=el.value;if(state.crop)o.crop=state.crop;return o;}
 function openTool(tool){
- if(!state.source)return native('pick',{kind:state.kind});state.previewToken=(state.previewToken||0)+1;
+ pausePreviews();if(!state.source)return native('pick',{kind:state.kind});state.previewToken=(state.previewToken||0)+1;
  if(['ocr','text','word','music'].includes(tool)){
   state.tool=tool;$('toolTitle').textContent=titles[tool];$('toolKicker').textContent='على جهازك · بدون رفع الملفات';
   if(tool==='music')$('form').innerHTML='<div class="hint">الفصل يستهدف إبقاء الصوت البشري وتقليل الموسيقى. قد تتأثر المؤثرات أو يبقى تسرب موسيقي. جرّب عينة قبل الفيديو الكامل. أول تشغيل يجهّز النموذج محليًا، وقد يستغرق وقتًا.</div><label>النتيجة</label>'+select('musicOutput',[['video','فيديو بالصوت المعالج'],['audio','الصوت المعالج فقط · M4A']])+'<button id="sampleMusic" class="secondary">▷ تجربة أول 10 ثوانٍ</button>';
@@ -71,8 +71,13 @@ function drawImagePreview(){
  else if(angle){ctx.translate(w/2,h/2);ctx.rotate(angle*Math.PI/180);ctx.drawImage(img,-img.naturalWidth/2,-img.naturalHeight/2);}
  else ctx.drawImage(img,rect.x,rect.y,rect.w,rect.h,pad,pad,w,h);
  let outW=state.source.width,outH=state.source.height;if(o.tool==='resize'){outW=Number(o.width)||outW;outH=Math.round(outW*state.source.height/state.source.width);}if(o.tool==='crop'&&state.crop){outW=Math.round(outW*state.crop.w);outH=Math.round(outH*state.crop.h);}if(angle===90||angle===270)[outW,outH]=[outH,outW];$('previewSize').textContent=outW+' × '+outH+' بكسل · معاينة مصغرة';
+ if((o.format==='jpg'||o.format==='webp')&&Number(o.quality)<100){const token=state.imagePreviewToken=(state.imagePreviewToken||0)+1;const image=new Image();image.onload=()=>{if(token!==state.imagePreviewToken||!$('liveCanvas'))return;const c=$('liveCanvas').getContext('2d');c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(image,0,0);};image.src=canvas.toDataURL(o.format==='webp'?'image/webp':'image/jpeg',Number(o.quality||92)/100);}
+ else state.imagePreviewToken=(state.imagePreviewToken||0)+1;
 }
 function schedulePagePreview(){clearTimeout(schedulePagePreview.timer);schedulePagePreview.timer=setTimeout(()=>{const page=Number($('first')?.value||1);if(page<1||page>state.source.pages)return;state.previewToken=(state.previewToken||0)+1;native('preview',{page,token:state.previewToken});},180);}
 function attachResultPreview(o){const existing=$('resultMedia');if(existing)existing.remove();if(!o.mime||(!o.mime.startsWith('video/')&&!o.mime.startsWith('audio/')))return;const media=document.createElement(o.mime.startsWith('video/')?'video':'audio');media.id='resultMedia';media.controls=true;media.src='https://madar.local/result?name='+encodeURIComponent(o.name);media.style.width='100%';media.style.maxHeight='250px';$('resultMeta').after(media);}
 $('textClose').onclick=()=>$('textPanel').hidden=true;$('copyText').onclick=()=>native('copyText',{text:$('recognizedText').value});
 for(const [id,format] of [['saveTxt','txt'],['saveDocx','docx']])$(id).onclick=()=>{if(!$('recognizedText').value.trim())return toast('لا يوجد نص للحفظ');native('saveText',{text:$('recognizedText').value,format});};
+function pausePreviews(){for(const media of document.querySelectorAll('video,audio'))try{media.pause();}catch(e){}}
+const oldSetBusy=setBusy;setBusy=function(v,title){if(v)pausePreviews();oldSetBusy(v,title);};
+$('close').onclick=()=>{pausePreviews();$('sheet').hidden=true;};$('sheet').onclick=e=>{if(e.target===$('sheet')){pausePreviews();$('sheet').hidden=true;}};$('resultClose').onclick=()=>{pausePreviews();$('result').hidden=true;};
