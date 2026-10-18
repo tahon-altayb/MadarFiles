@@ -21,10 +21,10 @@ final class PdfProcessor {
             boolean extract=o.getString("tool").equals("extract");if(first<0||first>=renderer.getPageCount()||last<first||last>=renderer.getPageCount()||last-first>=50)throw new IllegalArgumentException("نطاق الصفحات غير صحيح");
             String format=extract?"pdf":o.optString("format","png");if(!format.matches("png|jpg|pdf"))throw new IllegalArgumentException("صيغة غير صالحة");output=FilesUtil.output(c,format);
             if(extract){
-                try(PdfDocument doc=new PdfDocument()){
+                PdfDocument doc=new PdfDocument();try{
                     for(int i=first;i<=last;i++){Bitmap b=render(renderer,i,width);try{PdfDocument.Page page=doc.startPage(new PdfDocument.PageInfo.Builder(b.getWidth(),b.getHeight(),i-first+1).create());page.getCanvas().drawBitmap(b,0,0,new Paint(Paint.FILTER_BITMAP_FLAG));doc.finishPage(page);}finally{b.recycle();}}
                     try(OutputStream out=new FileOutputStream(output)){doc.writeTo(out);}
-                }
+                }finally{doc.close();}
             } else {Bitmap b=render(renderer,first,width);try{ImageProcessor.writeImage(b,output,format,92);}finally{b.recycle();}}
             return output;
         }catch(Exception|OutOfMemoryError e){if(output!=null)output.delete();throw e;}

@@ -55,7 +55,9 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: gradle --no-daemon connectedDebugAndroidTest
+          script: |
+            gradle --no-daemon connectedDebugAndroidTest
+            adb pull /sdcard/Android/data/com.madar.files/files/qa phone-screenshots
       - name: Upload verification reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -64,3 +66,4 @@ jobs:
           path: |
             app/build/reports/
             app/build/outputs/androidTest-results/
+            phone-screenshots/

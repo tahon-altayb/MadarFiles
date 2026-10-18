@@ -32,7 +32,7 @@ final class ImageProcessor {
             if(!format.matches("jpg|png|webp|pdf"))throw new IllegalArgumentException("صيغة غير مدعومة");
             result=FilesUtil.output(c,format);
             if(format.equals("pdf")){
-                try(PdfDocument doc=new PdfDocument()) {PdfDocument.Page page=doc.startPage(new PdfDocument.PageInfo.Builder(b.getWidth(),b.getHeight(),1).create());page.getCanvas().drawColor(Color.WHITE);page.getCanvas().drawBitmap(b,0,0,new Paint(Paint.FILTER_BITMAP_FLAG));doc.finishPage(page);try(OutputStream out=new FileOutputStream(result)){doc.writeTo(out);}}
+                PdfDocument doc=new PdfDocument();try {PdfDocument.Page page=doc.startPage(new PdfDocument.PageInfo.Builder(b.getWidth(),b.getHeight(),1).create());page.getCanvas().drawColor(Color.WHITE);page.getCanvas().drawBitmap(b,0,0,new Paint(Paint.FILTER_BITMAP_FLAG));doc.finishPage(page);try(OutputStream out=new FileOutputStream(result)){doc.writeTo(out);}}finally{doc.close();}
             }else{writeImage(b,result,format,(int)FilesUtil.bounded(o.optInt("quality",92),10,100));}
             return result;
         }catch(Exception|OutOfMemoryError e){if(result!=null)result.delete();throw e;}finally{b.recycle();}

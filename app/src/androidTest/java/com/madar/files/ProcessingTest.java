@@ -46,6 +46,24 @@ public class ProcessingTest {
         exportVideo(video,"{\"tool\":\"mute\",\"format\":\"mp4\"}");try(MediaMetadataRetriever r=new MediaMetadataRetriever()){r.setDataSource(latest().getAbsolutePath());assertNotEquals("yes",r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO));}
         exportVideo(video,"{\"tool\":\"audio\"}");try(MediaMetadataRetriever r=new MediaMetadataRetriever()){r.setDataSource(latest().getAbsolutePath());assertEquals("yes",r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO));assertNotEquals("yes",r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO));}video.delete();
     }
+
+    @Test public void sharedInterfaceLoadsAndFitsPhone()throws Exception {
+        android.webkit.WebView[] found=new android.webkit.WebView[1];
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(()->found[0]=findWeb(activity.getWindow().getDecorView()));
+        assertNotNull(found[0]);long deadline=System.currentTimeMillis()+15000;
+        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(found[0],"typeof window.receive==='function' && document.getElementById('tools').children.length===6")))break;Thread.sleep(100);}
+        assertEquals("true",evaluate(found[0],"typeof window.receive==='function'"));
+        assertEquals("true",evaluate(found[0],"getComputedStyle(document.body).backgroundColor==='rgb(248, 244, 237)' && document.body.scrollWidth<=innerWidth"));
+        String thumb;Bitmap b=FilesUtil.image(input,480);try{thumb=FilesUtil.thumbnail(b);}finally{b.recycle();}
+        JSONObject source=new JSONObject().put("type","source").put("kind","image").put("name","صورة اختبار.png").put("width",400).put("height",200).put("size",input.length()).put("mime","image/png").put("thumbnail",thumb);
+        evaluate(found[0],"window.receive("+source+");true");Thread.sleep(300);
+        File shots=new File(c.getExternalFilesDir(null),"qa");assertTrue(shots.isDirectory()||shots.mkdirs());
+        Bitmap screenshot=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();assertNotNull(screenshot);try(OutputStream out=new FileOutputStream(new File(shots,"image-tools.png"))){screenshot.compress(Bitmap.CompressFormat.PNG,100,out);}finally{screenshot.recycle();}
+        evaluate(found[0],"openTool('resize');true");assertEquals("true",evaluate(found[0],"!document.getElementById('sheet').hidden && !!document.getElementById('width')"));
+        evaluate(found[0],"document.getElementById('sheet').hidden=true;selectKind('video');true");assertEquals("true",evaluate(found[0],"document.getElementById('tools').children.length===6"));
+    }
+    private android.webkit.WebView findWeb(android.view.View v){if(v instanceof android.webkit.WebView)return (android.webkit.WebView)v;if(v instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)v;for(int i=0;i<g.getChildCount();i++){android.webkit.WebView w=findWeb(g.getChildAt(i));if(w!=null)return w;}}return null;}
+    private String evaluate(android.webkit.WebView web,String script)throws Exception{java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);String[] value=new String[1];InstrumentationRegistry.getInstrumentation().runOnMainSync(()->web.evaluateJavascript(script,result->{value[0]=result;latch.countDown();}));assertTrue(latch.await(5,java.util.concurrent.TimeUnit.SECONDS));return value[0];}
     private File latest(){File[] files=FilesUtil.directory(c).listFiles(f->!f.getName().endsWith(".partial"));assertNotNull(files);java.util.Arrays.sort(files,(a,b)->Long.compare(b.lastModified(),a.lastModified()));assertTrue(files.length>0);return files[0];}
     private void exportVideo(File input,String options)throws Exception{
         VideoExportService.lastEvent=null;
