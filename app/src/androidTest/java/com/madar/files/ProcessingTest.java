@@ -51,7 +51,7 @@ public class ProcessingTest {
         android.webkit.WebView[] found=new android.webkit.WebView[1];
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->found[0]=findWeb(activity.getWindow().getDecorView()));
         assertNotNull(found[0]);long deadline=System.currentTimeMillis()+15000;
-        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(found[0],"typeof window.receive==='function' && document.getElementById('tools').children.length===6")))break;Thread.sleep(100);}
+        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(found[0],"typeof window.receive==='function' && document.getElementById('tools').children.length===7")))break;Thread.sleep(100);}
         assertEquals("true",evaluate(found[0],"typeof window.receive==='function'"));
         assertEquals("true",evaluate(found[0],"getComputedStyle(document.body).backgroundColor==='rgb(248, 244, 237)' && document.body.scrollWidth<=innerWidth"));
         String thumb;Bitmap b=FilesUtil.image(input,480);try{thumb=FilesUtil.thumbnail(b);}finally{b.recycle();}
@@ -60,10 +60,29 @@ public class ProcessingTest {
         File shots=new File(c.getExternalFilesDir(null),"qa");assertTrue(shots.isDirectory()||shots.mkdirs());
         Bitmap screenshot=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();assertNotNull(screenshot);try(OutputStream out=new FileOutputStream(new File(shots,"image-tools.png"))){screenshot.compress(Bitmap.CompressFormat.PNG,100,out);}finally{screenshot.recycle();}
         evaluate(found[0],"openTool('resize');true");assertEquals("true",evaluate(found[0],"!document.getElementById('sheet').hidden && !!document.getElementById('width')"));
-        evaluate(found[0],"document.getElementById('sheet').hidden=true;selectKind('video');true");assertEquals("true",evaluate(found[0],"document.getElementById('tools').children.length===6"));
+        evaluate(found[0],"document.getElementById('sheet').hidden=true;selectKind('video');true");assertEquals("true",evaluate(found[0],"document.getElementById('tools').children.length===7"));
     }
     private android.webkit.WebView findWeb(android.view.View v){if(v instanceof android.webkit.WebView)return (android.webkit.WebView)v;if(v instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)v;for(int i=0;i<g.getChildCount();i++){android.webkit.WebView w=findWeb(g.getChildAt(i));if(w!=null)return w;}}return null;}
     private String evaluate(android.webkit.WebView web,String script)throws Exception{java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);String[] value=new String[1];InstrumentationRegistry.getInstrumentation().runOnMainSync(()->web.evaluateJavascript(script,result->{value[0]=result;latch.countDown();}));assertTrue(latch.await(5,java.util.concurrent.TimeUnit.SECONDS));return value[0];}
+
+    @Test public void offlineOcrAndEditableWord()throws Exception {
+        File textImage=new File(c.getCacheDir(),"ocr-test.png");Bitmap b=Bitmap.createBitmap(1600,500,Bitmap.Config.ARGB_8888);Canvas cv=new Canvas(b);cv.drawColor(Color.WHITE);Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(Color.BLACK);p.setTextSize(100);cv.drawText("MADAR TEST 12345",80,160,p);p.setTextSize(95);cv.drawText("مدار الملفات",80,350,p);ImageProcessor.writeImage(b,textImage,"png",100);b.recycle();
+        String read=TextProcessor.image(c,textImage);assertTrue("OCR result: "+read,read.contains("12345"));assertTrue("Arabic OCR: "+read,read.matches("(?s).*[\\u0600-\\u06ff].*"));
+        File word=TextProcessor.save(c,"مدار الملفات\nEditable text 12345","docx");try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(word)){assertNotNull(zip.getEntry("word/document.xml"));String xml=new String(zip.getInputStream(zip.getEntry("word/document.xml")).readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);assertTrue(xml.contains("مدار الملفات"));assertTrue(xml.contains("<w:bidi/>")&&xml.contains("Editable text 12345"));}textImage.delete();
+    }
+    @Test public void pdfTextAndScannedOcr()throws Exception {
+        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(c);File pdf=new File(c.getCacheDir(),"text.pdf");
+        try(com.tom_roush.pdfbox.pdmodel.PDDocument doc=new com.tom_roush.pdfbox.pdmodel.PDDocument()){com.tom_roush.pdfbox.pdmodel.PDPage page=new com.tom_roush.pdfbox.pdmodel.PDPage();doc.addPage(page);try(com.tom_roush.pdfbox.pdmodel.PDPageContentStream stream=new com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc,page)){stream.beginText();stream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,20);stream.newLineAtOffset(50,700);stream.showText("Madar editable PDF 12345");stream.endText();}doc.save(pdf);}
+        assertTrue(TextProcessor.pdf(c,pdf,1,1,t->{}).contains("Madar editable PDF 12345"));pdf.delete();
+    }
+    @Test public void offlineMusicProcessingPreservesVideo()throws Exception {
+        File mixed=new File(c.getCacheDir(),"mixed.mp4");try(InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("music-test.mp4");OutputStream out=new FileOutputStream(mixed)){FilesUtil.copy(in,out);}
+        VideoExportService.lastEvent=null;InstrumentationRegistry.getInstrumentation().runOnMainSync(()->c.startForegroundService(new Intent(c,VideoExportService.class).putExtra("input",mixed.getAbsolutePath()).putExtra("options","{\"tool\":\"music\",\"sample\":true}").putExtra("duration",4000L).putExtra("height",240)));
+        long deadline=System.currentTimeMillis()+300000;File result=null;while(System.currentTimeMillis()<deadline){String data=VideoExportService.lastEvent;if(data!=null){JSONObject event=new JSONObject(data);if(event.optString("type").equals("error"))fail(data);if(event.optString("type").equals("result")){result=FilesUtil.resolve(c,event.getString("name"));break;}}Thread.sleep(100);}
+        assertNotNull("offline separation timed out",result);assertEquals(videoDigest(mixed),videoDigest(result));
+        java.util.concurrent.atomic.AtomicBoolean cancel=new java.util.concurrent.atomic.AtomicBoolean();AudioPipeline.Decoded before=AudioPipeline.decode(c,mixed,0,cancel,(n,t)->{}),after=AudioPipeline.decode(c,result,0,cancel,(n,t)->{});assertTrue(after.pcm.length()>10000);assertTrue(Math.abs(before.pcm.length()-after.pcm.length())<20000);before.pcm.delete();after.pcm.delete();mixed.delete();
+    }
+    private String videoDigest(File file)throws Exception{android.media.MediaExtractor ex=new android.media.MediaExtractor();try{ex.setDataSource(file.getAbsolutePath());ex.selectTrack(AudioPipeline.track(ex,"video/"));java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");java.nio.ByteBuffer buffer=java.nio.ByteBuffer.allocate(1024*1024);while(true){buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;byte[] data=new byte[n];buffer.position(0);buffer.get(data);digest.update(data);ex.advance();}return java.util.Arrays.toString(digest.digest());}finally{ex.release();}}
     private File latest(){File[] files=FilesUtil.directory(c).listFiles(f->!f.getName().endsWith(".partial"));assertNotNull(files);java.util.Arrays.sort(files,(a,b)->Long.compare(b.lastModified(),a.lastModified()));assertTrue(files.length>0);return files[0];}
     private void exportVideo(File input,String options)throws Exception{
         VideoExportService.lastEvent=null;

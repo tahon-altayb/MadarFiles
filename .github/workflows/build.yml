@@ -11,7 +11,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -20,7 +20,7 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v3
         with:
-          packages: platform-tools platforms;android-35 build-tools;35.0.0
+          packages: platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -30,16 +30,22 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: madar-personal-development-key-v1
+      - name: Prepare offline model and native assets
+        run: python3 scripts/prepare_models.py
+      - name: Prepare speech and music test fixture
+        run: |
+          curl -fL --retry 3 https://download.pytorch.org/torchaudio/tutorial-assets/1272-128104-0000.flac -o /tmp/speech.flac
+          ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.flac -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
       - name: Validate interface
         run: node qa/interface.test.cjs
       - name: Build and lint APK
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.0.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.1.0.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.0.0-APK
-          path: MadarFiles-1.0.0.apk
+          name: MadarFiles-1.1.0-APK
+          path: MadarFiles-1.1.0.apk
           if-no-files-found: error
           retention-days: 30
       - name: Enable emulator acceleration
@@ -72,3 +78,4 @@ jobs:
             app/build/reports/
             app/build/outputs/androidTest-results/
             phone-screenshots/
+            app/src/main/assets/models/checksums.json

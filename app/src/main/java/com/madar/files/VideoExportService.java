@@ -20,7 +20,9 @@ public class VideoExportService extends Service {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private Transformer transformer;
     private File partial,output;
-    private boolean terminal;
+    private volatile boolean terminal;
+    private final java.util.concurrent.atomic.AtomicBoolean musicCancel=new java.util.concurrent.atomic.AtomicBoolean();
+    private Thread musicWorker;
     private long began;
     private NotificationManager notifications;
     @Override public void onCreate(){super.onCreate();notifications=getSystemService(NotificationManager.class);notifications.createNotificationChannel(new NotificationChannel("exports","تصدير الفيديو",NotificationManager.IMPORTANCE_LOW));}
@@ -31,7 +33,7 @@ public class VideoExportService extends Service {
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         if(intent==null){stopSelf();return START_NOT_STICKY;}
-        if("cancel".equals(intent.getAction())){if(active)finish("cancelled",null);else stopSelf();return START_NOT_STICKY;}
+        if("cancel".equals(intent.getAction())){if(musicWorker!=null&&active){musicCancel.set(true);}else if(active)finish("cancelled",null);else stopSelf();return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
         try{
             if(Build.VERSION.SDK_INT>=35)startForeground(7,notification(-1),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING);else startForeground(7,notification(-1),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
@@ -39,6 +41,7 @@ public class VideoExportService extends Service {
             JSONObject o=new JSONObject(intent.getStringExtra("options"));String tool=o.getString("tool");boolean audio=tool.equals("audio");
             File input=new File(intent.getStringExtra("input"));if(!input.isFile()||!input.getCanonicalPath().startsWith(getCacheDir().getCanonicalPath()+File.separator))throw new IllegalArgumentException("ملف المصدر غير موجود");
             long duration=intent.getLongExtra("duration",0);if(duration<=0)throw new IllegalArgumentException("مدة الفيديو غير معروفة");
+            if(tool.equals("music")){startMusic(input,o);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));
             if(tool.equals("trim")){
                 double start=o.getDouble("start"),end=o.getDouble("end");if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||end<=start||end*1000>duration+100)throw new IllegalArgumentException("حدود القص غير صالحة");
@@ -61,10 +64,24 @@ public class VideoExportService extends Service {
         }catch(Exception e){finish("error",e.getMessage()==null?"تعذر بدء التصدير":e.getMessage());}
         return START_NOT_STICKY;
     }
+    private void startMusic(File input,JSONObject options)throws Exception{
+        musicCancel.set(false);boolean sample=options.optBoolean("sample",false),audioOnly=options.optString("musicOutput","video").equals("audio");long limitUs=sample?10000000L:0;
+        output=FilesUtil.output(this,audioOnly?"m4a":"mp4");partial=new File(output.getAbsolutePath()+".partial");
+        publish(new JSONObject().put("type","progress").put("progress",0).put("message","فك الصوت محليًا"));
+        MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
+        musicWorker=new Thread(()->{
+            AudioPipeline.Decoded decoded=null;File clean=null;
+            try{decoded=AudioPipeline.decode(this,input,limitUs,musicCancel,callback);clean=MusicSeparator.separate(this,decoded,musicCancel,callback);MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,decoded.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
+                if(!partial.renameTo(output))throw new java.io.IOException("تعذر حفظ النتيجة");JSONObject result=FilesUtil.info(output).put("type","result");handler.post(()->{if(!terminal){publish(result);musicWorker=null;finish("done",null);}});
+            }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
+            catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر فصل الموسيقى. "+(e.getMessage()==null?"جرّب عينة أقصر وتأكد من المساحة المتاحة.":e.getMessage()));});}
+            finally{if(decoded!=null)decoded.pcm.delete();if(clean!=null)clean.delete();}
+        },"madar-offline-separation");musicWorker.start();
+    }
     private final Runnable progress=new Runnable(){@Override public void run(){if(!active||terminal||transformer==null)return;try{if(System.currentTimeMillis()-began>5L*60*60*1000){finish("error","توقف التصدير بعد تجاوز خمس ساعات");return;}ProgressHolder p=new ProgressHolder();int state=transformer.getProgress(p);int value=state==Transformer.PROGRESS_STATE_AVAILABLE?p.progress:-1;publish(new JSONObject().put("type","progress").put("progress",value));notifications.notify(7,notification(value));handler.postDelayed(this,750);}catch(Exception e){finish("error","تعذر متابعة التصدير");}}};
     private void publish(JSONObject o){lastEvent=o.toString();sendBroadcast(new Intent(EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
     private void finish(String type,String message){
-        if(terminal)return;terminal=true;handler.removeCallbacksAndMessages(null);if(transformer!=null){transformer.cancel();transformer=null;}if(!type.equals("done")){if(partial!=null)partial.delete();try{JSONObject event=new JSONObject().put("type",type);if(message!=null)event.put("message",message);publish(event);}catch(Exception ignored){}}
+        if(terminal)return;terminal=true;musicCancel.set(true);handler.removeCallbacksAndMessages(null);if(transformer!=null){transformer.cancel();transformer=null;}if(!type.equals("done")){if(partial!=null)partial.delete();try{JSONObject event=new JSONObject().put("type",type);if(message!=null)event.put("message",message);publish(event);}catch(Exception ignored){}}
         active=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
     }
     @Override public void onTimeout(int startId,int fgsType){finish("error","أوقف النظام المعالجة بعد انتهاء الوقت المتاح؛ جرّب فيديو أقصر");}

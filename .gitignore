@@ -4,3 +4,8 @@ local.properties
 *.jks
 *.keystore
 .idea/
+
+app/vendor/
+app/src/main/jniLibs/
+app/src/main/assets/models/
+.cxx/

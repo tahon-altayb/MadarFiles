@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(madar_audio)
+add_library(sherpa SHARED IMPORTED)
+set_target_properties(sherpa PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libsherpa-onnx-c-api.so")
+add_library(madar_audio SHARED separation.cpp)
+target_include_directories(madar_audio PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor")
+target_link_libraries(madar_audio sherpa log)
+target_link_options(madar_audio PRIVATE "-Wl,-z,max-page-size=16384")

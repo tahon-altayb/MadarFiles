@@ -22,6 +22,8 @@ import java.util.concurrent.*;
 public class MainActivity extends Activity {
     private WebView web;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final ExecutorService previews=Executors.newSingleThreadExecutor();
+    private volatile int previewToken;
     private volatile File source;
     private volatile JSONObject sourceInfo;
     private volatile boolean working;
@@ -46,8 +48,12 @@ public class MainActivity extends Activity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
                 String path=r.getUrl().toString();
                 if(path.equals("https://madar.local/")||path.startsWith("https://madar.local/")){
+                    String route=r.getUrl().getPath();
+                    if("/source".equals(route)||"/result".equals(route)){
+                        try{File target="/source".equals(route)?source:FilesUtil.resolve(MainActivity.this,r.getUrl().getQueryParameter("name"));return mediaResponse(target,r);}catch(Exception e){return blocked();}
+                    }
                     String file=r.getUrl().getPath();if(file==null||file.equals("/"))file="index.html";else file=file.substring(1);
-                    if(!file.matches("index\\.html|style\\.css|app\\.js"))return blocked();
+                    if(!file.matches("index\\.html|style\\.css|app\\.js|crop\\.js"))return blocked();
                     try{return new WebResourceResponse(file.endsWith("css")?"text/css":file.endsWith("js")?"application/javascript":"text/html","UTF-8",getAssets().open(file));}catch(IOException e){return blocked();}
                 }return blocked();
             }
@@ -63,7 +69,7 @@ public class MainActivity extends Activity {
     }
     private WebResourceResponse blocked(){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}
     final class Bridge {
-        @JavascriptInterface public void request(String value){if(value.length()>20000)return;runOnUiThread(()->{try{handle(new JSONObject(value));}catch(Exception e){error("تعذر تنفيذ الطلب: "+message(e));}});}
+        @JavascriptInterface public void request(String value){if(value.length()>2000000)return;runOnUiThread(()->{try{handle(new JSONObject(value));}catch(Exception e){error("تعذر تنفيذ الطلب: "+message(e));}});}
     }
     private void handle(JSONObject request)throws Exception {
         String action=request.getString("action");
@@ -71,6 +77,9 @@ public class MainActivity extends Activity {
             case "ready":ready=true;history();restoreSource();if(VideoExportService.lastEvent!=null)send(new JSONObject(VideoExportService.lastEvent));if(Intent.ACTION_SEND.equals(getIntent().getAction())){Uri u=getIntent().getParcelableExtra(Intent.EXTRA_STREAM);getIntent().setAction(Intent.ACTION_MAIN);if(u!=null)importFile(u,null);}break;
             case "pick":if(isBusy())return;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);String k=request.optString("kind","image");requestedKind=k;pick.setType(k.equals("video")?"video/*":k.equals("pdf")?"application/pdf":"image/*");startActivityForResult(pick,10);break;
             case "export":export(request.getJSONObject("options"));break;
+            case "preview":previewPage(request.optInt("page",1),request.optInt("token",0));break;
+            case "copyText":String text=request.getString("text");if(text.length()>1000000)throw new IOException("النص طويل جدًا");((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("مدار",text));Toast.makeText(this,"تم نسخ النص",Toast.LENGTH_SHORT).show();break;
+            case "saveText":String content=request.getString("text"),format=request.optString("format","txt");worker.execute(()->{try{File f=TextProcessor.save(this,content,format);send(FilesUtil.info(f).put("type","result"));history();}catch(Exception e){error("تعذر حفظ النص. "+message(e));}});break;
             case "history":history();break;
             case "save":saving=FilesUtil.resolve(this,request.getString("name"));Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(FilesUtil.mime(saving)).putExtra(Intent.EXTRA_TITLE,saving.getName());startActivityForResult(save,11);break;
             case "share":case "view":openOutput(FilesUtil.resolve(this,request.getString("name")),action.equals("share"));break;
@@ -115,12 +124,31 @@ public class MainActivity extends Activity {
         if(isBusy())return;File input=source;JSONObject info=sourceInfo;if(input==null||info==null)throw new IOException("اختر الملف أولًا");
         String kind=info.getString("kind");if(!kind.equals(o.getString("kind")))throw new IOException("نوع الملف لا يطابق الأداة");
         if(kind.equals("video")){
-            if(o.optString("tool").equals("audio")&&!info.optBoolean("hasAudio"))throw new IOException("الفيديو لا يحتوي على صوت");
+            if((o.optString("tool").equals("audio")||o.optString("tool").equals("music"))&&!info.optBoolean("hasAudio"))throw new IOException("الفيديو لا يحتوي على صوت");
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
             Intent service=new Intent(this,VideoExportService.class).putExtra("input",input.getAbsolutePath()).putExtra("options",o.toString()).putExtra("duration",info.getLong("duration")).putExtra("height",info.getInt("height"));startForegroundService(service);
         }else{
-            working=true;worker.execute(()->{try{File f=kind.equals("image")?ImageProcessor.export(this,input,o):PdfProcessor.export(this,input,o);working=false;send(FilesUtil.info(f).put("type","result"));}catch(Exception|OutOfMemoryError e){working=false;error("لم يكتمل التصدير. "+message(e));}});
+            working=true;worker.execute(()->{try{
+                String tool=o.optString("tool");
+                if(tool.equals("ocr")||tool.equals("text")||tool.equals("word")){
+                    String text=kind.equals("image")?TextProcessor.image(this,input):TextProcessor.pdf(this,input,o.optInt("first",1),o.optInt("last",1),p->event("workProgress","message",p));
+                    working=false;if(text.trim().isEmpty())throw new IOException("لم يُعثر على نص واضح في الملف");send(new JSONObject().put("type","text").put("text",text));
+                }else{File f=kind.equals("image")?ImageProcessor.export(this,input,o):PdfProcessor.export(this,input,o);working=false;send(FilesUtil.info(f).put("type","result"));}
+            }catch(Exception|OutOfMemoryError e){working=false;error("لم يكتمل التصدير. "+message(e));}});
         }
+    }
+    private void previewPage(int page,int token){
+        previewToken=token;File file=source;if(file==null)return;previews.execute(()->{if(token!=previewToken)return;try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
+            if(page<1||page>renderer.getPageCount())return;Bitmap b=PdfProcessor.render(renderer,page-1,700);try{if(token==previewToken)send(new JSONObject().put("type","preview").put("page",page).put("token",token).put("thumbnail",FilesUtil.thumbnail(b)));}finally{b.recycle();}
+        }catch(Exception e){try{send(new JSONObject().put("type","previewError").put("token",token).put("message","تعذر عرض هذه الصفحة"));}catch(Exception ignored){}}});
+    }
+    private WebResourceResponse mediaResponse(File file,WebResourceRequest request)throws Exception{
+        if(file==null||!file.isFile())return blocked();long length=file.length(),start=0,end=length-1;String range=request.getRequestHeaders().get("Range");boolean partial=false;
+        if(range!=null&&range.matches("bytes=[0-9]+-[0-9]*")){String[] values=range.substring(6).split("-",-1);start=Long.parseLong(values[0]);if(!values[1].isEmpty())end=Math.min(end,Long.parseLong(values[1]));partial=true;}
+        if(start<0||start>=length||end<start)return blocked();FileInputStream stream=new FileInputStream(file);stream.getChannel().position(start);final long count=end-start+1;
+        InputStream limited=new FilterInputStream(stream){long left=count;@Override public int read()throws IOException{if(left<=0)return -1;int v=super.read();if(v>=0)left--;return v;}@Override public int read(byte[] b,int off,int len)throws IOException{if(left<=0)return -1;int n=super.read(b,off,(int)Math.min(left,len));if(n>0)left-=n;return n;}};
+        Map<String,String> headers=new HashMap<>();headers.put("Accept-Ranges","bytes");headers.put("Content-Length",Long.toString(count));headers.put("Cache-Control","no-store");if(partial)headers.put("Content-Range","bytes "+start+"-"+end+"/"+length);
+        String mime=file==source&&sourceInfo!=null?sourceInfo.optString("mime","video/mp4"):FilesUtil.mime(file);return new WebResourceResponse(mime,null,partial?206:200,partial?"Partial Content":"OK",headers,limited);
     }
     private String message(Throwable e){if(e instanceof OutOfMemoryError)return "الملف يتجاوز الذاكرة المتاحة؛ جرّب دقة أقل.";if(e instanceof SecurityException)return "الملف محمي أو تعذر الحصول على إذن قراءته.";String m=e.getMessage();return m==null?"تحقق من الملف والمساحة المتاحة.":m;}
     private void openOutput(File f,boolean share){
@@ -132,5 +160,5 @@ public class MainActivity extends Activity {
     private void error(String message){event("error","message",message);}
     private void send(JSONObject event){runOnUiThread(()->{if(ready&&web!=null)web.evaluateJavascript("window.receive("+event.toString()+");",null);});}
     @Override protected void onResume(){super.onResume();if(ready&&VideoExportService.active&&VideoExportService.lastEvent!=null)try{send(new JSONObject(VideoExportService.lastEvent));}catch(JSONException ignored){}}
-    @Override protected void onDestroy(){ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.shutdown();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.shutdown();previews.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }
