@@ -51,7 +51,7 @@ public class MainActivity extends Activity {
         });
         setContentView(web);web.loadUrl("https://madar.local/");
         IntentFilter filter=new IntentFilter(VideoExportService.EVENT);
-        if(Build.VERSION.SDK_INT>=33)registerReceiver(updates,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(updates,filter);
+        androidx.core.content.ContextCompat.registerReceiver(this,updates,filter,androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered=true;
     }
     private void restoreSource(){
