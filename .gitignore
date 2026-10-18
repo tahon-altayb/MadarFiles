@@ -9,3 +9,5 @@ app/vendor/
 app/src/main/jniLibs/
 app/src/main/assets/models/
 .cxx/
+
+.signing/

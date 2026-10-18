@@ -28,8 +28,14 @@ jobs:
       - name: Restore personal development signing key
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: madar-personal-development-key-v1
+          path: .signing/madar-development.keystore
+          key: madar-personal-development-key-v2
+      - name: Ensure persistent personal development signing key
+        run: |
+          mkdir -p .signing
+          if [ ! -f .signing/madar-development.keystore ]; then
+            keytool -genkeypair -keystore .signing/madar-development.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          fi
       - name: Prepare offline model and native assets
         run: python3 scripts/prepare_models.py
       - name: Prepare speech and music test fixture

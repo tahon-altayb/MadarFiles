@@ -16,6 +16,7 @@ android {
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     packaging { jniLibs { pickFirsts += ["**/libc++_shared.so"] } }
+    signingConfigs { debug { storeFile rootProject.file(".signing/madar-development.keystore"); storePassword "android"; keyAlias "androiddebugkey"; keyPassword "android" } }
     buildTypes {
         release {
             // Personal APK. A persistent signing secret can replace this before public distribution.

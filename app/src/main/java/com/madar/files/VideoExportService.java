@@ -23,6 +23,7 @@ public class VideoExportService extends Service {
     private volatile boolean terminal;
     private final java.util.concurrent.atomic.AtomicBoolean musicCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private Thread musicWorker;
+    private PowerManager.WakeLock cpuLock;
     private long began;
     private NotificationManager notifications;
     @Override public void onCreate(){super.onCreate();notifications=getSystemService(NotificationManager.class);notifications.createNotificationChannel(new NotificationChannel("exports","تصدير الفيديو",NotificationManager.IMPORTANCE_LOW));}
@@ -65,6 +66,7 @@ public class VideoExportService extends Service {
         return START_NOT_STICKY;
     }
     private void startMusic(File input,JSONObject options)throws Exception{
+        cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:MusicSeparation");cpuLock.acquire(5L*60*60*1000);
         musicCancel.set(false);boolean sample=options.optBoolean("sample",false),audioOnly=options.optString("musicOutput","video").equals("audio");long limitUs=sample?10000000L:0;
         output=FilesUtil.output(this,audioOnly?"m4a":"mp4");partial=new File(output.getAbsolutePath()+".partial");
         publish(new JSONObject().put("type","progress").put("progress",0).put("message","فك الصوت محليًا"));
@@ -82,7 +84,7 @@ public class VideoExportService extends Service {
     private void publish(JSONObject o){lastEvent=o.toString();sendBroadcast(new Intent(EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
     private void finish(String type,String message){
         if(terminal)return;terminal=true;musicCancel.set(true);handler.removeCallbacksAndMessages(null);if(transformer!=null){transformer.cancel();transformer=null;}if(!type.equals("done")){if(partial!=null)partial.delete();try{JSONObject event=new JSONObject().put("type",type);if(message!=null)event.put("message",message);publish(event);}catch(Exception ignored){}}
-        active=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
+        if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();active=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
     }
     @Override public void onTimeout(int startId,int fgsType){finish("error","أوقف النظام المعالجة بعد انتهاء الوقت المتاح؛ جرّب فيديو أقصر");}
     @Override public void onDestroy(){if(active&&!terminal)finish("error","توقفت معالجة الفيديو");super.onDestroy();}
