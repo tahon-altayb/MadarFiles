@@ -82,7 +82,7 @@ jobs:
             mkdir -p phone-screenshots
             adb shell screencap -p /sdcard/madar-home.png
             adb pull /sdcard/madar-home.png phone-screenshots/home.png
-            adb pull /data/local/tmp/madar-clean.mp4 phone-screenshots/clean-music-test.mp4
+            adb pull /data/local/tmp/madar-clean.mp4 phone-screenshots/clean-music-test.mp4 || echo "Optional audio evidence unavailable; see processing test results"
             cp app/src/androidTest/assets/music-test.mp4 phone-screenshots/original-music-test.mp4
       - name: Upload verification reports
         if: always()
