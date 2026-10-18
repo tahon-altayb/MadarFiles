@@ -57,7 +57,12 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
             gradle --no-daemon connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/com.madar.files/files/qa phone-screenshots
+            adb install -r app/build/outputs/apk/release/app-release.apk
+            adb shell am start -W -n com.madar.files/.MainActivity
+            sleep 3
+            mkdir -p phone-screenshots
+            adb shell screencap -p /sdcard/madar-home.png
+            adb pull /sdcard/madar-home.png phone-screenshots/home.png
       - name: Upload verification reports
         if: always()
         uses: actions/upload-artifact@v4
