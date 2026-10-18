@@ -36,6 +36,11 @@ jobs:
           if [ ! -f .signing/madar-development.keystore ]; then
             keytool -genkeypair -keystore .signing/madar-development.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
           fi
+      - name: Persist signing key before device tests
+        uses: actions/cache/save@v4
+        with:
+          path: .signing/madar-development.keystore
+          key: madar-personal-development-key-v2
       - name: Prepare offline model and native assets
         run: python3 scripts/prepare_models.py
       - name: Prepare speech and music test fixture
