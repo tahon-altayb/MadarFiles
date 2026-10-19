@@ -51,7 +51,7 @@ public class ProcessingTest {
         android.webkit.WebView[] found=new android.webkit.WebView[1];
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->found[0]=findWeb(activity.getWindow().getDecorView()));
         assertNotNull(found[0]);long deadline=System.currentTimeMillis()+15000;
-        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(found[0],"typeof window.receive==='function' && document.getElementById('tools').children.length===9")))break;Thread.sleep(100);}
+        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(found[0],"typeof window.receive==='function' && document.getElementById('tools').children.length===10")))break;Thread.sleep(100);}
         assertEquals("true",evaluate(found[0],"typeof window.receive==='function'"));
         assertEquals("true",evaluate(found[0],"getComputedStyle(document.body).backgroundColor==='rgb(248, 244, 237)' && document.body.scrollWidth<=innerWidth"));
         String thumb;Bitmap b=FilesUtil.image(input,480);try{thumb=FilesUtil.thumbnail(b);}finally{b.recycle();}
