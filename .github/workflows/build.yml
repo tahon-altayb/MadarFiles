@@ -18,29 +18,26 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018 cmake;3.22.1
-          log-accepted-android-sdk-licenses: false
+      - name: Prepare preinstalled Android SDK
+        timeout-minutes: 10
+        run: python3 scripts/ensure_android.py
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Restore personal development signing key
-        uses: actions/cache@v4
-        with:
-          path: .signing/madar-development.keystore
-          key: madar-personal-development-key-v2
-      - name: Ensure persistent personal development signing key
+      - name: Load signing key from GitHub Secrets
+        env:
+          MADAR_KEYSTORE_BASE64: ${{ secrets.MADAR_KEYSTORE_BASE64 }}
         run: |
-          mkdir -p .signing
-          if [ ! -f .signing/madar-development.keystore ]; then
-            keytool -genkeypair -keystore .signing/madar-development.keystore -storepass android -keypass android -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
-          fi
-      - name: Persist signing key before device tests
-        uses: actions/cache/save@v4
-        with:
-          path: .signing/madar-development.keystore
-          key: madar-personal-development-key-v2
+          python3 - <<'PYKEY'
+          import os,base64,pathlib
+          value=os.environ.get('MADAR_KEYSTORE_BASE64','')
+          if not value:
+              raise SystemExit('Configure MADAR_KEYSTORE_BASE64 and signing passwords in GitHub Secrets; do not generate a replacement key for an installed app.')
+          dest=pathlib.Path('.signing/madar-development.keystore')
+          dest.parent.mkdir(mode=0o700,exist_ok=True)
+          dest.write_bytes(base64.b64decode(value,validate=True))
+          dest.chmod(0o600)
+          PYKEY
       - name: Restore processing build assets
         uses: actions/cache@v4
         with:
@@ -72,6 +69,10 @@ jobs:
       - name: Validate interface
         run: node qa/interface.test.cjs
       - name: Build and lint APK
+        env:
+          MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+          MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+          MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Prepare APK
         run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.2.0.apk
@@ -87,6 +88,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Device processing tests
+        env:
+          MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+          MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+          MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -116,3 +121,6 @@ jobs:
             app/build/outputs/androidTest-results/
             phone-screenshots/
             app/src/main/assets/models/checksums.json
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f .signing/madar-development.keystore
