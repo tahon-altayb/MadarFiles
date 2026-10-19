@@ -43,6 +43,8 @@ public class VideoExportService extends Service {
             JSONObject o=new JSONObject(intent.getStringExtra("options"));String tool=o.getString("tool");boolean audio=tool.equals("audio");
             File input=new File(intent.getStringExtra("input"));if(!input.isFile()||!input.getCanonicalPath().startsWith(getCacheDir().getCanonicalPath()+File.separator))throw new IllegalArgumentException("ملف المصدر غير موجود");
             long duration=intent.getLongExtra("duration",0);if(duration<=0)throw new IllegalArgumentException("مدة الفيديو غير معروفة");
+            if(tool.equals("trim")&&o.optString("cutMode").equals("copy")){startCopyTrim(input,o);return START_NOT_STICKY;}
+            if(tool.equals("convert")&&o.optString("format").matches("mkv|mov|webm")){startContainer(input,o);return START_NOT_STICKY;}
             if(tool.equals("subtitles")){startSpeech(input,o);return START_NOT_STICKY;}
             if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
             if(tool.equals("music")){startMusic(input,o);return START_NOT_STICKY;}
@@ -72,6 +74,14 @@ public class VideoExportService extends Service {
             publish(new JSONObject().put("type","progress").put("progress",-1));handler.post(progress);
         }catch(Exception e){finish("error",e.getMessage()==null?"تعذر بدء التصدير":e.getMessage());}
         return START_NOT_STICKY;
+    }
+    private void startCopyTrim(File input,JSONObject options)throws Exception{
+        musicCancel.set(false);publish(new JSONObject().put("type","progress").put("progress",-1).put("message","قص دون إعادة ترميز؛ البداية عند أقرب إطار رئيسي سابق"));
+        musicWorker=new Thread(()->{try{LosslessTrim.Result r=LosslessTrim.trim(this,input,options.optDouble("start"),options.optDouble("end"),musicCancel);JSONObject data=FilesUtil.info(r.file).put("type","result").put("actualStart",r.startUs/1000000.0);handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});}catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}catch(Exception e){handler.post(()->{musicWorker=null;finish("error","تعذر القص دون ترميز. جرّب القص الدقيق. "+e.getMessage());});}},"madar-copy-trim");musicWorker.start();
+    }
+    private void startContainer(File input,JSONObject options)throws Exception{
+        musicCancel.set(false);publish(new JSONObject().put("type","progress").put("progress",-1).put("message","نسخ المسارات إلى الحاوية الجديدة دون إعادة ترميز"));
+        musicWorker=new Thread(()->{try{File f=ContainerTools.convert(this,input,options.optString("format"),musicCancel);JSONObject data=FilesUtil.info(f).put("type","result");handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});}catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}catch(Exception e){handler.post(()->{musicWorker=null;finish("error",e.getMessage());});}},"madar-container");musicWorker.start();
     }
     private void startSpeech(File input,JSONObject options)throws Exception{
         cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:Speech");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);

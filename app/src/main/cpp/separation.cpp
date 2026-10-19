@@ -41,3 +41,16 @@ extern "C" JNIEXPORT void JNICALL Java_com_madar_files_AudioEditor_mp3(JNIEnv* e
  while(ok){if(e->CallBooleanMethod(cancel,method)){ok=false;break;}size_t frames=fread(pcm.data(),sizeof(short)*2,1152,in);if(!frames)break;int n=lame_encode_buffer_interleaved(encoder,pcm.data(),frames,bytes.data(),bytes.size());if(n<0||fwrite(bytes.data(),1,n,out)!=(size_t)n){ok=false;break;}}
  if(ok){int n=lame_encode_flush(encoder,bytes.data(),bytes.size());ok=n>=0&&fwrite(bytes.data(),1,n,out)==(size_t)n;}lame_close(encoder);fclose(in);if(fclose(out)!=0)ok=false;if(!ok)fail(e,"لم يكتمل ترميز MP3");
 }
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/error.h>
+}
+extern "C" JNIEXPORT void JNICALL Java_com_madar_files_ContainerTools_remux(JNIEnv* e,jclass,jstring input,jstring output,jstring format,jobject cancel){
+ const char* a=e->GetStringUTFChars(input,nullptr);const char* b=e->GetStringUTFChars(output,nullptr);const char* f=e->GetStringUTFChars(format,nullptr);AVFormatContext* in=nullptr;AVFormatContext* out=nullptr;int error=avformat_open_input(&in,a,nullptr,nullptr);bool opened=false;
+ if(error>=0){avformat_find_stream_info(in,nullptr);error=avformat_alloc_output_context2(&out,nullptr,f,b);}
+ std::vector<int> map;if(error>=0){map.resize(in->nb_streams,-1);for(unsigned i=0;i<in->nb_streams;i++){auto type=in->streams[i]->codecpar->codec_type;if(type!=AVMEDIA_TYPE_VIDEO&&type!=AVMEDIA_TYPE_AUDIO)continue;auto* stream=avformat_new_stream(out,nullptr);if(!stream){error=AVERROR(ENOMEM);break;}map[i]=stream->index;error=avcodec_parameters_copy(stream->codecpar,in->streams[i]->codecpar);if(error<0)break;stream->codecpar->codec_tag=0;stream->time_base=in->streams[i]->time_base;av_dict_copy(&stream->metadata,in->streams[i]->metadata,0);}}
+ if(error>=0){error=avio_open(&out->pb,b,AVIO_FLAG_WRITE);opened=error>=0;}if(error>=0)error=avformat_write_header(out,nullptr);auto method=e->GetMethodID(e->GetObjectClass(cancel),"get","()Z");AVPacket* packet=av_packet_alloc();if(!packet)error=AVERROR(ENOMEM);
+ while(error>=0){if(e->CallBooleanMethod(cancel,method)){error=AVERROR_EXIT;break;}int n=av_read_frame(in,packet);if(n==AVERROR_EOF)break;if(n<0){error=n;break;}int from=packet->stream_index,to=map[from];if(to<0){av_packet_unref(packet);continue;}av_packet_rescale_ts(packet,in->streams[from]->time_base,out->streams[to]->time_base);packet->stream_index=to;packet->pos=-1;error=av_interleaved_write_frame(out,packet);av_packet_unref(packet);}
+ if(error>=0)error=av_write_trailer(out);if(packet)av_packet_free(&packet);if(in)avformat_close_input(&in);if(out){if(opened)avio_closep(&out->pb);avformat_free_context(out);}e->ReleaseStringUTFChars(input,a);e->ReleaseStringUTFChars(output,b);e->ReleaseStringUTFChars(format,f);if(error<0){char text[256];av_strerror(error,text,sizeof(text));fail(e,text);}
+}

@@ -16,3 +16,6 @@ Pinned checksums for bundled model bytes are recorded inside the APK at assets/m
 - Whisper tiny multilingual ONNX exports from k2-fsa/sherpa-onnx, OpenAI Whisper MIT license. INT8 encoder, decoder and vocabulary bundled. Build-time checksums retained with verification artifacts.
 - Google ML Kit on-device translation 17.0.3. Language models download from Google on first use; inference is on device. Google terms apply.
 - LAME 3.100 MP3 encoder, LGPL 2.0 or later. Unmodified upstream source from Debian `lame_3.100.orig.tar.gz`; built by `scripts/prepare_lame.py`. License bundled as `LAME-COPYING.txt`. This public repository and script provide the integration source and reproducible relinking route with Android NDK; no proprietary modifications to LAME.
+
+- FFmpeg 7.1.1, LGPL 2.1 or later build without GPL/nonfree components. Only local file demuxing/remuxing is enabled; runtime network protocols are disabled. Source: https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz. Build/relink integration: `scripts/prepare_containers.py` and CMake. License bundled as `FFMPEG-COPYING.txt`.
+- ML Kit selfie segmentation 16.0.0-beta6 for local person cutout. Google terms apply.

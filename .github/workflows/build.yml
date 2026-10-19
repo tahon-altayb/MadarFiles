@@ -41,10 +41,27 @@ jobs:
         with:
           path: .signing/madar-development.keystore
           key: madar-personal-development-key-v2
+      - name: Restore processing build assets
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/vendor
+            app/src/main/jniLibs
+            app/src/main/assets/models
+          key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
       - name: Prepare offline model and native assets
         run: |
           python3 scripts/prepare_models.py
           python3 scripts/prepare_lame.py
+          python3 scripts/prepare_containers.py
+      - name: Persist processing build assets
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            app/vendor
+            app/src/main/jniLibs
+            app/src/main/assets/models
+          key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
       - name: Prepare speech and music test fixture
         run: |
           sudo apt-get update -qq

@@ -10,6 +10,7 @@ if not source.exists():
  with tarfile.open(archive) as t:t.extractall(vendor,filter='data')
 ndk=Path(os.environ['ANDROID_HOME'])/'ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin'
 for abi,target in [('arm64-v8a','aarch64-linux-android'),('x86_64','x86_64-linux-android')]:
+ if (vendor/abi/'libmp3lame.a').exists():continue
  build=vendor/('lame-build-'+abi);build.mkdir(exist_ok=True);env=os.environ.copy();env.update(CC=str(ndk/(target+'29-clang')),AR=str(ndk/'llvm-ar'),RANLIB=str(ndk/'llvm-ranlib'),CFLAGS='-O3 -fPIC',LDFLAGS='')
  subprocess.run([str(source/'configure'),'--host='+target,'--disable-shared','--enable-static','--disable-frontend','--disable-decoder','--with-pic'],cwd=build,env=env,check=True,stdout=subprocess.DEVNULL)
  subprocess.run(['make','-j2'],cwd=build,env=env,check=True,stdout=subprocess.DEVNULL)
