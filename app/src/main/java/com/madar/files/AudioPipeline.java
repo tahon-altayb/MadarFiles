@@ -35,7 +35,7 @@ final class AudioPipeline {
     else if(index>=0){if((info.flags&MediaCodec.BUFFER_FLAG_CODEC_CONFIG)!=0)info.size=0;if(info.size>0){ByteBuffer buffer=encoder.getOutputBuffer(index);buffer.position(info.offset);buffer.limit(info.offset+info.size);muxer.writeSampleData(audioTrack,buffer,info);}outputDone=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;encoder.releaseOutputBuffer(index,false);}
    }
    if(videoTrack>=0){ByteBuffer buffer=ByteBuffer.allocateDirect(16*1024*1024);while(true){MusicSeparator.check(cancel);long pts=video.getSampleTime();if(pts<0||(limitUs>0&&pts>=limitUs))break;int n=video.readSampleData(buffer,0);if(n<0)break;if((video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_ENCRYPTED)!=0)throw new IOException("لا يمكن معالجة الفيديو المحمي");int flags=(video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0;info.set(0,n,pts,flags);muxer.writeSampleData(videoTrack,buffer,info);video.advance();}}
-   progress.update(99,"حفظ الفيديو بالصوت المعالج");
+   progress.update(99,"حفظ الملف بالصوت المعالج");
   }finally{if(encoder!=null){try{encoder.stop();}catch(Exception ignored){}encoder.release();}video.release();if(muxer!=null){try{if(muxStarted)muxer.stop();}finally{muxer.release();}}}
  }
 }
