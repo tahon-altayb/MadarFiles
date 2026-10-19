@@ -25,7 +25,7 @@ final class FilesUtil {
             decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
         });
     }
-    static String thumbnail(Bitmap b) { ByteArrayOutputStream out=new ByteArrayOutputStream(); b.compress(Bitmap.CompressFormat.JPEG,80,out);return "data:image/jpeg;base64,"+Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP); }
+    static String thumbnail(Bitmap b) { boolean alpha=false;if(b.hasAlpha()){int[] row=new int[b.getWidth()];for(int y=0;y<b.getHeight()&&!alpha;y++){b.getPixels(row,0,row.length,0,y,row.length,1);for(int pixel:row)if((pixel>>>24)!=255){alpha=true;break;}}}ByteArrayOutputStream out=new ByteArrayOutputStream(); b.compress(alpha?Bitmap.CompressFormat.PNG:Bitmap.CompressFormat.JPEG,80,out);return (alpha?"data:image/png;base64,":"data:image/jpeg;base64,")+Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP); }
     static void copy(InputStream in,OutputStream out) throws IOException { byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n); }
     static double bounded(double v,double min,double max){if(!Double.isFinite(v))throw new IllegalArgumentException("قيمة غير صالحة");return Math.max(min,Math.min(max,v));}
     static void replace(Bitmap old,Bitmap next){if(old!=next)old.recycle();}

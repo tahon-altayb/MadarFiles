@@ -29,7 +29,7 @@ openTool=function(tool){
   $('form').innerHTML+='<label>مستوى الصوت (%)</label><input id="gain" type="range" min="0" max="200" value="100"><label>تدرّج دخول وخروج (ثوانٍ)</label>'+number('fade',0,0,10,.1);
  }
  $('sheet').hidden=false;$('export').textContent='تصدير نسخة جديدة';attachPreview();
- if(tool==='editor')setupEditor();if(tool==='removebg'){$('cutoutPreviewBtn').onclick=()=>{state.previewToken=(state.previewToken||0)+1;$('previewSize').textContent='جارٍ عزل الشخص للمعاينة…';native('cutoutPreview',{token:state.previewToken,color:$('color').value,transparent:$('cutBackground').value==='transparent'});};}
+ if(tool==='editor')setupEditor();if(tool==='removebg'){const request=()=>{if(state.tool!=='removebg'||$('sheet').hidden)return;state.previewToken=(state.previewToken||0)+1;$('previewSize').textContent='جارٍ عزل الشخص للمعاينة…';native('cutoutPreview',{token:state.previewToken,color:$('color').value,transparent:$('cutBackground').value==='transparent'});};$('cutoutPreviewBtn').onclick=request;$('form').oninput=()=>{clearTimeout(state.cutoutTimer);state.cutoutTimer=setTimeout(request,350);};state.cutoutTimer=setTimeout(request,100);}
  if(state.kind==='audio'&&tool!=='music'){const box=$('livePreview');box.innerHTML='<audio id="liveAudio" controls preload="metadata" src="https://madar.local/source"></audio><small>معاينة المستوى حتى 100%؛ الزيادة والتدرج يظهران بعد التصدير.</small>';$('form').oninput=()=>{if($('gain'))$('liveAudio').volume=Math.min(1,Number($('gain').value)/100);};}
 };
 function editSave(){state.edits.push(JSON.stringify(state.segments));if(state.edits.length>50)state.edits.shift();state.redos=[];}
