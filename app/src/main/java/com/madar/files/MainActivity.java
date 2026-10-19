@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
                         try{File target="/source".equals(route)?source:FilesUtil.resolve(MainActivity.this,r.getUrl().getQueryParameter("name"));return mediaResponse(target,r);}catch(Exception e){return blocked();}
                     }
                     String file=r.getUrl().getPath();if(file==null||file.equals("/"))file="index.html";else file=file.substring(1);
-                    if(!file.matches("index\\.html|style\\.css|app\\.js|crop\\.js"))return blocked();
+                    if(!file.matches("index\\.html|style\\.css|app\\.js|crop\\.js|studio\\.js"))return blocked();
                     try{return new WebResourceResponse(file.endsWith("css")?"text/css":file.endsWith("js")?"application/javascript":"text/html","UTF-8",getAssets().open(file));}catch(IOException e){return blocked();}
                 }return blocked();
             }
@@ -75,14 +75,17 @@ public class MainActivity extends Activity {
         String action=request.getString("action");
         switch(action){
             case "ready":ready=true;history();restoreSource();if(VideoExportService.lastEvent!=null)send(new JSONObject(VideoExportService.lastEvent));if(Intent.ACTION_SEND.equals(getIntent().getAction())){Uri u=getIntent().getParcelableExtra(Intent.EXTRA_STREAM);getIntent().setAction(Intent.ACTION_MAIN);if(u!=null)importFile(u,null);}break;
-            case "pick":if(isBusy())return;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);String k=request.optString("kind","image");requestedKind=k;pick.setType(k.equals("video")?"video/*":k.equals("pdf")?"application/pdf":"image/*");startActivityForResult(pick,10);break;
+            case "pick":if(isBusy())return;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);String k=request.optString("kind","image");requestedKind=k;pick.setType(k.equals("audio")?"audio/*":k.equals("video")?"video/*":k.equals("pdf")?"application/pdf":"image/*");startActivityForResult(pick,10);break;
             case "export":export(request.getJSONObject("options"));break;
             case "preview":previewPage(request.optInt("page",1),request.optInt("token",0));break;
             case "copyText":String text=request.getString("text");if(text.length()>1000000)throw new IOException("النص طويل جدًا");((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("مدار",text));Toast.makeText(this,"تم نسخ النص",Toast.LENGTH_SHORT).show();break;
             case "saveText":String content=request.getString("text"),format=request.optString("format","txt");worker.execute(()->{try{File f=TextProcessor.save(this,content,format);send(FilesUtil.info(f).put("type","result"));history();}catch(Exception e){error("تعذر حفظ النص. "+message(e));}});break;
+            case "projectSave":String key=request.getString("key");JSONArray segments=request.getJSONArray("segments");if(key.length()>500||segments.length()>50)throw new IOException("المشروع كبير جدًا");getSharedPreferences("projects",0).edit().putString(key,segments.toString()).apply();Toast.makeText(this,"تم حفظ المشروع لهذا الملف",Toast.LENGTH_SHORT).show();break;
+            case "projectLoad":String data=getSharedPreferences("projects",0).getString(request.getString("key"),null);if(data==null)throw new IOException("لا يوجد مشروع محفوظ لهذا الملف");send(new JSONObject().put("type","project").put("segments",new JSONArray(data)));break;
             case "history":history();break;
             case "save":saving=FilesUtil.resolve(this,request.getString("name"));Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(FilesUtil.mime(saving)).putExtra(Intent.EXTRA_TITLE,saving.getName());startActivityForResult(save,11);break;
             case "share":case "view":openOutput(FilesUtil.resolve(this,request.getString("name")),action.equals("share"));break;
+            case "play":File playable=request.has("name")?FilesUtil.resolve(this,request.getString("name")):source;if(playable!=null)startActivity(new Intent(this,PlayerActivity.class).putExtra("path",playable.getAbsolutePath()).putExtra("title",playable==source?sourceInfo.optString("name"):playable.getName()));break;
             case "previewSource":if(source!=null){VideoView video=new VideoView(this);MediaController controls=new MediaController(this);video.setMediaController(controls);controls.setAnchorView(video);video.setVideoURI(Uri.fromFile(source));AlertDialog dialog=new AlertDialog.Builder(this).setTitle("معاينة الفيديو").setView(video).setPositiveButton("إغلاق",null).create();dialog.setOnDismissListener(d->video.stopPlayback());dialog.show();video.setOnPreparedListener(mp->{mp.setLooping(false);video.start();});video.setOnErrorListener((mp,what,extra)->{error("تعذر تشغيل هذا الفيديو في المعاينة");dialog.dismiss();return true;});}break;
             case "cancel":startService(new Intent(this,VideoExportService.class).setAction("cancel"));break;
             default:throw new IllegalArgumentException("طلب غير معروف");
@@ -98,7 +101,7 @@ public class MainActivity extends Activity {
                 String name="ملف",mime=getContentResolver().getType(uri);long declared=-1;
                 try(Cursor cursor=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME,OpenableColumns.SIZE},null,null,null)){if(cursor!=null&&cursor.moveToFirst()){name=cursor.getString(0);if(!cursor.isNull(1))declared=cursor.getLong(1);}}
                 if(mime==null)mime="";
-                String kind=mime.startsWith("image/")?"image":mime.startsWith("video/")?"video":mime.equals("application/pdf")?"pdf":expected;
+                String kind=mime.startsWith("image/")?"image":mime.startsWith("audio/")?"audio":mime.startsWith("video/")?"video":mime.equals("application/pdf")?"pdf":expected;
                 if(kind==null&&name!=null&&name.toLowerCase(Locale.ROOT).endsWith(".pdf"))kind="pdf";
                 if(kind==null)throw new IOException("نوع الملف غير مدعوم. اختر صورة أو فيديو أو PDF");
                 long available=getFilesDir().getUsableSpace();if(declared>available-64L*1024*1024)throw new IOException("المساحة المتاحة لا تكفي لاستيراد الملف");
@@ -111,7 +114,7 @@ public class MainActivity extends Activity {
                 if(kind.equals("image")){
                     final int[] dimensions=new int[2];Bitmap b=ImageDecoder.decodeBitmap(ImageDecoder.createSource(imported),(d,i,s)->{dimensions[0]=i.getSize().getWidth();dimensions[1]=i.getSize().getHeight();float scale=Math.min(1f,640f/Math.max(dimensions[0],dimensions[1]));d.setTargetSize(Math.max(1,Math.round(dimensions[0]*scale)),Math.max(1,Math.round(dimensions[1]*scale)));d.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);});
                     try{info.put("width",dimensions[0]).put("height",dimensions[1]).put("thumbnail",FilesUtil.thumbnail(b));}finally{b.recycle();}
-                }else if(kind.equals("video")){
+                }else if(kind.equals("audio")){try(MediaMetadataRetriever mmr=new MediaMetadataRetriever()){mmr.setDataSource(imported.getAbsolutePath());info.put("duration",Long.parseLong(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION))).put("hasAudio",true).put("height",0);}}else if(kind.equals("video")){
                     try(MediaMetadataRetriever mmr=new MediaMetadataRetriever()){mmr.setDataSource(imported.getAbsolutePath());String hasVideo=mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO);if(!"yes".equals(hasVideo))throw new IOException("لا يوجد مسار فيديو قابل للقراءة");int w=Integer.parseInt(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)),h=Integer.parseInt(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));String rot=mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);if("90".equals(rot)||"270".equals(rot)){int t=w;w=h;h=t;}info.put("width",w).put("height",h).put("duration",Long.parseLong(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION))).put("hasAudio","yes".equals(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)));Bitmap b=mmr.getScaledFrameAtTime(0,MediaMetadataRetriever.OPTION_CLOSEST_SYNC,480,480);if(b!=null)try{info.put("thumbnail",FilesUtil.thumbnail(b));}finally{b.recycle();}}
                 }else{
                     try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(imported,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer pdf=new PdfRenderer(fd)){if(pdf.getPageCount()==0)throw new IOException("ملف PDF فارغ");info.put("pages",pdf.getPageCount());Bitmap b=PdfProcessor.render(pdf,0,400);try{info.put("thumbnail",FilesUtil.thumbnail(b));}finally{b.recycle();}}
@@ -123,10 +126,10 @@ public class MainActivity extends Activity {
     private void export(JSONObject o)throws Exception{
         if(isBusy())return;File input=source;JSONObject info=sourceInfo;if(input==null||info==null)throw new IOException("اختر الملف أولًا");
         String kind=info.getString("kind");if(!kind.equals(o.getString("kind")))throw new IOException("نوع الملف لا يطابق الأداة");
-        if(kind.equals("video")){
+        if(kind.equals("video")||kind.equals("audio")){
             if((o.optString("tool").equals("audio")||o.optString("tool").equals("music"))&&!info.optBoolean("hasAudio"))throw new IOException("الفيديو لا يحتوي على صوت");
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
-            Intent service=new Intent(this,VideoExportService.class).putExtra("input",input.getAbsolutePath()).putExtra("options",o.toString()).putExtra("duration",info.getLong("duration")).putExtra("height",info.getInt("height"));startForegroundService(service);
+            Intent service=new Intent(this,VideoExportService.class).putExtra("input",input.getAbsolutePath()).putExtra("options",o.toString()).putExtra("duration",info.getLong("duration")).putExtra("height",info.optInt("height",0));startForegroundService(service);
         }else{
             working=true;worker.execute(()->{try{
                 String tool=o.optString("tool");

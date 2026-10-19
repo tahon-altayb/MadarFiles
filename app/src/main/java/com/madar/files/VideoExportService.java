@@ -25,12 +25,13 @@ public class VideoExportService extends Service {
     private Thread musicWorker;
     private PowerManager.WakeLock cpuLock;
     private long began;
+    private String stageText="جارٍ التجهيز…";
     private NotificationManager notifications;
     @Override public void onCreate(){super.onCreate();notifications=getSystemService(NotificationManager.class);notifications.createNotificationChannel(new NotificationChannel("exports","تصدير الفيديو",NotificationManager.IMPORTANCE_LOW));}
     private Notification notification(int progress){
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent cancel=PendingIntent.getService(this,1,new Intent(this,VideoExportService.class).setAction("cancel"),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Builder(this,"exports").setSmallIcon(com.madar.files.R.drawable.ic_launcher).setContentTitle("مدار · تصدير الفيديو").setContentText(progress<0?"جارٍ التجهيز…":progress+"%").setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setProgress(100,Math.max(0,progress),progress<0).addAction(new Notification.Action.Builder(null,"إلغاء",cancel).build()).build();
+        return new Notification.Builder(this,"exports").setSmallIcon(com.madar.files.R.drawable.ic_launcher).setContentTitle("مدار · تصدير الفيديو").setContentText(stageText).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setProgress(100,Math.max(0,progress),progress<0).addAction(new Notification.Action.Builder(null,"إلغاء",cancel).build()).build();
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         if(intent==null){stopSelf();return START_NOT_STICKY;}
@@ -42,6 +43,7 @@ public class VideoExportService extends Service {
             JSONObject o=new JSONObject(intent.getStringExtra("options"));String tool=o.getString("tool");boolean audio=tool.equals("audio");
             File input=new File(intent.getStringExtra("input"));if(!input.isFile()||!input.getCanonicalPath().startsWith(getCacheDir().getCanonicalPath()+File.separator))throw new IllegalArgumentException("ملف المصدر غير موجود");
             long duration=intent.getLongExtra("duration",0);if(duration<=0)throw new IllegalArgumentException("مدة الفيديو غير معروفة");
+            if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
             if(tool.equals("music")){startMusic(input,o);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));
             if(tool.equals("trim")){
@@ -60,17 +62,27 @@ public class VideoExportService extends Service {
                 @Override public void onCompleted(Composition composition,ExportResult result){if(partial==null||partial.length()==0||!partial.renameTo(output)){finish("error","تعذر حفظ نتيجة الفيديو");return;}try{publish(FilesUtil.info(output).put("type","result"));}catch(Exception e){finish("error","تعذر قراءة النتيجة");return;}finish("done",null);}
                 @Override public void onError(Composition composition,ExportResult result,ExportException error){finish("error","تعذر تصدير الفيديو على هذا الجهاز ("+error.errorCode+"). جرّب H.264 ودقة أقل وتأكد من المساحة المتاحة.");}
             });
-            transformer=builder.build();transformer.start(edited,partial.getAbsolutePath());
+            transformer=builder.build();
+            if(tool.equals("editor")){
+                org.json.JSONArray ranges=o.getJSONArray("segments");if(ranges.length()<1||ranges.length()>50)throw new IllegalArgumentException("اختر من جزء واحد إلى 50 جزءًا");List<EditedMediaItem> items=new ArrayList<>();
+                for(int i=0;i<ranges.length();i++){org.json.JSONArray range=ranges.getJSONArray(i);double start=range.getDouble(0),end=range.getDouble(1);if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||end<=start||end*1000>duration+100)throw new IllegalArgumentException("حدود أحد الأجزاء غير صحيحة");MediaItem item=new MediaItem.Builder().setUri(Uri.fromFile(input)).setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(Math.round(start*1000)).setEndPositionMs(Math.min(duration,Math.round(end*1000))).build()).build();items.add(new EditedMediaItem.Builder(item).setEffects(new Effects(Collections.emptyList(),effects)).build());}
+                transformer.start(new Composition.Builder(new EditedMediaItemSequence(items)).build(),partial.getAbsolutePath());
+            }else transformer.start(edited,partial.getAbsolutePath());
             publish(new JSONObject().put("type","progress").put("progress",-1));handler.post(progress);
         }catch(Exception e){finish("error",e.getMessage()==null?"تعذر بدء التصدير":e.getMessage());}
         return START_NOT_STICKY;
     }
+    private void startSound(File input,JSONObject options)throws Exception{
+        cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:AudioEdit");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);
+        MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
+        musicWorker=new Thread(()->{File result=null;try{result=AudioEditor.render(this,input,options,musicCancel,callback);MusicSeparator.check(musicCancel);JSONObject data=FilesUtil.info(result).put("type","result");handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});}catch(java.util.concurrent.CancellationException e){if(result!=null)result.delete();handler.post(()->{musicWorker=null;finish("cancelled",null);});}catch(Exception|OutOfMemoryError e){handler.post(()->{musicWorker=null;finish("error","تعذر تعديل الصوت: "+e.getMessage());});}},"madar-audio-edit");musicWorker.start();
+    }
     private void startMusic(File input,JSONObject options)throws Exception{
         cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:MusicSeparation");cpuLock.acquire(5L*60*60*1000);
-        musicCancel.set(false);boolean sample=options.optBoolean("sample",false),audioOnly=options.optString("musicOutput","video").equals("audio");long limitUs=sample?10000000L:0;
+        musicCancel.set(false);boolean sample=options.optBoolean("sample",false),audioOnly=options.optString("kind").equals("audio")||options.optString("musicOutput","video").equals("audio");long limitUs=sample?10000000L:0;
         output=FilesUtil.output(this,audioOnly?"m4a":"mp4");partial=new File(output.getAbsolutePath()+".partial");
         publish(new JSONObject().put("type","progress").put("progress",0).put("message","فك الصوت محليًا"));
-        MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
+        MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
         musicWorker=new Thread(()->{
             AudioPipeline.Decoded decoded=null;File clean=null;
             try{decoded=AudioPipeline.decode(this,input,limitUs,musicCancel,callback);clean=MusicSeparator.separate(this,decoded,musicCancel,callback);MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,decoded.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);

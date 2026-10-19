@@ -11,7 +11,12 @@ final class ImageProcessor {
         Bitmap b=FilesUtil.image(source,4096);File result=null;
         try {
             String tool=o.getString("tool"),format=o.optString("format","jpg");
-            if(tool.equals("crop")) {
+            if(tool.equals("adjust")){
+                float brightness=1+(float)FilesUtil.bounded(o.optDouble("brightness",0),-100,100)/100f,contrast=(float)FilesUtil.bounded(o.optDouble("contrast",100),50,150)/100f,saturation=(float)FilesUtil.bounded(o.optDouble("saturation",100),0,200)/100f;
+                ColorMatrix matrix=new ColorMatrix();matrix.setSaturation(saturation);ColorMatrix scale=new ColorMatrix(new float[]{brightness,0,0,0,0,0,brightness,0,0,0,0,0,brightness,0,0,0,0,0,1,0});matrix.postConcat(scale);float shift=127.5f*(1-contrast);matrix.postConcat(new ColorMatrix(new float[]{contrast,0,0,0,shift,0,contrast,0,0,shift,0,0,contrast,0,shift,0,0,0,1,0}));
+                Bitmap next=Bitmap.createBitmap(b.getWidth(),b.getHeight(),Bitmap.Config.ARGB_8888);Paint p=new Paint(Paint.FILTER_BITMAP_FLAG);p.setColorFilter(new ColorMatrixColorFilter(matrix));new Canvas(next).drawBitmap(b,0,0,p);b.recycle();b=next;
+            }else if(tool.equals("flip")){Matrix m=new Matrix();boolean horizontal=o.optString("flipAxis","horizontal").equals("horizontal");m.setScale(horizontal?-1:1,horizontal?1:-1);Bitmap next=Bitmap.createBitmap(b,0,0,b.getWidth(),b.getHeight(),m,true);FilesUtil.replace(b,next);b=next;
+            }else if(tool.equals("crop")) {
                 JSONObject r=o.getJSONObject("crop");double x=FilesUtil.bounded(r.getDouble("x"),0,.999),y=FilesUtil.bounded(r.getDouble("y"),0,.999);
                 double w=FilesUtil.bounded(r.getDouble("w"),.001,1-x),h=FilesUtil.bounded(r.getDouble("h"),.001,1-y);
                 int left=(int)(x*b.getWidth()),top=(int)(y*b.getHeight());Bitmap next=Bitmap.createBitmap(b,left,top,Math.max(1,Math.min(b.getWidth()-left,(int)(w*b.getWidth()))),Math.max(1,Math.min(b.getHeight()-top,(int)(h*b.getHeight()))));FilesUtil.replace(b,next);b=next;

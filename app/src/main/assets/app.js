@@ -55,6 +55,7 @@ let previewImage=null;
 function attachPreview(){
  const container=document.createElement('div');container.className='livePreview';container.id='livePreview';
  if(state.kind==='image'){container.innerHTML='<div class="previewLabel">معاينة مباشرة</div><canvas id="liveCanvas"></canvas><small id="previewSize"></small>';previewImage=new Image();previewImage.onload=drawImagePreview;previewImage.src=state.source.thumbnail;}
+ else if(state.kind==='audio')container.innerHTML='<audio id="liveAudio" controls src="https://madar.local/source"></audio>';
  else if(state.kind==='video')container.innerHTML='<div class="previewLabel">معاينة الفيديو</div><video id="liveVideo" controls playsinline preload="metadata"></video><small id="previewSize">معاينة القص والأبعاد والصوت؛ جودة الضغط تظهر بعد التصدير.</small>';
  else container.innerHTML='<div class="previewLabel">معاينة الصفحة المحددة</div><img id="pagePreview" alt="معاينة الصفحة"><small id="pagePreviewStatus">جارٍ عرض الصفحة…</small>';
  $('form').prepend(container);
