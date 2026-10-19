@@ -43,6 +43,7 @@ public class VideoExportService extends Service {
             JSONObject o=new JSONObject(intent.getStringExtra("options"));String tool=o.getString("tool");boolean audio=tool.equals("audio");
             File input=new File(intent.getStringExtra("input"));if(!input.isFile()||!input.getCanonicalPath().startsWith(getCacheDir().getCanonicalPath()+File.separator))throw new IllegalArgumentException("ملف المصدر غير موجود");
             long duration=intent.getLongExtra("duration",0);if(duration<=0)throw new IllegalArgumentException("مدة الفيديو غير معروفة");
+            if(tool.equals("subtitles")){startSpeech(input,o);return START_NOT_STICKY;}
             if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
             if(tool.equals("music")){startMusic(input,o);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));
@@ -71,6 +72,11 @@ public class VideoExportService extends Service {
             publish(new JSONObject().put("type","progress").put("progress",-1));handler.post(progress);
         }catch(Exception e){finish("error",e.getMessage()==null?"تعذر بدء التصدير":e.getMessage());}
         return START_NOT_STICKY;
+    }
+    private void startSpeech(File input,JSONObject options)throws Exception{
+        cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:Speech");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);
+        MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
+        musicWorker=new Thread(()->{try{String language=options.optString("language","en"),target=options.optString("target","original");org.json.JSONArray cues=SpeechProcessor.transcribe(this,input,language,musicCancel,callback);if(!target.equals("original"))cues=LocalTranslation.translate(cues,language,target,musicCancel,callback);MusicSeparator.check(musicCancel);File f=SpeechProcessor.srt(this,cues);JSONObject data=FilesUtil.info(f).put("type","subtitles").put("cues",cues);handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});}catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر التفريغ أو الترجمة: "+(e.getMessage()==null?"تحقق من توفر نموذج اللغة والمساحة":e.getMessage()));});}},"madar-speech");musicWorker.start();
     }
     private void startSound(File input,JSONObject options)throws Exception{
         cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:AudioEdit");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);

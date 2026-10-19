@@ -51,7 +51,7 @@ public class ProcessingTest {
         android.webkit.WebView[] found=new android.webkit.WebView[1];
         InstrumentationRegistry.getInstrumentation().runOnMainSync(()->found[0]=findWeb(activity.getWindow().getDecorView()));
         assertNotNull(found[0]);long deadline=System.currentTimeMillis()+15000;
-        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(found[0],"typeof window.receive==='function' && document.getElementById('tools').children.length===10")))break;Thread.sleep(100);}
+        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(found[0],"typeof window.receive==='function' && document.getElementById('tools').children.length===9")))break;Thread.sleep(100);}
         assertEquals("true",evaluate(found[0],"typeof window.receive==='function'"));
         assertEquals("true",evaluate(found[0],"getComputedStyle(document.body).backgroundColor==='rgb(248, 244, 237)' && document.body.scrollWidth<=innerWidth"));
         String thumb;Bitmap b=FilesUtil.image(input,480);try{thumb=FilesUtil.thumbnail(b);}finally{b.recycle();}
@@ -62,7 +62,7 @@ public class ProcessingTest {
         evaluate(found[0],"openTool('resize');true");Thread.sleep(200);assertEquals("true",evaluate(found[0],"!document.getElementById('sheet').hidden && !!document.getElementById('width')"));
         evaluate(found[0],"document.getElementById('width').value=100;document.getElementById('width').dispatchEvent(new Event('input',{bubbles:true}));true");assertEquals("true",evaluate(found[0],"document.getElementById('previewSize').textContent.includes('100 × 50')"));
         evaluate(found[0],"openTool('crop');true");assertEquals("8",evaluate(found[0],"document.querySelectorAll('.cropHandle').length"));
-        evaluate(found[0],"document.getElementById('sheet').hidden=true;selectKind('video');true");assertEquals("true",evaluate(found[0],"document.getElementById('tools').children.length===10"));
+        evaluate(found[0],"document.getElementById('sheet').hidden=true;selectKind('video');true");assertEquals("true",evaluate(found[0],"document.getElementById('tools').children.length===11"));
     }
     private android.webkit.WebView findWeb(android.view.View v){if(v instanceof android.webkit.WebView)return (android.webkit.WebView)v;if(v instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)v;for(int i=0;i<g.getChildCount();i++){android.webkit.WebView w=findWeb(g.getChildAt(i));if(w!=null)return w;}}return null;}
     private String evaluate(android.webkit.WebView web,String script)throws Exception{java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);String[] value=new String[1];InstrumentationRegistry.getInstrumentation().runOnMainSync(()->web.evaluateJavascript(script,result->{value[0]=result;latch.countDown();}));assertTrue(latch.await(5,java.util.concurrent.TimeUnit.SECONDS));return value[0];}
@@ -102,6 +102,13 @@ public class ProcessingTest {
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(c);File pdf=new File(c.getCacheDir(),"organize.pdf");
         try(com.tom_roush.pdfbox.pdmodel.PDDocument doc=new com.tom_roush.pdfbox.pdmodel.PDDocument()){for(String text:new String[]{"First page","Second page"}){com.tom_roush.pdfbox.pdmodel.PDPage page=new com.tom_roush.pdfbox.pdmodel.PDPage();doc.addPage(page);try(com.tom_roush.pdfbox.pdmodel.PDPageContentStream stream=new com.tom_roush.pdfbox.pdmodel.PDPageContentStream(doc,page)){stream.beginText();stream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA,20);stream.newLineAtOffset(50,700);stream.showText(text);stream.endText();}}doc.save(pdf);}
         File sorted=PdfProcessor.export(c,pdf,new JSONObject().put("tool","pages").put("pageOrder","2,1").put("pageRotation",90));String text=TextProcessor.pdf(c,sorted,1,2,t->{});assertTrue(text.indexOf("Second")<text.indexOf("First"));try(com.tom_roush.pdfbox.pdmodel.PDDocument doc=com.tom_roush.pdfbox.pdmodel.PDDocument.load(sorted)){assertEquals(90,doc.getPage(0).getRotation());}pdf.delete();
+    }
+    @Test public void localSpeechProducesTimedSubtitles()throws Exception{
+        File speech=new File(c.getCacheDir(),"speech-test.wav");try(InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("speech-test.wav");OutputStream out=new FileOutputStream(speech)){FilesUtil.copy(in,out);}
+        org.json.JSONArray cues=SpeechProcessor.transcribe(c,speech,"en",new java.util.concurrent.atomic.AtomicBoolean(),(n,t)->{});assertTrue("speech cues",cues.length()>0);assertTrue(cues.getJSONObject(0).getString("text").length()>5);File srt=SpeechProcessor.srt(c,cues);assertTrue(java.nio.file.Files.readString(srt.toPath()).contains(" --> "));speech.delete();
+    }
+    @Test public void localTranslationProducesArabic()throws Exception{
+        org.json.JSONArray cues=new org.json.JSONArray().put(new JSONObject().put("start",0).put("end",3).put("text","Hello, welcome to this video."));org.json.JSONArray out=LocalTranslation.translate(cues,"en","ar",new java.util.concurrent.atomic.AtomicBoolean(),(n,t)->{});assertTrue(out.getJSONObject(0).getString("text").matches("(?s).*[\\u0600-\\u06ff].*"));assertEquals(3,out.getJSONObject(0).getInt("end"));
     }
     private String videoDigest(File file)throws Exception{android.media.MediaExtractor ex=new android.media.MediaExtractor();try{ex.setDataSource(file.getAbsolutePath());ex.selectTrack(AudioPipeline.track(ex,"video/"));java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");java.nio.ByteBuffer buffer=java.nio.ByteBuffer.allocate(1024*1024);while(true){buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;byte[] data=new byte[n];buffer.position(0);buffer.get(data);digest.update(data);ex.advance();}return java.util.Arrays.toString(digest.digest());}finally{ex.release();}}
     private File latest(){File[] files=FilesUtil.directory(c).listFiles(f->!f.getName().endsWith(".partial"));assertNotNull(files);java.util.Arrays.sort(files,(a,b)->Long.compare(b.lastModified(),a.lastModified()));assertTrue(files.length>0);return files[0];}

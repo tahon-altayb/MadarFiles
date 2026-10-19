@@ -32,6 +32,15 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
 for lang in ['ara','eng']:
  get(f'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/{lang}.traineddata',ASSETS/(lang+'.traineddata'),{'ara':'e3206d3dc87fd50c24a0fb9f01838615911d25168f4e64415244b67d2bb3e729','eng':'7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2'}[lang])
 get('https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/UVR-MDX-NET-Voc_FT.onnx',ASSETS/'vocals.onnx','e411182ce2c53541fefdcc99a8f46f2fe03978eb22038b9497c1d9d95a00fad4')
+# Multilingual Whisper tiny INT8; only compact inference files are packaged.
+archive=get('https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2',VENDOR/'whisper-tiny.tar.bz2')
+with tarfile.open(archive) as t:
+ for name in ['tiny-encoder.int8.onnx','tiny-decoder.int8.onnx','tiny-tokens.txt']:
+  m=next(m for m in t.getmembers() if m.isfile() and Path(m.name).name==name)
+  with t.extractfile(m) as src,(ASSETS/name).open('wb') as out:shutil.copyfileobj(src,out)
+ test=next((m for m in t.getmembers() if m.isfile() and m.name.endswith('/test_wavs/0.wav')),None)
+ if test:
+  with t.extractfile(test) as src,(ROOT/'app/src/androidTest/assets/speech-test.wav').open('wb') as out:shutil.copyfileobj(src,out)
 # A record of the exact bytes bundled in this build is retained with the APK.
 manifest={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in ASSETS.iterdir() if p.is_file() and p.suffix!='.json'}
 (ASSETS/'checksums.json').write_text(json.dumps(manifest,indent=2))
