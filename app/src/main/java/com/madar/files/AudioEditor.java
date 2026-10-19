@@ -6,6 +6,8 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONObject;
 final class AudioEditor {
+ static{System.loadLibrary("madar_audio");}
+ private static native void mp3(String input,String output,AtomicBoolean cancel);
  static File render(Context c,File source,JSONObject o,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   AudioPipeline.Decoded decoded=null;File pcm=null,encoded=null,result=null;
   try{decoded=AudioPipeline.decode(c,source,0,cancel,progress);long total=decoded.pcm.length()/4;double duration=total/(double)decoded.sampleRate;
@@ -13,7 +15,9 @@ final class AudioEditor {
    if(o.optString("kind").equals("video")&&(start>.001||end<duration-.2))throw new IOException("تعديل مستوى صوت الفيديو يحافظ على مدته؛ استخدم المحرر للقص");
    double gain=FilesUtil.bounded(o.optDouble("gain",100),0,200)/100,fade=FilesUtil.bounded(o.optDouble("fade",0),0,10);long from=Math.round(start*44100),frames=Math.min(Math.round(end*44100),Math.round(duration*44100))-from;
    pcm=File.createTempFile("madar_audioedit_",".pcm",c.getCacheDir());try(RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r");OutputStream out=new BufferedOutputStream(new FileOutputStream(pcm))){for(long at=0;at<frames;at+=44100){MusicSeparator.check(cancel);int count=(int)Math.min(44100,frames-at);float[] f=MusicSeparator.readResampled(in,decoded.sampleRate,from+at,count,total);byte[] bytes=new byte[count*4];for(int i=0;i<count;i++){double edge=fade<=0?1:Math.min(1,Math.min((at+i)/(44100*fade),(frames-at-i)/(44100*fade)));for(int ch=0;ch<2;ch++){short v=(short)Math.round(Math.max(-1,Math.min(1,f[i*2+ch]*gain*edge))*32767);bytes[i*4+ch*2]=(byte)v;bytes[i*4+ch*2+1]=(byte)(v>>8);}}out.write(bytes);progress.update(10+(int)(70*(at+count)/Math.max(1,frames)),"تعديل الصوت محليًا");}}
-   String format=o.optString("format","m4a");boolean video=o.optString("kind").equals("video");if(video)format="mp4";if(!format.matches("wav|m4a|aac|mp4"))throw new IOException("صيغة الصوت غير مدعومة");result=FilesUtil.output(c,format);
+   String format=o.optString("format","m4a");boolean video=o.optString("kind").equals("video");if(video)format="mp4";if(!format.matches("wav|m4a|aac|mp4|mp3|flac|ogg"))throw new IOException("صيغة الصوت غير مدعومة");result=FilesUtil.output(c,format);
+   if(format.equals("flac")||format.equals("ogg")){ExtraAudioEncoder.encode(pcm,result,format.equals("ogg"),cancel);return result;}
+   if(format.equals("mp3")){mp3(pcm.getPath(),result.getPath(),cancel);MusicSeparator.check(cancel);return result;}
    if(format.equals("wav")){wave(pcm,result);return result;}
    encoded=format.equals("aac")?File.createTempFile("madar_aac_",".m4a",c.getCacheDir()):result;
    AudioPipeline.mux(source,pcm,encoded,video?decoded.offsetUs:0,0,!video,cancel,progress);

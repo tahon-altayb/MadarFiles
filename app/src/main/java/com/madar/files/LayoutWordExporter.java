@@ -1,0 +1,40 @@
+package com.madar.files;
+import android.content.Context;
+import android.graphics.*;
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
+import com.tom_roush.pdfbox.pdmodel.*;
+import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImage;
+import com.tom_roush.pdfbox.pdmodel.graphics.state.PDGraphicsState;
+import com.tom_roush.pdfbox.contentstream.PDFGraphicsStreamEngine;
+import com.tom_roush.pdfbox.text.*;
+import com.tom_roush.pdfbox.cos.COSName;
+import com.tom_roush.pdfbox.util.Matrix;
+import java.io.*;
+import java.util.*;
+import java.util.zip.*;
+import org.json.JSONObject;
+/** Editable positioned text and embedded raster images. Vector art and complex tables need review. */
+final class LayoutWordExporter {
+ static String xml(String s){return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;");}
+ static class Line{String text,font;float x,y,w,h,size;boolean rtl;}
+ static class Picture{byte[] bytes;float x,y,w,h;}
+ static File export(Context c,File source,int first,int last)throws Exception{
+  PDFBoxResourceLoader.init(c);File output=FilesUtil.output(c,"docx");
+  try(PDDocument doc=PDDocument.load(source);ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(output))){if(first<1||last<first||last>doc.getNumberOfPages()||last-first>=20)throw new IOException("اختر نطاقًا لا يتجاوز 20 صفحة");StringBuilder body=new StringBuilder(),rels=new StringBuilder();int shape=1,image=1;long imageBytes=0;
+   for(int pageNo=first;pageNo<=last;pageNo++){PDPage page=doc.getPage(pageNo-1);float pageW=page.getCropBox().getWidth(),pageH=page.getCropBox().getHeight();List<Line> lines=new ArrayList<>();
+    PDFTextStripper strip=new PDFTextStripper(){@Override protected void writeString(String text,List<TextPosition> positions)throws IOException{if(text.trim().isEmpty()||positions.isEmpty())return;Line l=new Line();l.text=text;l.x=Float.MAX_VALUE;l.y=Float.MAX_VALUE;float right=0,bottom=0;l.size=positions.get(0).getFontSizeInPt();l.font=positions.get(0).getFont().getName();for(TextPosition p:positions){l.x=Math.min(l.x,p.getXDirAdj());l.y=Math.min(l.y,p.getYDirAdj()-p.getHeightDir());right=Math.max(right,p.getXDirAdj()+p.getWidthDirAdj());bottom=Math.max(bottom,p.getYDirAdj());}l.w=right-l.x;l.h=Math.max(l.size*1.3f,bottom-l.y+3);l.rtl=text.matches("(?s).*[\\u0600-\\u06ff].*");lines.add(l);}};strip.setSortByPosition(true);strip.setStartPage(pageNo);strip.setEndPage(pageNo);strip.getText(doc);
+    body.append("<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/></w:pPr>");
+    if(!lines.isEmpty()){
+     List<Picture> pictures=new ArrayList<>();PDFGraphicsStreamEngine graphics=new PDFGraphicsStreamEngine(page){PointF point=new PointF();public void drawImage(PDImage img)throws IOException{if(pictures.size()>=30)return;Bitmap b=img.getImage();if(b==null)return;try{float scale=Math.min(1,2000f/Math.max(b.getWidth(),b.getHeight()));Bitmap use=scale<1?Bitmap.createScaledBitmap(b,Math.max(1,Math.round(b.getWidth()*scale)),Math.max(1,Math.round(b.getHeight()*scale)),true):b;ByteArrayOutputStream bytes=new ByteArrayOutputStream();use.compress(Bitmap.CompressFormat.PNG,100,bytes);if(use!=b)use.recycle();Matrix m=getGraphicsState().getCurrentTransformationMatrix();Picture p=new Picture();p.bytes=bytes.toByteArray();p.x=m.getTranslateX();p.w=Math.abs(m.getScalingFactorX());p.h=Math.abs(m.getScalingFactorY());p.y=pageH-m.getTranslateY()-p.h;if(p.w>0&&p.h>0)pictures.add(p);}finally{b.recycle();}}public void appendRectangle(PointF a,PointF b,PointF d,PointF e){}public void clip(int n){}public void moveTo(float x,float y){point.set(x,y);}public void lineTo(float x,float y){point.set(x,y);}public void curveTo(float a,float b,float d,float e,float f,float g){point.set(f,g);}public PointF getCurrentPoint(){return point;}public void closePath(){}public void endPath(){}public void strokePath(){}public void fillPath(int n){}public void fillAndStrokePath(int n){}public void shadingFill(COSName name){}};graphics.processPage(page);
+     for(Picture p:pictures){imageBytes+=p.bytes.length;if(imageBytes>40L*1024*1024)throw new IOException("صور المستند كبيرة؛ اختر صفحات أقل");String id="rId"+image;rels.append("<Relationship Id=\"").append(id).append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image").append(image).append(".png\"/>");entry(zip,"word/media/image"+image+".png",p.bytes);body.append("<w:r><w:pict><v:shape id=\"image").append(shape++).append("\" type=\"#_x0000_t75\" style=\"").append(style(p.x,p.y,p.w,p.h)).append("\" stroked=\"f\"><v:imagedata r:id=\"").append(id).append("\"/></v:shape></w:pict></w:r>");image++;}
+     for(Line l:lines){boolean bold=l.font.toLowerCase(Locale.ROOT).contains("bold"),italic=l.font.toLowerCase(Locale.ROOT).contains("italic")||l.font.toLowerCase(Locale.ROOT).contains("oblique");body.append("<w:r><w:pict><v:shape id=\"text").append(shape++).append("\" style=\"").append(style(l.x,Math.max(0,l.y-2),Math.min(pageW-l.x,Math.max(l.w+12,l.size*2)),l.h+5)).append("\" filled=\"f\" stroked=\"f\"><v:textbox inset=\"0,0,0,0\"><w:txbxContent><w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\"/>").append(l.rtl?"<w:bidi/><w:jc w:val=\"right\"/>":"").append("</w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/><w:sz w:val=\"").append(Math.max(10,Math.round(l.size*2))).append("\"/><w:szCs w:val=\"").append(Math.max(10,Math.round(l.size*2))).append("\"/>").append(bold?"<w:b/><w:bCs/>":"").append(italic?"<w:i/>":"").append(l.rtl?"<w:rtl/>":"").append("</w:rPr><w:t xml:space=\"preserve\">").append(xml(l.text)).append("</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></w:r>");}
+    }else{String text=TextProcessor.pdf(c,source,pageNo,pageNo,t->{});body.append("<w:r><w:t xml:space=\"preserve\">").append(xml(text)).append("</w:t></w:r>");}
+    body.append("</w:p>");String section="<w:sectPr><w:pgSz w:w=\""+Math.round(pageW*20)+"\" w:h=\""+Math.round(pageH*20)+"\"/><w:pgMar w:top=\"0\" w:right=\"0\" w:bottom=\"0\" w:left=\"0\" w:header=\"0\" w:footer=\"0\"/></w:sectPr>";if(pageNo<last)body.append("<w:p><w:pPr>").append(section).append("</w:pPr></w:p>");else body.append(section);
+   }
+   entry(zip,"[Content_Types].xml","<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Default Extension=\"png\" ContentType=\"image/png\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>");
+   entry(zip,"_rels/.rels","<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>");entry(zip,"word/_rels/document.xml.rels","<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"+rels+"</Relationships>");entry(zip,"word/document.xml","<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:v=\"urn:schemas-microsoft-com:vml\"><w:body>"+body+"</w:body></w:document>");return output;
+  }catch(Exception|OutOfMemoryError e){output.delete();throw e;}
+ }
+ static String style(float x,float y,float w,float h){return String.format(Locale.US,"position:absolute;margin-left:%.2fpt;margin-top:%.2fpt;width:%.2fpt;height:%.2fpt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page",x,y,w,h);}
+ static void entry(ZipOutputStream zip,String name,String text)throws IOException{entry(zip,name,text.getBytes(java.nio.charset.StandardCharsets.UTF_8));}static void entry(ZipOutputStream zip,String name,byte[] bytes)throws IOException{zip.putNextEntry(new ZipEntry(name));zip.write(bytes);zip.closeEntry();}
+}

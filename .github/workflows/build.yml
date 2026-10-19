@@ -42,7 +42,9 @@ jobs:
           path: .signing/madar-development.keystore
           key: madar-personal-development-key-v2
       - name: Prepare offline model and native assets
-        run: python3 scripts/prepare_models.py
+        run: |
+          python3 scripts/prepare_models.py
+          python3 scripts/prepare_lame.py
       - name: Prepare speech and music test fixture
         run: |
           sudo apt-get update -qq

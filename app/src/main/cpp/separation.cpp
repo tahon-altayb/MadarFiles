@@ -33,3 +33,11 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_com_madar_files_SpeechProcessor_r
  auto out=e->NewObjectArray(values.size(),e->FindClass("java/lang/String"),nullptr);for(int i=0;i<(int)values.size();i++){jstring s=e->NewStringUTF(values[i].c_str());e->SetObjectArrayElement(out,i,s);e->DeleteLocalRef(s);}if(result)SherpaOnnxDestroyOfflineRecognizerResult(result);SherpaOnnxDestroyOfflineStream(stream);return out;
 }
 extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechProcessor_close(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxDestroyOfflineRecognizer(reinterpret_cast<const SherpaOnnxOfflineRecognizer*>(handle));}
+#include <cstdio>
+#include "lame.h"
+extern "C" JNIEXPORT void JNICALL Java_com_madar_files_AudioEditor_mp3(JNIEnv* e,jclass,jstring input,jstring output,jobject cancel){
+ const char* a=e->GetStringUTFChars(input,nullptr);const char* b=e->GetStringUTFChars(output,nullptr);FILE* in=std::fopen(a,"rb");FILE* out=std::fopen(b,"wb");e->ReleaseStringUTFChars(input,a);e->ReleaseStringUTFChars(output,b);
+ if(!in||!out){if(in)fclose(in);if(out)fclose(out);fail(e,"تعذر فتح ملفات MP3");return;}auto encoder=lame_init();if(!encoder){fclose(in);fclose(out);fail(e,"تعذر تحميل مرمز MP3");return;}lame_set_in_samplerate(encoder,44100);lame_set_num_channels(encoder,2);lame_set_brate(encoder,192);lame_set_quality(encoder,2);lame_set_write_id3tag_automatic(encoder,0);bool ok=lame_init_params(encoder)>=0;std::vector<short> pcm(1152*2);std::vector<unsigned char> bytes(16384);auto method=e->GetMethodID(e->GetObjectClass(cancel),"get","()Z");
+ while(ok){if(e->CallBooleanMethod(cancel,method)){ok=false;break;}size_t frames=fread(pcm.data(),sizeof(short)*2,1152,in);if(!frames)break;int n=lame_encode_buffer_interleaved(encoder,pcm.data(),frames,bytes.data(),bytes.size());if(n<0||fwrite(bytes.data(),1,n,out)!=(size_t)n){ok=false;break;}}
+ if(ok){int n=lame_encode_flush(encoder,bytes.data(),bytes.size());ok=n>=0&&fwrite(bytes.data(),1,n,out)==(size_t)n;}lame_close(encoder);fclose(in);if(fclose(out)!=0)ok=false;if(!ok)fail(e,"لم يكتمل ترميز MP3");
+}

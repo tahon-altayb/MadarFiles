@@ -10,3 +10,9 @@ MadarFiles uses local processing components. Copyright and licenses remain with 
 - UVR-MDX-NET-Voc_FT source separation model — UVR model contributors, distributed by the official sherpa-onnx source-separation-models release. Model authors retain rights to their model. https://github.com/k2-fsa/sherpa-onnx/releases/tag/source-separation-models
 
 Pinned checksums for bundled model bytes are recorded inside the APK at assets/models/checksums.json. The build script pins native release archive hashes and model hashes. Test audio is downloaded exclusively on CI from the source-separation project's public test assets, and is not included in the installed release application.
+
+## 1.2 additions
+
+- Whisper tiny multilingual ONNX exports from k2-fsa/sherpa-onnx, OpenAI Whisper MIT license. INT8 encoder, decoder and vocabulary bundled. Build-time checksums retained with verification artifacts.
+- Google ML Kit on-device translation 17.0.3. Language models download from Google on first use; inference is on device. Google terms apply.
+- LAME 3.100 MP3 encoder, LGPL 2.0 or later. Unmodified upstream source from Debian `lame_3.100.orig.tar.gz`; built by `scripts/prepare_lame.py`. License bundled as `LAME-COPYING.txt`. This public repository and script provide the integration source and reproducible relinking route with Android NDK; no proprietary modifications to LAME.

@@ -134,7 +134,8 @@ public class MainActivity extends Activity {
         }else{
             working=true;worker.execute(()->{try{
                 String tool=o.optString("tool");
-                if(tool.equals("ocr")||tool.equals("text")||tool.equals("word")){
+                if(tool.equals("layoutWord")){File f=LayoutWordExporter.export(this,input,o.optInt("first",1),o.optInt("last",1));working=false;send(FilesUtil.info(f).put("type","result"));}
+                else if(tool.equals("ocr")||tool.equals("text")||tool.equals("word")){
                     String text=kind.equals("image")?TextProcessor.image(this,input):TextProcessor.pdf(this,input,o.optInt("first",1),o.optInt("last",1),p->event("workProgress","message",p));
                     working=false;if(text.trim().isEmpty())throw new IOException("لم يُعثر على نص واضح في الملف");send(new JSONObject().put("type","text").put("text",text));
                 }else{File f=kind.equals("image")?ImageProcessor.export(this,input,o):PdfProcessor.export(this,input,o);working=false;send(FilesUtil.info(f).put("type","result"));}

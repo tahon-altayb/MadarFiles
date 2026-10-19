@@ -4,6 +4,7 @@ const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const elements=new Map();
 class Element{
+ set id(v){this._id=v;if(v)elements.set(v,this);}get id(){return this._id;}
  constructor(id=''){this.id=id;this.hidden=false;this.textContent='';this.style={};this.children=[];this.value='';this.type='';this.tagName='DIV';this.dataset={};this.attrs={};this.classList={add(){},remove(){},toggle(){}};}
  prepend(...c){this.children.unshift(...c);}after(){}remove(){}append(...c){this.children.push(...c);}replaceChildren(...c){this.children=c;}
  removeAttribute(k){delete this.attrs[k];}setAttribute(k,v){this.attrs[k]=v;}
@@ -37,3 +38,12 @@ const resized=run("CropMath.resize({x:.2,y:.2,w:.5,h:.5},'se',.2,.2)");assert.ok
 const shrunk=run("CropMath.resize({x:.2,y:.2,w:.5,h:.5},'nw',.8,.8)");assert.ok(shrunk.w>=.0299&&shrunk.h>=.0299);
 context.window.receive({type:'text',text:'مدار الملفات 123'});assert.equal(get('recognizedText').value,'مدار الملفات 123');assert.equal(get('textPanel').hidden,false);get('copyText').onclick();assert.equal(requests.at(-1).action,'copyText');
 console.log('PASS: reusable crop move/resize bounds and editable text/clipboard flow');
+vm.runInContext(readFileSync('app/src/main/assets/studio.js','utf8'),context);
+assert.equal(get('tools').children.length,7);
+context.window.receive({type:'source',kind:'audio',name:'voice.mp3',size:10000,duration:3000,mime:'audio/mpeg'});
+assert.equal(get('tools').children.length,6);assert.doesNotMatch(get('meta').textContent,/undefined/);
+run("openTool('sound')");assert.match(get('form').innerHTML,/FLAC/);assert.match(get('form').innerHTML,/Opus/);
+context.window.receive({type:'source',kind:'video',name:'clip.mp4',size:10000,width:320,height:240,duration:3000,mime:'video/mp4'});
+run("openTool('editor')");assert.equal(run('state.segments.length'),1);get('liveVideo').currentTime=1.25;get('splitClip').onclick();assert.equal(run('state.segments.length'),2);assert.equal(run('state.segments[1][0]'),1.25);get('undoEdit').onclick();assert.equal(run('state.segments.length'),1);get('redoEdit').onclick();assert.equal(run('state.segments.length'),2);run('runExport()');assert.equal(requests.at(-1).options.segments.length,2);
+context.window.receive({type:'progress',progress:25,message:'المتبقي تقريبًا 30 ث'});assert.match(get('busyDetail').textContent,/30/);
+console.log('PASS: audio formats, multi-range editor split/undo/redo, export segments and measured ETA messages');
