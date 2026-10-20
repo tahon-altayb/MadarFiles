@@ -44,8 +44,6 @@ jobs:
           if-no-files-found: ignore
 
   documents-runtime:
-    env:
-      MADAR_VALIDATION_KEYSTORE: ${{ runner.temp }}/madar-validation.keystore
     needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -59,7 +57,10 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Create disposable key for the separate validation package
-        run: keytool -genkeypair -keystore "$MADAR_VALIDATION_KEYSTORE" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=Madar Validation"
+        run: |
+          MADAR_VALIDATION_KEYSTORE="$RUNNER_TEMP/madar-validation.keystore"
+          echo "MADAR_VALIDATION_KEYSTORE=$MADAR_VALIDATION_KEYSTORE" >> "$GITHUB_ENV"
+          keytool -genkeypair -keystore "$MADAR_VALIDATION_KEYSTORE" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=Madar Validation"
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
