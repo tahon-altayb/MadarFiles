@@ -65,3 +65,6 @@
 - Queue is currently for images only, not a universal video/PDF job queue. No automatic restart after process death; the user resumes from the batch tool.
 - Caption style options: size, top/center/bottom, ivory/white/muted gold, optional dark background; add a subtitle row at the preview position.
 - JS contract tests and partial Java compilation pass; new queue Android instrumentation test is added but not yet executed. Full Android checks configured in validate.yml without APK signing or access to signing cache/secrets.
+
+- Full source compilation, lint and unit tests passed in Actions run 39355758696. Its emulator stage stopped before tests because a disposable validation signing file was absent; validation now creates and removes a temporary key only for `com.madar.files.validation`, never for the installed app or signing cache.
+- Large tool sections use a responsive searchable grid to avoid overlapping circular buttons. Local headless-browser download was unavailable; layout checks run in Actions using its installed Chrome.
