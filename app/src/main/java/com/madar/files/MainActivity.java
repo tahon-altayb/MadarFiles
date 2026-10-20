@@ -25,6 +25,8 @@ public class MainActivity extends Activity {
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
     private volatile int previewToken;
     private volatile int timelineToken;
+    private volatile int waveformToken;
+    private final ExecutorService waveforms=Executors.newSingleThreadExecutor();
     private volatile File source;
     private volatile JSONObject sourceInfo;
     private volatile boolean working;
@@ -90,6 +92,8 @@ public class MainActivity extends Activity {
             case "exportCollection":exportCollection(request.getJSONArray("order"));break;
             case "export":export(request.getJSONObject("options"));break;
             case "cutoutPreview":int cutToken=request.optInt("token",0);previewToken=cutToken;File cutSource=source;String cutColor=request.optString("color","#eadcc7");boolean transparent=request.optBoolean("transparent",true);if(cutSource!=null)previews.execute(()->{if(cutToken!=previewToken)return;Bitmap b=null,out=null;try{b=FilesUtil.image(cutSource,640);out=PersonCutout.cut(b,transparent,Color.parseColor(cutColor));ByteArrayOutputStream bytes=new ByteArrayOutputStream();out.compress(Bitmap.CompressFormat.PNG,100,bytes);if(cutToken==previewToken)send(new JSONObject().put("type","cutoutPreview").put("token",cutToken).put("thumbnail","data:image/png;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP)));}catch(Exception e){if(cutToken==previewToken)event("previewError","message","تعذر إنشاء معاينة العزل");}finally{if(b!=null)b.recycle();if(out!=null)out.recycle();}});break;
+            case "cancelWaveform":waveformToken++;break;
+            case "waveform":int waveToken=request.optInt("token",0);waveformToken=waveToken;File waveSource=source;if(waveSource!=null)waveforms.execute(()->{try{JSONObject result=AudioWaveform.read(waveSource,()->waveformToken!=waveToken||source!=waveSource);if(waveformToken==waveToken&&source==waveSource)send(result.put("type","waveform").put("token",waveToken));}catch(java.util.concurrent.CancellationException ignored){}catch(Exception e){if(waveformToken==waveToken&&source==waveSource)try{send(new JSONObject().put("type","waveformError").put("token",waveToken).put("message","تعذر إنشاء الموجة الصوتية؛ يمكنك متابعة التحرير"));}catch(Exception ignored){}}});break;
             case "timelineFrames":int frameToken=request.optInt("token",0);timelineToken=frameToken;File frameSource=source;if(frameSource!=null)previews.execute(()->{try{JSONArray frames=TimelineFrames.read(frameSource,()->timelineToken!=frameToken||source!=frameSource||Thread.currentThread().isInterrupted());if(timelineToken==frameToken&&source==frameSource)send(new JSONObject().put("type","timelineFrames").put("token",frameToken).put("frames",frames));}catch(Exception e){if(timelineToken==frameToken&&source==frameSource)event("timelineFramesError","message","تعذر إنشاء الصور المصغرة؛ يمكنك متابعة التحرير");}});break;
             case "preview":previewPage(request.optInt("page",1),request.optInt("token",0));break;
             case "copyText":String text=request.getString("text");if(text.length()>1000000)throw new IOException("النص طويل جدًا");((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("مدار",text));Toast.makeText(this,"تم نسخ النص",Toast.LENGTH_SHORT).show();break;
@@ -203,5 +207,5 @@ public class MainActivity extends Activity {
     private void error(String message){event("error","message",message);}
     private void send(JSONObject event){runOnUiThread(()->{if(ready&&web!=null)web.evaluateJavascript("window.receive("+event.toString()+");",null);});}
     @Override protected void onResume(){super.onResume();if(ready&&(ImageBatchService.active||ImageBatchService.starting))batchStatus();if(ready&&VideoExportService.active&&VideoExportService.lastEvent!=null)try{send(new JSONObject(VideoExportService.lastEvent));}catch(JSONException ignored){}}
-    @Override protected void onDestroy(){ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }

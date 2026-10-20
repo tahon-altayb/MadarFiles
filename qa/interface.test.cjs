@@ -6,6 +6,7 @@ const elements=new Map();
 class Element{
  set id(v){this._id=v;if(v)elements.set(v,this);}get id(){return this._id;}
  constructor(id=''){this.id=id;this.hidden=false;this.textContent='';this.style={};this.children=[];this.value='';this.type='';this.tagName='DIV';this.dataset={};this.attrs={};this.classList={add(){},remove(){},toggle(){}};}
+ getContext(){return {clearRect(){},fillRect(){}};}
  pause(){this.paused=true;}play(){this.paused=false;return Promise.resolve();}
  prepend(...c){this.children.unshift(...c);}after(){}remove(){}append(...c){this.children.push(...c);}replaceChildren(...c){this.children=c;}
  removeAttribute(k){delete this.attrs[k];}setAttribute(k,v){this.attrs[k]=v;}
