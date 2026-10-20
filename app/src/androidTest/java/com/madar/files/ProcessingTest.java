@@ -37,7 +37,7 @@ public class ProcessingTest {
     }
     @Test public void rejectsTraversalAndBadPdfRange()throws Exception {
         try{FilesUtil.resolve(c,"../test.png");fail("path traversal");}catch(IOException expected){}
-        File pdf=ImageProcessor.export(c,input,new JSONObject("{\"tool\":\"convert\",\"format\":\"pdf\"}"));try{PdfProcessor.export(c,pdf,new JSONObject("{\"tool\":\"extract\",\"first\":2,\"last\":3}"));fail("invalid PDF range");}catch(IllegalArgumentException expected){}
+        File pdf=ImageProcessor.export(c,input,new JSONObject("{\"tool\":\"convert\",\"format\":\"pdf\"}"));try{PdfProcessor.export(c,pdf,new JSONObject("{\"tool\":\"extract\",\"first\":2,\"last\":3}"));fail("invalid PDF range");}catch(IOException expected){assertEquals("رقم صفحة غير موجود",expected.getMessage());}
     }
     @Test public void videoTrimMuteResizeAndAudio()throws Exception {
         File video=new File(c.getCacheDir(),"sample.mp4");try(InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("sample.mp4");OutputStream out=new FileOutputStream(video)){FilesUtil.copy(in,out);}
