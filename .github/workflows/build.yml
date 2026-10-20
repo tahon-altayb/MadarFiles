@@ -115,7 +115,7 @@ jobs:
           ram-size: 2048M
           heap-size: 512M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
             gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 connectedDebugAndroidTest
             adb uninstall com.madar.files
