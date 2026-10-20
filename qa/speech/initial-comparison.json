@@ -93,17 +93,61 @@
       "error_rate": 0.0526,
       "reference": "however due to the slow communication channels styles in the west could lag behind by 25 to 30 year",
       "hypothesis": "However, due to the slow communication channels, styles in the West could lag behind by 25 to 30 years."
+    },
+    {
+      "language": "ar",
+      "model": "turbo",
+      "audio_seconds": 8.16,
+      "runtime_seconds": 6.22,
+      "metric": "WER",
+      "error_rate": 0.3333,
+      "reference": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+      "hypothesis": "تشكلت في المحيط الأطلسي اليوم عشر عاصفة مسماية لموسم الأعصير الأطلسية العاصفة شبه الاستو"
+    },
+    {
+      "language": "ja",
+      "model": "turbo",
+      "audio_seconds": 10.44,
+      "runtime_seconds": 6.92,
+      "metric": "CER",
+      "error_rate": 0.1333,
+      "reference": "インターネットで 敵対的環境コース について検索すると おそらく現地企業の住所が出てくるでしょう",
+      "hypothesis": "インターットで対的境コースについてすると、おそらく現地業の住所が出てくるでしょう。"
+    },
+    {
+      "language": "en",
+      "model": "turbo",
+      "audio_seconds": 10.56,
+      "runtime_seconds": 5.7,
+      "metric": "WER",
+      "error_rate": 0.2105,
+      "reference": "however due to the slow communication channels styles in the west could lag behind by 25 to 30 year",
+      "hypothesis": "However, due to the slow communication channels, styles in the West could lag behind by 25-30 years."
     }
   ],
   "limitations": [
     "One recording per language only; not representative of dialects or music.",
     "Model-only benchmark on host CPU, not Android end-to-end or translation accuracy.",
     "The reference transcripts may contain dataset spelling errors.",
-    "No Galaxy S26 Ultra runtime or thermal measurement."
+    "No Galaxy S26 Ultra runtime or thermal measurement.",
+    "English numeric range 25-30 versus 25 to 30 is counted as token errors by this strict WER normalizer; WER is not a meaning score."
   ],
   "model_revisions": {
     "tiny": "65176e2deb88badc814a94058666cadccc29b61c",
     "small": "8f3c18b358db4d1f2fc1eae49d75cd20989e4309",
-    "medium": "8c31d28503847560985df21f90e14f0c736e075e"
-  }
+    "medium": "8c31d28503847560985df21f90e14f0c736e075e",
+    "turbo": "2ca6ff69fc878651b770880507669577ac41c2ff"
+  },
+  "revised_pipeline_arabic": [
+    {
+      "language": "ar",
+      "model": "turbo",
+      "audio_seconds": 8.16,
+      "runtime_seconds": 7.22,
+      "metric": "WER",
+      "error_rate": 0.1333,
+      "reference": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+      "hypothesis": "تشكلت في المحيط الأطلسي اليوم عشر عاصفة مسماة لموسم الأعصير الأطلسية العاصفة شبه الاستوائية جيري"
+    }
+  ]
 }

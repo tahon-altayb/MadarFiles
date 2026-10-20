@@ -125,7 +125,7 @@ public class MainActivity extends Activity {
                 if(mime==null||mime.isEmpty()){mime=java.net.URLConnection.guessContentTypeFromName(name);if(mime==null)mime="";}
                 String kind=mime.startsWith("image/")?"image":mime.startsWith("audio/")?"audio":mime.startsWith("video/")?"video":mime.equals("application/pdf")?"pdf":expected;
                 if(kind==null&&name!=null&&name.toLowerCase(Locale.ROOT).endsWith(".pdf"))kind="pdf";
-                if(kind==null)throw new IOException("نوع الملف غير مدعوم. اختر صورة أو فيديو أو PDF");if(mime.isEmpty())mime=kind.equals("video")?"video/mp4":kind.equals("audio")?"audio/mp4":kind.equals("image")?"image/jpeg":"application/pdf";
+                if(kind==null)throw new IOException("نوع الملف غير مدعوم. اختر صورة أو فيديو أو PDF");if(mime.isEmpty()||mime.equals("application/octet-stream"))mime=kind.equals("video")?"video/mp4":kind.equals("audio")?"audio/mp4":kind.equals("image")?"image/jpeg":"application/pdf";
                 long available=getFilesDir().getUsableSpace();if(declared>available-64L*1024*1024)throw new IOException("المساحة المتاحة لا تكفي لاستيراد الملف");
                 imported=File.createTempFile("madar_input_",".media",getCacheDir());
                 try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(imported)){
