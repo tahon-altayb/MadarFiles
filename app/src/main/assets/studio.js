@@ -85,3 +85,6 @@ function showImageBatch(event){
  if(event.active)button('إيقاف بعد الصورة الحالية','pauseImageBatch');else if(event.status==='paused')button('استئناف الصور المتبقية','resumeImageBatch');else button('اختيار صور لدفعة جديدة','pickCollection',{images:true,batch:true});
  if(!event.active&&event.status!=='empty')button('مسح الطابور · تبقى النتائج محفوظة','clearImageBatch');const close=document.createElement('button');close.className='secondary';close.textContent='إغلاق';close.onclick=()=>{state.batchPanelHidden=true;panel.remove();};sheet.append(close);panel.append(sheet);document.body.append(panel);
 }
+function stopEditorWaveform(){if(!state.waveLoading)return;state.waveToken=(state.waveToken||0)+1;state.waveLoading=false;native('cancelWaveform');if($('waveButton'))$('waveButton').textContent='إنشاء الموجة الصوتية';}
+const closeWithWaveform=$('close').onclick;$('close').onclick=e=>{stopEditorWaveform();closeWithWaveform(e);};
+const sheetWithWaveform=$('sheet').onclick;$('sheet').onclick=e=>{if(e.target===$('sheet'))stopEditorWaveform();sheetWithWaveform(e);};
