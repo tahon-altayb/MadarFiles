@@ -69,4 +69,4 @@
 - Full source compilation, lint and unit tests passed in Actions run 39355758696. Its emulator stage stopped before tests because a disposable validation signing file was absent; validation now creates and removes a temporary key only for `com.madar.files.validation`, never for the installed app or signing cache.
 - Large tool sections use a responsive searchable grid to avoid overlapping circular buttons. Local headless-browser download was unavailable; layout checks run in Actions using its installed Chrome.
 
-- PDF optimization now checks decoded alpha instead of skipping every masked image: fully opaque images carrying an alpha mask can shrink, while real transparency remains untouched. Added an explicit transparency preservation test.
+- PDF optimization conservatively skips every image with a soft/hard/color-key mask. Decoded alpha cannot safely establish opacity for every PDF mask. This also skips some opaque images carrying redundant masks, favoring preservation over compression. The transparency regression fixture uses an explicit grayscale PDF soft mask.

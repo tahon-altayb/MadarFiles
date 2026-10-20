@@ -20,7 +20,7 @@ public class DocumentToolsTest {
   File source=File.createTempFile("pdf-tool-",".pdf",c.getCacheDir()),compressed=null,protectedFile=null,extracted=null,merged=null;
   try{
    try(PDDocument doc=new PDDocument()){
-    PDPage page=new PDPage();doc.addPage(page);Bitmap bitmap=Bitmap.createBitmap(2400,1600,Bitmap.Config.ARGB_8888);
+    PDPage page=new PDPage();doc.addPage(page);Bitmap bitmap=Bitmap.createBitmap(2400,1600,Bitmap.Config.ARGB_8888);bitmap.setHasAlpha(false);
     int[] pixels=new int[2400];java.util.Random random=new java.util.Random(7);for(int y=0;y<1600;y++){for(int x=0;x<2400;x++)pixels[x]=0xff000000|random.nextInt(0x1000000);bitmap.setPixels(pixels,0,2400,0,y,2400,1);}
     try(PDPageContentStream stream=new PDPageContentStream(doc,page)){stream.drawImage(JPEGFactory.createFromImage(doc,bitmap,.99f),0,0,500,400);stream.beginText();stream.setFont(PDType1Font.HELVETICA,18);stream.newLineAtOffset(30,700);stream.showText("Madar searchable text");stream.endText();}finally{bitmap.recycle();}doc.save(source);
    }
