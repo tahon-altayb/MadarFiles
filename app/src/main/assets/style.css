@@ -18,3 +18,5 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 
 #editTimeline .clipRow.selectedClip button:not(:first-child){display:block;padding:4px;font-size:12px}#editTimeline .clipRow.selectedClip button:last-child{display:none}#editTimeline .clipRow button:first-child{touch-action:pan-y}
 #editTimeline .clipRow{position:relative}#editTimeline .selectedClip{min-width:150px;padding-inline:24px}.trimHandle{position:absolute;top:0;bottom:0;width:22px;display:flex;align-items:center;justify-content:center;background:#b98e49;color:white;font-weight:bold;touch-action:none;cursor:ew-resize;z-index:2}.trimHandle.start{left:0;border-radius:7px 0 0 7px}.trimHandle.end{right:0;border-radius:0 7px 7px 0}
+
+#pdfViewport{overflow:auto;max-height:45dvh;direction:ltr;overscroll-behavior:contain}#pdfViewport img{flex:none}#livePreview label{font-size:11px}#livePreview label input[type=range]{display:block;width:100%;margin:5px 0}
