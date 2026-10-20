@@ -18,7 +18,7 @@ final class PdfProcessor {
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(c);File output=FilesUtil.output(c,"pdf");
         try(com.tom_roush.pdfbox.pdmodel.PDDocument doc=com.tom_roush.pdfbox.pdmodel.PDDocument.load(source);com.tom_roush.pdfbox.pdmodel.PDDocument target=new com.tom_roush.pdfbox.pdmodel.PDDocument()){
             String[] order=o.getString("pageOrder").trim().split("[,،\\s]+");if(order.length<1||order.length>100)throw new IOException("اختر من صفحة إلى 100 صفحة");int rotation=o.optInt("pageRotation",0);if(rotation!=0&&rotation!=90&&rotation!=180&&rotation!=270)throw new IOException("تدوير غير صالح");
-            for(String item:order){int n=Integer.parseInt(item);if(n<1||n>doc.getNumberOfPages())throw new IOException("رقم صفحة غير موجود");com.tom_roush.pdfbox.pdmodel.PDPage page=target.importPage(doc.getPage(n-1));page.setRotation((doc.getPage(n-1).getRotation()+rotation)%360);}
+            for(String item:order){int n=Integer.parseInt(item);if(n<1||n>doc.getNumberOfPages())throw new IOException("رقم صفحة غير موجود");com.tom_roush.pdfbox.pdmodel.PDPage page=target.importPage(doc.getPage(n-1));page.setResources(doc.getPage(n-1).getResources());page.setRotation((doc.getPage(n-1).getRotation()+rotation)%360);}
             target.save(output);return output;
         }catch(Exception|OutOfMemoryError e){output.delete();throw e;}
     }

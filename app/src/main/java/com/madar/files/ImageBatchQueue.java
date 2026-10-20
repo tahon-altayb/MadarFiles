@@ -8,7 +8,7 @@ import java.util.*;
 /** A private durable journal. Checkpoints are at completed-file boundaries. */
 final class ImageBatchQueue {
  private static File directory(Context c){File d=new File(c.getFilesDir(),"image-batch");if(!d.isDirectory()&&!d.mkdirs())throw new IllegalStateException("تعذر فتح مجلد الطابور");return d;}
- static synchronized JSONObject read(Context c)throws Exception{AtomicFile file=new AtomicFile(new File(directory(c),"state.json"));try(InputStream in=file.openRead()){return new JSONObject(new String(in.readAllBytes(),StandardCharsets.UTF_8));}catch(FileNotFoundException e){return null;}}
+ static synchronized JSONObject read(Context c)throws Exception{AtomicFile file=new AtomicFile(new File(directory(c),"state.json"));try(InputStream in=file.openRead()){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(in,bytes);return new JSONObject(new String(bytes.toByteArray(),StandardCharsets.UTF_8));}catch(FileNotFoundException e){return null;}}
  static synchronized void save(Context c,JSONObject state)throws Exception{AtomicFile file=new AtomicFile(new File(directory(c),"state.json"));FileOutputStream out=null;try{out=file.startWrite();out.write(state.toString().getBytes(StandardCharsets.UTF_8));file.finishWrite(out);}catch(Exception e){if(out!=null)file.failWrite(out);throw e;}}
  static synchronized JSONObject create(Context c,List<File> files,JSONArray names,JSONObject options)throws Exception{
   JSONObject previous=read(c);if(previous!=null&&!previous.optString("status").equals("complete"))throw new IOException("يوجد طابور سابق؛ استأنفه أو امسحه أولًا");

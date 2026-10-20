@@ -7,6 +7,7 @@ import androidx.media3.effect.OverlaySettings;
 import org.json.*;
 import java.util.*;
 /** Timed captions rendered by Android text shaping, including connected Arabic. */
+@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 final class CaptionOverlay extends BitmapOverlay {
  private static final class Cue{double start,end;String text;Cue(JSONObject o)throws JSONException{start=o.getDouble("start");end=o.getDouble("end");text=o.getString("text");}}
  private final List<Cue> cues=new ArrayList<>();private float fontPercent=3.5f;private String position="bottom";private boolean backdrop=true;private int color=Color.rgb(250,245,232);private int width=972;private float font=38;private Bitmap bitmap;private String last;
