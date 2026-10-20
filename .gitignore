@@ -11,3 +11,5 @@ app/src/main/assets/models/
 .cxx/
 
 .signing/
+
+node_modules/
