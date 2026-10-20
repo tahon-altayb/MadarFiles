@@ -33,7 +33,7 @@
 
 ## دفعة تحسين تالية — قيد التحقق، ليست إصدار APK
 - تحديد الجزء صراحة وتقسيم النسخة المحددة حتى عند تكرار أجزاء المصدر؛ مؤشر زمن النسخة المرتبة ومعاينة متتابعة وأزرار تقديم وتأخير. المعاينة عبر WebView ليست ضمانًا لدقة إطار التصدير.
-- معاينة سطور الترجمة فوق فيديو المصدر، تتحدث عند تعديل النص والتوقيت، مع الانتقال إلى السطر. أضيف مسار دمج دائم في MP4، ولا يزال اختبار التصدير الكامل مطلوبًا.
+- معاينة سطور الترجمة فوق فيديو المصدر، تتحدث عند تعديل النص والتوقيت، مع الانتقال إلى السطر. أضيف دمج دائم في MP4؛ نجح اختبار التصدير وتوقيت الظهور مع الصوت على المحاكي. تجربة الجهاز الفعلي ما زالت مطلوبة.
 - اختيار لغة OCR للصور (عربي افتراضي، مختلط، إنجليزي) بدل فرض التعرف المختلط. لم يُقَس تحسن الدقة على عينات المستخدم بعد.
 - لم تُنفّذ خدمة فصل سحابية: يلزم مزود GPU وتكلفة وسياسة حذف ومصادقة وطابور ورفع قابل للاستئناف قبل تفعيل رفع الملفات. لا تغيير على جودة النموذج المحلي.
 - لم يُنقل التوقيع ولم يُنشأ مفتاح بديل. لم يتوفر في جلسة التطوير وصول إعداد Secrets.
@@ -52,11 +52,11 @@
 - Target JPEG size from 20–20000 KiB using quality search and dimension reduction as needed; transparency becomes white.
 - Interface tests pass. Android instrumentation tests cover searchable text, page size, password rejection/acceptance, extraction, merge and image byte limits. Latest validation status is recorded below. No release APK has been built.
 - Multi-file PDF merge (up to 20 files / 200 pages) and images-to-PDF with reorder/remove review; temporary imports bounded to 512 MiB and cleaned on activity teardown.
-- Pending: universal media queue, timeline thumbnails/waveforms, multi-file editing and layers, target video size, audio cleanup, annotations/redaction/scanning, generative tools and tracking. Cloud separation remains paused.
+- Pending: universal media queue, timeline audio waveforms, multi-file editing and layers, target video size, audio cleanup, annotations/redaction/scanning, generative tools and tracking. Cloud separation remains paused.
 - New audio options: duplicate left/right channel, mix to mono (stereo encoded output), and normalize selected range peak toward -1 dBFS with at most 10x gain. Not loudness normalization or dynamic compression. Runtime audio checks remain pending.
 - Full app Java compilation, Android lint and five unit tests passed in GitHub Actions. Native AI engines and full release packaging are outside the separate document/image validation package.
 
-- Added video export with burned-in timed Arabic captions from the subtitle review screen; native Android text shaping, dark background, four visible lines maximum. Re-encodes MP4; no editable caption track is embedded. CaptionOverlay compiled against the actual Media3 1.5.1 artifacts. Bitmap rendering and cue visibility have an Android instrumentation check; full encoded output, timing and device export remain unverified.
+- Added video export with burned-in timed Arabic captions from the subtitle review screen; native Android text shaping, dark background, four visible lines maximum. Re-encodes MP4; no editable caption track is embedded. CaptionOverlay compiled against the actual Media3 1.5.1 artifacts. Bitmap rendering and cue visibility have an Android instrumentation check; encoded output and timing have now passed an emulator service test (see latest checkpoint); physical-device export remains unverified.
 
 ### Image batch queue and caption styling — development
 - Foreground image queue: up to 20 images, sequential conversion/compression/resize/target JPEG size, private copies and AtomicFile checkpoints after each completed file.
@@ -76,3 +76,16 @@
 - Six Android 15 / API 35 instrumentation tests passed in [Actions run 39361525597, attempt 2](https://github.com/tahon-altayb/MadarFiles/actions/runs/39361525597/attempts/2). Attempt 1 stopped during emulator SDK download before running tests; retry succeeded.
 - Runtime scope: PDF compression with searchable text and page size retained, PDF extraction/merge/password checks, preservation of an explicit transparent soft mask, target JPEG limit/decoding, timed Arabic caption bitmap visibility, and image queue checkpoint/resume plus unsupported-operation rejection.
 - Not yet validated: full caption video export, new audio normalization/channel output, native AI engine packaging or Galaxy S26 Ultra performance. No new release APK is delivered by this checkpoint.
+
+### Clip thumbnails and encoded caption validation — development
+- Video clips now show small source thumbnails extracted in the background independently of the visible player. At most 12 previews, bounded to 160 × 90 pixels; sync-frame sampling is approximate and does not provide frame-accurate trimming.
+- Receiving thumbnails updates images in place without rebuilding the timeline or resetting sequence playback. Old source/token results are discarded.
+- Added an encoded-output caption check through VideoExportService: baseline/caption MP4 exports, decoded frames before/during/after an Arabic cue, retained audio and duration.
+- Added runtime checks for thumbnail order, decoded dimensions and cancellation; browser checks exercise thumbnail layout and playback state at 320/412/768 pixels.
+- Multi-file video layers and audio waveforms remain pending.
+
+### Verified video development checkpoint — 2026-10-20
+- Commit `9fcf972313b6136a847b9e3691780ad49a1e5b59`: source compilation, lint, five unit tests, JS contracts and Chrome layouts at 320/412/768 pixels passed.
+- [Actions run 39364513269](https://github.com/tahon-altayb/MadarFiles/actions/runs/39364513269): eight Android 15 instrumentation tests passed, zero failures/errors/skips. This includes all six prior document/image checks plus timed Arabic caption MP4 export with retained audio/duration and bounded/cancellable timeline thumbnails.
+- The caption test compares decoded baseline and caption output frames before/during/after a cue. It does not measure translation accuracy or certify arbitrary codecs/device behavior.
+- No release APK was built. Original signing Secrets still need secure configuration. Native AI packaging, physical-device performance and new audio normalization/channel output remain unverified.
