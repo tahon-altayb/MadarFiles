@@ -15,13 +15,15 @@ import java.util.zip.*;
 
 final class TextProcessor {
  interface Progress{void update(String text);}
- private static TessBaseAPI engine(Context c)throws Exception{
+ private static TessBaseAPI engine(Context c,String language)throws Exception{
   File dir=new File(c.getFilesDir(),"tesseract"),data=new File(dir,"tessdata");if(!data.isDirectory()&&!data.mkdirs())throw new IOException("تعذر تجهيز OCR");
   for(String lang:new String[]{"ara","eng"}){File source=OfflineAssets.file(c,lang+".traineddata"),dest=new File(data,source.getName());if(!dest.isFile())try(InputStream in=new FileInputStream(source);OutputStream out=new FileOutputStream(dest)){FilesUtil.copy(in,out);}}
-  TessBaseAPI tess=new TessBaseAPI();if(!tess.init(dir.getAbsolutePath(),"ara+eng",TessBaseAPI.OEM_LSTM_ONLY)){tess.recycle();throw new IOException("تعذر تهيئة قراءة النصوص");}tess.setPageSegMode(TessBaseAPI.PageSegMode.PSM_AUTO);return tess;
+  TessBaseAPI tess=new TessBaseAPI();if(!tess.init(dir.getAbsolutePath(),language,TessBaseAPI.OEM_LSTM_ONLY)){tess.recycle();throw new IOException("تعذر تهيئة قراءة النصوص");}tess.setPageSegMode(TessBaseAPI.PageSegMode.PSM_AUTO);return tess;
  }
- static String image(Context c,File file)throws Exception{
-  TessBaseAPI tess=engine(c);Bitmap b=FilesUtil.image(file,3000);try{tess.setImage(b);return tess.getUTF8Text().trim();}finally{b.recycle();tess.recycle();}
+ static String image(Context c,File file)throws Exception{return image(c,file,"ara+eng");}
+ static String image(Context c,File file,String language)throws Exception{
+  if(!language.matches("ara|eng|ara\\+eng"))throw new IOException("لغة قراءة غير مدعومة");
+  TessBaseAPI tess=engine(c,language);Bitmap b=FilesUtil.image(file,3000);try{tess.setImage(b);return tess.getUTF8Text().trim();}finally{b.recycle();tess.recycle();}
  }
  static String pdf(Context c,File file,int first,int last,Progress progress)throws Exception{
   PDFBoxResourceLoader.init(c);StringBuilder text=new StringBuilder();TessBaseAPI tess=null;
@@ -30,7 +32,7 @@ final class TextProcessor {
    PDFTextStripper stripper=new PDFTextStripper();stripper.setSortByPosition(true);
    for(int page=first;page<=last;page++){
     progress.update("قراءة الصفحة "+page+" من "+last);stripper.setStartPage(page);stripper.setEndPage(page);String content=stripper.getText(doc).trim();
-    if(content.replaceAll("\\s","").length()<3){if(tess==null)tess=engine(c);Bitmap b=PdfProcessor.render(renderer,page-1,2400);try{tess.setImage(b);content=tess.getUTF8Text().trim();tess.clear();}finally{b.recycle();}}
+    if(content.replaceAll("\\s","").length()<3){if(tess==null)tess=engine(c,"ara+eng");Bitmap b=PdfProcessor.render(renderer,page-1,2400);try{tess.setImage(b);content=tess.getUTF8Text().trim();tess.clear();}finally{b.recycle();}}
     if(page>first)text.append('\f');text.append(content);if(text.length()>1000000)throw new IOException("النص كبير جدًا؛ اختر نطاق صفحات أصغر");
    }
   }finally{if(tess!=null)tess.recycle();}

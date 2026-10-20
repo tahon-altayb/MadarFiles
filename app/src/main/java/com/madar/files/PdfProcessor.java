@@ -23,7 +23,13 @@ final class PdfProcessor {
         }catch(Exception|OutOfMemoryError e){output.delete();throw e;}
     }
     static File export(Context c,File source,JSONObject o)throws Exception {
+        if(o.optString("tool").equals("protectPdf"))return PdfSecurity.apply(c,source,o);
+        if(o.optString("tool").equals("compressPdf"))return PdfOptimizer.compress(c,source,o.optString("compression","balanced"));
         if(o.optString("tool").equals("pages"))return organize(c,source,o);
+        if(o.optString("tool").equals("extract")){
+            int first=o.getInt("first"),last=o.optInt("last",first);if(first<1||last<first||last-first>=100)throw new IOException("اختر نطاقًا حتى 100 صفحة");
+            StringBuilder order=new StringBuilder();for(int i=first;i<=last;i++){if(i>first)order.append(',');order.append(i);}return organize(c,source,new JSONObject().put("pageOrder",order.toString()));
+        }
         File output=null;
         try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(source,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
             int first=o.getInt("first")-1,last=o.optInt("last",first+1)-1,width=(int)FilesUtil.bounded(o.optInt("pdfWidth",1600),500,2400);

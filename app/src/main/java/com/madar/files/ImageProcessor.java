@@ -8,6 +8,8 @@ import java.io.*;
 
 final class ImageProcessor {
     static File export(Context c, File source, JSONObject o) throws Exception {
+        if(o.optString("tool").equals("targetImage"))return ImageSizeTarget.export(c,source,o.getInt("targetKb"));
+        File destination=null;
         Bitmap b=FilesUtil.image(source,o.optString("tool").equals("removebg")?2048:4096);File result=null;
         try {
             String tool=o.getString("tool"),format=o.optString("format","jpg");
@@ -36,11 +38,12 @@ final class ImageProcessor {
                 float radius=(float)FilesUtil.bounded(o.optDouble("radius",4),0,25)/100f*Math.min(dst.width(),dst.height());Path path=new Path();path.addRoundRect(dst,radius,radius,Path.Direction.CW);cv.save();cv.clipPath(path);cv.drawBitmap(b,null,dst,p);cv.restore();b.recycle();b=next;
             }
             if(!format.matches("jpg|png|webp|pdf"))throw new IllegalArgumentException("صيغة غير مدعومة");
-            result=FilesUtil.output(c,format);
+            destination=FilesUtil.output(c,format);result=new File(destination.getPath()+".partial");
             if(format.equals("pdf")){
                 PdfDocument doc=new PdfDocument();try {PdfDocument.Page page=doc.startPage(new PdfDocument.PageInfo.Builder(b.getWidth(),b.getHeight(),1).create());page.getCanvas().drawColor(Color.WHITE);page.getCanvas().drawBitmap(b,0,0,new Paint(Paint.FILTER_BITMAP_FLAG));doc.finishPage(page);try(OutputStream out=new FileOutputStream(result)){doc.writeTo(out);}}finally{doc.close();}
             }else{writeImage(b,result,format,(int)FilesUtil.bounded(o.optInt("quality",92),10,100));}
-            return result;
+            if(result.length()==0||!result.renameTo(destination))throw new IOException("تعذر حفظ الصورة");
+            return destination;
         }catch(Exception|OutOfMemoryError e){if(result!=null)result.delete();throw e;}finally{b.recycle();}
     }
     @SuppressWarnings("deprecation")
