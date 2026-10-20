@@ -33,7 +33,7 @@
 
 ## دفعة تحسين تالية — قيد التحقق، ليست إصدار APK
 - تحديد الجزء صراحة وتقسيم النسخة المحددة حتى عند تكرار أجزاء المصدر؛ مؤشر زمن النسخة المرتبة ومعاينة متتابعة وأزرار تقديم وتأخير. المعاينة عبر WebView ليست ضمانًا لدقة إطار التصدير.
-- معاينة سطور الترجمة فوق فيديو المصدر، تتحدث عند تعديل النص والتوقيت، مع الانتقال إلى السطر. لا دمج دائم في التصدير بعد.
+- معاينة سطور الترجمة فوق فيديو المصدر، تتحدث عند تعديل النص والتوقيت، مع الانتقال إلى السطر. أضيف مسار دمج دائم في MP4، ولا يزال اختبار التصدير الكامل مطلوبًا.
 - اختيار لغة OCR للصور (عربي افتراضي، مختلط، إنجليزي) بدل فرض التعرف المختلط. لم يُقَس تحسن الدقة على عينات المستخدم بعد.
 - لم تُنفّذ خدمة فصل سحابية: يلزم مزود GPU وتكلفة وسياسة حذف ومصادقة وطابور ورفع قابل للاستئناف قبل تفعيل رفع الملفات. لا تغيير على جودة النموذج المحلي.
 - لم يُنقل التوقيع ولم يُنشأ مفتاح بديل. لم يتوفر في جلسة التطوير وصول إعداد Secrets.
@@ -50,13 +50,13 @@
 - Embedded opaque PDF image compression: light/balanced/strong, retaining text and vector content. Actual transparency, stencils and images over 16 MP are skipped to bound decoding memory. Already smaller originals are copied instead of returning a larger file. Signed PDF signatures are not preserved by rewriting.
 - Password protection (AES 256), original-preserving extraction of up to 100 pages.
 - Target JPEG size from 20–20000 KiB using quality search and dimension reduction as needed; transparency becomes white.
-- Interface tests pass. New Android instrumentation tests cover searchable text, page size, password rejection/acceptance, extraction and image byte limits; NOT executed in this environment yet. No new APK has been built.
+- Interface tests pass. Android instrumentation tests cover searchable text, page size, password rejection/acceptance, extraction, merge and image byte limits. Latest validation status is recorded below. No release APK has been built.
 - Multi-file PDF merge (up to 20 files / 200 pages) and images-to-PDF with reorder/remove review; temporary imports bounded to 512 MiB and cleaned on activity teardown.
-- Pending: batch queue, timeline thumbnails/waveforms, multi-file editing and layers, caption style controls, target video size, audio cleanup, annotations/redaction/scanning, generative tools and tracking. Cloud separation remains paused.
+- Pending: universal media queue, timeline thumbnails/waveforms, multi-file editing and layers, target video size, audio cleanup, annotations/redaction/scanning, generative tools and tracking. Cloud separation remains paused.
 - New audio options: duplicate left/right channel, mix to mono (stereo encoded output), and normalize selected range peak toward -1 dBFS with at most 10x gain. Not loudness normalization or dynamic compression. Runtime audio checks remain pending.
-- Java compilation passed for document/image classes against Android 35 and pdfbox-android 2.0.27.0 (PersonCutout stub only), and AudioEditor with bridge dependency stubs. This is not a full Android build or runtime validation.
+- Full app Java compilation, Android lint and five unit tests passed in GitHub Actions. Native AI engines and full release packaging are outside the separate document/image validation package.
 
-- Added video export with burned-in timed Arabic captions from the subtitle review screen; native Android text shaping, dark background, four visible lines maximum. Re-encodes MP4; no editable caption track is embedded. CaptionOverlay compiled against the actual Media3 1.5.1 artifacts. Runtime rendering, timing and device export remain unverified.
+- Added video export with burned-in timed Arabic captions from the subtitle review screen; native Android text shaping, dark background, four visible lines maximum. Re-encodes MP4; no editable caption track is embedded. CaptionOverlay compiled against the actual Media3 1.5.1 artifacts. Bitmap rendering and cue visibility have an Android instrumentation check; full encoded output, timing and device export remain unverified.
 
 ### Image batch queue and caption styling — development
 - Foreground image queue: up to 20 images, sequential conversion/compression/resize/target JPEG size, private copies and AtomicFile checkpoints after each completed file.
@@ -64,9 +64,15 @@
 - Image outputs publish by rename from `.partial`, so unfinished files do not appear in history.
 - Queue is currently for images only, not a universal video/PDF job queue. No automatic restart after process death; the user resumes from the batch tool.
 - Caption style options: size, top/center/bottom, ivory/white/muted gold, optional dark background; add a subtitle row at the preview position.
-- JS contract tests and partial Java compilation pass; new queue Android instrumentation test is added but not yet executed. Full Android checks configured in validate.yml without APK signing or access to signing cache/secrets.
+- JS contract tests pass. Queue checkpoint/resume has an Android instrumentation check. Full source checks and isolated document/image runtime checks are configured in validate.yml without the release signing key or access to its cache/secrets.
 
-- Full source compilation, lint and unit tests passed in Actions run 39355758696. Its emulator stage stopped before tests because a disposable validation signing file was absent; validation now creates and removes a temporary key only for `com.madar.files.validation`, never for the installed app or signing cache.
-- Large tool sections use a responsive searchable grid to avoid overlapping circular buttons. Local headless-browser download was unavailable; layout checks run in Actions using its installed Chrome.
+- Runtime validation creates and removes a disposable key only for `com.madar.files.validation`. This package does not replace the installed app. Release signing remains blocked until the original key is safely configured in GitHub Secrets.
+- Large tool sections use a responsive searchable grid to avoid overlapping circular buttons. Layout and search checks passed at 320, 412 and 768 pixels in Actions using Chrome.
 
 - PDF optimization conservatively skips every image with a soft/hard/color-key mask. Decoded alpha cannot safely establish opacity for every PDF mask. This also skips some opaque images carrying redundant masks, favoring preservation over compression. The transparency regression fixture uses an explicit grayscale PDF soft mask.
+
+### Verified development checkpoint — 2026-10-20
+- Commit `9050cd0a6fb6d6daba3118fe4a4ec5dcca2bad78`: full Java compilation, lint, five unit tests and responsive tool-search checks passed.
+- Six Android 15 / API 35 instrumentation tests passed in [Actions run 39361525597, attempt 2](https://github.com/tahon-altayb/MadarFiles/actions/runs/39361525597/attempts/2). Attempt 1 stopped during emulator SDK download before running tests; retry succeeded.
+- Runtime scope: PDF compression with searchable text and page size retained, PDF extraction/merge/password checks, preservation of an explicit transparent soft mask, target JPEG limit/decoding, timed Arabic caption bitmap visibility, and image queue checkpoint/resume plus unsupported-operation rejection.
+- Not yet validated: full caption video export, new audio normalization/channel output, native AI engine packaging or Galaxy S26 Ultra performance. No new release APK is delivered by this checkpoint.
