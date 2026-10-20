@@ -40,6 +40,14 @@ public class CaptionExportTest {
    InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);
   }
  }
+ @Test public void timelineFramesAreSmallOrderedAndCancellable()throws Exception{
+  Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();File input=File.createTempFile("timeline-source-",".mp4",c.getCacheDir());
+  try{try(InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("sample.mp4");OutputStream out=new FileOutputStream(input)){FilesUtil.copy(in,out);}
+   JSONArray frames=TimelineFrames.read(input,()->false);assertTrue(frames.length()>0&&frames.length()<=12);double previous=-1;
+   for(int i=0;i<frames.length();i++){JSONObject frame=frames.getJSONObject(i);assertTrue(frame.getDouble("time")>previous);previous=frame.getDouble("time");byte[] bytes=android.util.Base64.decode(frame.getString("image").split(",",2)[1],android.util.Base64.DEFAULT);Bitmap bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.length);assertNotNull(bitmap);try{assertTrue(bitmap.getWidth()<=160&&bitmap.getHeight()<=90);}finally{bitmap.recycle();}}
+   assertEquals(0,TimelineFrames.read(input,()->true).length());
+  }finally{input.delete();}
+ }
  private static File export(Context c,File input,JSONObject options,long duration,int height)throws Exception{
   VideoExportService.lastEvent=null;
   InstrumentationRegistry.getInstrumentation().runOnMainSync(()->c.startForegroundService(new Intent(c,VideoExportService.class).putExtra("input",input.getPath()).putExtra("options",options.toString()).putExtra("duration",duration).putExtra("height",height)));

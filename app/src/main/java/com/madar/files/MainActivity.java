@@ -24,6 +24,7 @@ public class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
     private volatile int previewToken;
+    private volatile int timelineToken;
     private volatile File source;
     private volatile JSONObject sourceInfo;
     private volatile boolean working;
@@ -89,6 +90,7 @@ public class MainActivity extends Activity {
             case "exportCollection":exportCollection(request.getJSONArray("order"));break;
             case "export":export(request.getJSONObject("options"));break;
             case "cutoutPreview":int cutToken=request.optInt("token",0);previewToken=cutToken;File cutSource=source;String cutColor=request.optString("color","#eadcc7");boolean transparent=request.optBoolean("transparent",true);if(cutSource!=null)previews.execute(()->{if(cutToken!=previewToken)return;Bitmap b=null,out=null;try{b=FilesUtil.image(cutSource,640);out=PersonCutout.cut(b,transparent,Color.parseColor(cutColor));ByteArrayOutputStream bytes=new ByteArrayOutputStream();out.compress(Bitmap.CompressFormat.PNG,100,bytes);if(cutToken==previewToken)send(new JSONObject().put("type","cutoutPreview").put("token",cutToken).put("thumbnail","data:image/png;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP)));}catch(Exception e){if(cutToken==previewToken)event("previewError","message","تعذر إنشاء معاينة العزل");}finally{if(b!=null)b.recycle();if(out!=null)out.recycle();}});break;
+            case "timelineFrames":int frameToken=request.optInt("token",0);timelineToken=frameToken;File frameSource=source;if(frameSource!=null)previews.execute(()->{try{JSONArray frames=TimelineFrames.read(frameSource,()->timelineToken!=frameToken||source!=frameSource||Thread.currentThread().isInterrupted());if(timelineToken==frameToken&&source==frameSource)send(new JSONObject().put("type","timelineFrames").put("token",frameToken).put("frames",frames));}catch(Exception e){if(timelineToken==frameToken&&source==frameSource)event("timelineFramesError","message","تعذر إنشاء الصور المصغرة؛ يمكنك متابعة التحرير");}});break;
             case "preview":previewPage(request.optInt("page",1),request.optInt("token",0));break;
             case "copyText":String text=request.getString("text");if(text.length()>1000000)throw new IOException("النص طويل جدًا");((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("مدار",text));Toast.makeText(this,"تم نسخ النص",Toast.LENGTH_SHORT).show();break;
             case "saveSubtitles":JSONArray cues=request.getJSONArray("cues");if(cues.length()>10000)throw new IOException("عدد أسطر الترجمة كبير جدًا");worker.execute(()->{try{File f=SpeechProcessor.srt(this,cues);send(FilesUtil.info(f).put("type","result"));history();}catch(Exception e){error("تعذر حفظ الترجمة");}});break;
