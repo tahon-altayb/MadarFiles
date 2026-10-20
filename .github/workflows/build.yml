@@ -117,8 +117,6 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
-            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 connectedDebugAndroidTest
-            adb uninstall com.madar.files
             adb install upgrade-baseline/MadarFiles-1.2.0.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
@@ -127,6 +125,7 @@ jobs:
             mkdir -p phone-screenshots
             adb shell screencap -p /sdcard/madar-home.png
             adb pull /sdcard/madar-home.png phone-screenshots/home.png
+            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 connectedDebugAndroidTest
             adb pull /data/local/tmp/madar-clean.mp4 phone-screenshots/clean-music-test.mp4 || echo "Optional audio evidence unavailable; see processing test results"
             adb pull /data/local/tmp/madar-player.png phone-screenshots/player.png || true
             adb pull /data/local/tmp/madar-crop.png phone-screenshots/crop.png || true
