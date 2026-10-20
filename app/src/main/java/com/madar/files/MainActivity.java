@@ -23,7 +23,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
-    private volatile int previewToken;
+    private volatile int previewToken;private volatile int stepToken;private final ExecutorService navigation=Executors.newSingleThreadExecutor();
     private volatile int timelineToken;
     private volatile int waveformToken;
     private final ExecutorService waveforms=Executors.newSingleThreadExecutor();
@@ -96,6 +96,7 @@ public class MainActivity extends Activity {
             case "cancelWaveform":waveformToken++;break;
             case "waveform":int waveToken=request.optInt("token",0);waveformToken=waveToken;File waveSource=source;if(waveSource!=null)waveforms.execute(()->{try{JSONObject result=AudioWaveform.read(waveSource,()->waveformToken!=waveToken||source!=waveSource);if(waveformToken==waveToken&&source==waveSource)send(result.put("type","waveform").put("token",waveToken));}catch(java.util.concurrent.CancellationException ignored){}catch(Exception e){if(waveformToken==waveToken&&source==waveSource)try{send(new JSONObject().put("type","waveformError").put("token",waveToken).put("message","تعذر إنشاء الموجة الصوتية؛ يمكنك متابعة التحرير"));}catch(Exception ignored){}}});break;
             case "timelineFrames":int frameToken=request.optInt("token",0);timelineToken=frameToken;File frameSource=source;if(frameSource!=null)previews.execute(()->{try{JSONArray frames=TimelineFrames.read(frameSource,()->timelineToken!=frameToken||source!=frameSource||Thread.currentThread().isInterrupted());if(timelineToken==frameToken&&source==frameSource)send(new JSONObject().put("type","timelineFrames").put("token",frameToken).put("frames",frames));}catch(Exception e){if(timelineToken==frameToken&&source==frameSource)event("timelineFramesError","message","تعذر إنشاء الصور المصغرة؛ يمكنك متابعة التحرير");}});break;
+            case "stepFrame":int requestedStep=request.optInt("token");stepToken=requestedStep;double at=request.getDouble("time");int direction=request.getInt("direction");File stepSource=source;if(stepSource!=null)navigation.execute(()->{if(stepToken!=requestedStep)return;try{double time=FrameStepper.step(stepSource,at,direction);if(stepToken==requestedStep&&source==stepSource)send(new JSONObject().put("type","frameStep").put("token",requestedStep).put("time",time));}catch(Exception e){if(stepToken==requestedStep)event("frameStepError","message","تعذر الانتقال إلى الإطار المجاور");}});break;
             case "pickLayer":if(isBusy())return;startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),13);break;
             case "preview":previewPage(request.optInt("page",1),request.optInt("token",0),request.optString("compression",""));break;
             case "copyText":String text=request.getString("text");if(text.length()>1000000)throw new IOException("النص طويل جدًا");((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("مدار",text));Toast.makeText(this,"تم نسخ النص",Toast.LENGTH_SHORT).show();break;
@@ -217,5 +218,5 @@ public class MainActivity extends Activity {
     private void error(String message){event("error","message",message);}
     private void send(JSONObject event){runOnUiThread(()->{if(ready&&web!=null)web.evaluateJavascript("window.receive("+event.toString()+");",null);});}
     @Override protected void onResume(){super.onResume();if(ready&&(ImageBatchService.active||ImageBatchService.starting))batchStatus();if(ready&&VideoExportService.active&&VideoExportService.lastEvent!=null)try{send(new JSONObject(VideoExportService.lastEvent));}catch(JSONException ignored){}}
-    @Override protected void onDestroy(){reviewCancel.set(true);ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){reviewCancel.set(true);ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();navigation.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }
