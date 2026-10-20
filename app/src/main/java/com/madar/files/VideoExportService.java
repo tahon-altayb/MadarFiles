@@ -54,6 +54,7 @@ public class VideoExportService extends Service {
                 media.setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(Math.round(start*1000)).setEndPositionMs(Math.min(duration,Math.round(end*1000))).build());
             }
             List<Effect> effects=new ArrayList<>();int height=o.optInt("height",0),originalHeight=intent.getIntExtra("height",0);
+            if(tool.equals("burnCaptions"))effects.add(new androidx.media3.effect.OverlayEffect(Collections.singletonList(new CaptionOverlay(o.getJSONArray("cues"),o))));
             if(!audio&&height>0&&height<originalHeight)effects.add(Presentation.createForHeight(height));
             EditedMediaItem edited=new EditedMediaItem.Builder(media.build()).setRemoveAudio(tool.equals("mute")).setRemoveVideo(audio).setEffects(new Effects(Collections.emptyList(),effects)).build();
             output=FilesUtil.output(this,audio?"m4a":"mp4");partial=new File(output.getAbsolutePath()+".partial");

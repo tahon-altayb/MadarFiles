@@ -18,12 +18,18 @@ final class PdfProcessor {
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(c);File output=FilesUtil.output(c,"pdf");
         try(com.tom_roush.pdfbox.pdmodel.PDDocument doc=com.tom_roush.pdfbox.pdmodel.PDDocument.load(source);com.tom_roush.pdfbox.pdmodel.PDDocument target=new com.tom_roush.pdfbox.pdmodel.PDDocument()){
             String[] order=o.getString("pageOrder").trim().split("[,،\\s]+");if(order.length<1||order.length>100)throw new IOException("اختر من صفحة إلى 100 صفحة");int rotation=o.optInt("pageRotation",0);if(rotation!=0&&rotation!=90&&rotation!=180&&rotation!=270)throw new IOException("تدوير غير صالح");
-            for(String item:order){int n=Integer.parseInt(item);if(n<1||n>doc.getNumberOfPages())throw new IOException("رقم صفحة غير موجود");com.tom_roush.pdfbox.pdmodel.PDPage page=target.importPage(doc.getPage(n-1));page.setRotation((doc.getPage(n-1).getRotation()+rotation)%360);}
+            for(String item:order){int n=Integer.parseInt(item);if(n<1||n>doc.getNumberOfPages())throw new IOException("رقم صفحة غير موجود");com.tom_roush.pdfbox.pdmodel.PDPage page=target.importPage(doc.getPage(n-1));page.setResources(doc.getPage(n-1).getResources());page.setRotation((doc.getPage(n-1).getRotation()+rotation)%360);}
             target.save(output);return output;
         }catch(Exception|OutOfMemoryError e){output.delete();throw e;}
     }
     static File export(Context c,File source,JSONObject o)throws Exception {
+        if(o.optString("tool").equals("protectPdf"))return PdfSecurity.apply(c,source,o);
+        if(o.optString("tool").equals("compressPdf"))return PdfOptimizer.compress(c,source,o.optString("compression","balanced"));
         if(o.optString("tool").equals("pages"))return organize(c,source,o);
+        if(o.optString("tool").equals("extract")){
+            int first=o.getInt("first"),last=o.optInt("last",first);if(first<1||last<first||last-first>=100)throw new IOException("اختر نطاقًا حتى 100 صفحة");
+            StringBuilder order=new StringBuilder();for(int i=first;i<=last;i++){if(i>first)order.append(',');order.append(i);}return organize(c,source,new JSONObject().put("pageOrder",order.toString()));
+        }
         File output=null;
         try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(source,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
             int first=o.getInt("first")-1,last=o.optInt("last",first+1)-1,width=(int)FilesUtil.bounded(o.optInt("pdfWidth",1600),500,2400);

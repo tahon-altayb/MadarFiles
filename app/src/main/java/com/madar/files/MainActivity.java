@@ -24,10 +24,17 @@ public class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
     private volatile int previewToken;
+    private volatile int timelineToken;
+    private volatile int waveformToken;
+    private final ExecutorService waveforms=Executors.newSingleThreadExecutor();
     private volatile File source;
     private volatile JSONObject sourceInfo;
     private volatile boolean working;
     private File saving;
+    private final List<File> collectionFiles=new ArrayList<>();
+    private boolean collectionImages;
+    private boolean pickingImages,pickingBatch,collectionBatch;
+    private JSONArray collectionNames=new JSONArray();
     private String requestedKind;
     private boolean ready;
     private boolean receiverRegistered;
@@ -74,10 +81,20 @@ public class MainActivity extends Activity {
     private void handle(JSONObject request)throws Exception {
         String action=request.getString("action");
         switch(action){
-            case "ready":ready=true;history();restoreSource();if(VideoExportService.lastEvent!=null)send(new JSONObject(VideoExportService.lastEvent));if(Intent.ACTION_SEND.equals(getIntent().getAction())){Uri u=getIntent().getParcelableExtra(Intent.EXTRA_STREAM);getIntent().setAction(Intent.ACTION_MAIN);if(u!=null)importFile(u,null);}break;
+            case "ready":ready=true;history();restoreSource();if(VideoExportService.lastEvent!=null)send(new JSONObject(VideoExportService.lastEvent));if(ImageBatchService.active||ImageBatchService.starting)batchStatus();if(Intent.ACTION_SEND.equals(getIntent().getAction())){Uri u=getIntent().getParcelableExtra(Intent.EXTRA_STREAM);getIntent().setAction(Intent.ACTION_MAIN);if(u!=null)importFile(u,null);}break;
             case "pick":if(isBusy())return;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);String k=request.optString("kind","image");requestedKind=k;pick.setType(k.equals("audio")?"audio/*":k.equals("video")?"video/*":k.equals("pdf")?"application/pdf":"image/*");startActivityForResult(pick,10);break;
+            case "pickCollection":if(isBusy())return;pickingImages=request.optBoolean("images");pickingBatch=request.optBoolean("batch");startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(pickingImages?"image/*":"application/pdf").putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true),12);break;
+            case "batchStatus":batchStatus();break;
+            case "startImageBatch":startImageBatch(request.getJSONArray("order"),request.getJSONObject("options"));break;
+            case "resumeImageBatch":if(isBusy())return;startBatchService();break;
+            case "pauseImageBatch":startService(new Intent(this,ImageBatchService.class).setAction("pause"));break;
+            case "clearImageBatch":if(isBusy())return;worker.execute(()->{try{ImageBatchQueue.clear(this);batchStatus();}catch(Exception e){error("تعذر مسح الطابور");}});break;
+            case "exportCollection":exportCollection(request.getJSONArray("order"));break;
             case "export":export(request.getJSONObject("options"));break;
             case "cutoutPreview":int cutToken=request.optInt("token",0);previewToken=cutToken;File cutSource=source;String cutColor=request.optString("color","#eadcc7");boolean transparent=request.optBoolean("transparent",true);if(cutSource!=null)previews.execute(()->{if(cutToken!=previewToken)return;Bitmap b=null,out=null;try{b=FilesUtil.image(cutSource,640);out=PersonCutout.cut(b,transparent,Color.parseColor(cutColor));ByteArrayOutputStream bytes=new ByteArrayOutputStream();out.compress(Bitmap.CompressFormat.PNG,100,bytes);if(cutToken==previewToken)send(new JSONObject().put("type","cutoutPreview").put("token",cutToken).put("thumbnail","data:image/png;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP)));}catch(Exception e){if(cutToken==previewToken)event("previewError","message","تعذر إنشاء معاينة العزل");}finally{if(b!=null)b.recycle();if(out!=null)out.recycle();}});break;
+            case "cancelWaveform":waveformToken++;break;
+            case "waveform":int waveToken=request.optInt("token",0);waveformToken=waveToken;File waveSource=source;if(waveSource!=null)waveforms.execute(()->{try{JSONObject result=AudioWaveform.read(waveSource,()->waveformToken!=waveToken||source!=waveSource);if(waveformToken==waveToken&&source==waveSource)send(result.put("type","waveform").put("token",waveToken));}catch(java.util.concurrent.CancellationException ignored){}catch(Exception e){if(waveformToken==waveToken&&source==waveSource)try{send(new JSONObject().put("type","waveformError").put("token",waveToken).put("message","تعذر إنشاء الموجة الصوتية؛ يمكنك متابعة التحرير"));}catch(Exception ignored){}}});break;
+            case "timelineFrames":int frameToken=request.optInt("token",0);timelineToken=frameToken;File frameSource=source;if(frameSource!=null)previews.execute(()->{try{JSONArray frames=TimelineFrames.read(frameSource,()->timelineToken!=frameToken||source!=frameSource||Thread.currentThread().isInterrupted());if(timelineToken==frameToken&&source==frameSource)send(new JSONObject().put("type","timelineFrames").put("token",frameToken).put("frames",frames));}catch(Exception e){if(timelineToken==frameToken&&source==frameSource)event("timelineFramesError","message","تعذر إنشاء الصور المصغرة؛ يمكنك متابعة التحرير");}});break;
             case "preview":previewPage(request.optInt("page",1),request.optInt("token",0));break;
             case "copyText":String text=request.getString("text");if(text.length()>1000000)throw new IOException("النص طويل جدًا");((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("مدار",text));Toast.makeText(this,"تم نسخ النص",Toast.LENGTH_SHORT).show();break;
             case "saveSubtitles":JSONArray cues=request.getJSONArray("cues");if(cues.length()>10000)throw new IOException("عدد أسطر الترجمة كبير جدًا");worker.execute(()->{try{File f=SpeechProcessor.srt(this,cues);send(FilesUtil.info(f).put("type","result"));history();}catch(Exception e){error("تعذر حفظ الترجمة");}});break;
@@ -93,7 +110,7 @@ public class MainActivity extends Activity {
             default:throw new IllegalArgumentException("طلب غير معروف");
         }
     }
-    private boolean isBusy(){if(working||VideoExportService.active){Toast.makeText(this,"انتظر انتهاء العملية الحالية",Toast.LENGTH_SHORT).show();return true;}return false;}
+    private boolean isBusy(){if(working||VideoExportService.active||ImageBatchService.active||ImageBatchService.starting){Toast.makeText(this,"انتظر انتهاء العملية الحالية",Toast.LENGTH_SHORT).show();return true;}return false;}
     private void importFile(Uri uri,String expected){
         if(isBusy())return;if(!"content".equals(uri.getScheme())){error("اختر الملف من مدير الملفات");return;}
         working=true;event("busy","message","جارٍ قراءة الملف");
@@ -130,6 +147,7 @@ public class MainActivity extends Activity {
         String kind=info.getString("kind");if(!kind.equals(o.getString("kind")))throw new IOException("نوع الملف لا يطابق الأداة");
         if(kind.equals("video")||kind.equals("audio")){
             if((o.optString("tool").equals("audio")||o.optString("tool").equals("music"))&&!info.optBoolean("hasAudio"))throw new IOException("الفيديو لا يحتوي على صوت");
+            if(o.optString("tool").equals("music")&&!o.optBoolean("sample",false)&&(info.optLong("duration",0)<=0||info.optLong("duration",0)>60000))throw new IOException("الفصل المحلي متاح حتى دقيقة واحدة. للمقاطع الأطول استخدم Colab يدويًا؛ الربط السحابي غير متاح بعد.");
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
             Intent service=new Intent(this,VideoExportService.class).putExtra("input",input.getAbsolutePath()).putExtra("options",o.toString()).putExtra("duration",info.getLong("duration")).putExtra("height",info.optInt("height",0));startForegroundService(service);
         }else{
@@ -137,7 +155,7 @@ public class MainActivity extends Activity {
                 String tool=o.optString("tool");
                 if(tool.equals("layoutWord")){File f=LayoutWordExporter.export(this,input,o.optInt("first",1),o.optInt("last",1));working=false;send(FilesUtil.info(f).put("type","result"));}
                 else if(tool.equals("ocr")||tool.equals("text")||tool.equals("word")){
-                    String text=kind.equals("image")?TextProcessor.image(this,input):TextProcessor.pdf(this,input,o.optInt("first",1),o.optInt("last",1),p->event("workProgress","message",p));
+                    String text=kind.equals("image")?TextProcessor.image(this,input,o.optString("ocrLanguage","ara")):TextProcessor.pdf(this,input,o.optInt("first",1),o.optInt("last",1),p->event("workProgress","message",p));
                     working=false;if(text.trim().isEmpty())throw new IOException("لم يُعثر على نص واضح في الملف");send(new JSONObject().put("type","text").put("text",text));
                 }else{File f=kind.equals("image")?ImageProcessor.export(this,input,o):PdfProcessor.export(this,input,o);working=false;send(FilesUtil.info(f).put("type","result"));}
             }catch(Exception|OutOfMemoryError e){working=false;error("لم يكتمل التصدير. "+message(e));}});
@@ -160,11 +178,34 @@ public class MainActivity extends Activity {
     private void openOutput(File f,boolean share){
         Uri uri=FileProvider.getUriForFile(this,getPackageName()+".files",f);Intent i=new Intent(share?Intent.ACTION_SEND:Intent.ACTION_VIEW).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);i.setClipData(ClipData.newRawUri("Madar",uri));if(share){i.setType(FilesUtil.mime(f));i.putExtra(Intent.EXTRA_STREAM,uri);}else i.setDataAndType(uri,FilesUtil.mime(f));try{startActivity(Intent.createChooser(i,share?"مشاركة الملف":"فتح الملف"));}catch(ActivityNotFoundException e){error("لا يوجد تطبيق مناسب لفتح الملف");}
     }
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null||data.getData()==null)return;if(request==10)importFile(data.getData(),requestedKind);else if(request==11&&saving!=null){File f=saving;Uri dest=data.getData();saving=null;worker.execute(()->{try(InputStream in=new FileInputStream(f);OutputStream out=getContentResolver().openOutputStream(dest,"w")){if(out==null)throw new IOException("تعذر إنشاء الملف");FilesUtil.copy(in,out);event("saved",null,null);}catch(Exception e){error("تعذر الحفظ. "+message(e));}});}}
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null)return;if(request==12){importCollection(data);return;}if(data.getData()==null)return;if(request==10)importFile(data.getData(),requestedKind);else if(request==11&&saving!=null){File f=saving;Uri dest=data.getData();saving=null;worker.execute(()->{try(InputStream in=new FileInputStream(f);OutputStream out=getContentResolver().openOutputStream(dest,"w")){if(out==null)throw new IOException("تعذر إنشاء الملف");FilesUtil.copy(in,out);event("saved",null,null);}catch(Exception e){error("تعذر الحفظ. "+message(e));}});}}
+    private void importCollection(Intent data){
+        if(isBusy())return;List<Uri> uris=new ArrayList<>();if(data.getClipData()!=null){for(int i=0;i<data.getClipData().getItemCount();i++)uris.add(data.getClipData().getItemAt(i).getUri());}else if(data.getData()!=null)uris.add(data.getData());
+        if(uris.isEmpty()||uris.size()>20){error("اختر من ملف واحد إلى 20 ملفًا");return;}boolean images=pickingImages,batch=pickingBatch;working=true;event("busy","message","جارٍ تجهيز الملفات");
+        worker.execute(()->{List<File> imported=new ArrayList<>();try{
+            JSONArray names=new JSONArray();long budget=Math.min(512L*1024*1024,getCacheDir().getUsableSpace()-64L*1024*1024),total=0;
+            for(Uri uri:uris){if(!"content".equals(uri.getScheme()))throw new IOException("اختر الملفات من مدير الملفات");String name="ملف "+(imported.size()+1);try(Cursor cursor=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())name=cursor.getString(0);}
+                File f=File.createTempFile("madar_collection_",images?".image":".pdf",getCacheDir());imported.add(f);try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(f)){if(in==null)throw new IOException("تعذر قراءة الملف");byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1){total+=n;if(total>budget)throw new IOException("حجم الملفات يتجاوز المساحة المتاحة أو حد 512 ميجابايت");out.write(buffer,0,n);}}
+                names.put(new JSONObject().put("id",imported.size()-1).put("name",name));
+            }
+            for(File old:collectionFiles)old.delete();collectionFiles.clear();collectionFiles.addAll(imported);imported.clear();collectionImages=images;collectionBatch=batch;collectionNames=names;working=false;send(new JSONObject().put("type","collection").put("files",names).put("images",images).put("batch",batch));
+        }catch(Exception|OutOfMemoryError e){working=false;error("تعذر تجهيز الملفات. "+message(e));}finally{for(File f:imported)f.delete();}});
+    }
+    private void exportCollection(JSONArray order)throws Exception{
+        if(isBusy())return;if(order.length()<1||order.length()>20)throw new IOException("حدد الملفات أولًا");List<File> selected=new ArrayList<>();Set<Integer> used=new HashSet<>();for(int i=0;i<order.length();i++){int index=order.getInt(i);if(index<0||index>=collectionFiles.size()||!used.add(index))throw new IOException("ترتيب الملفات غير صالح");selected.add(collectionFiles.get(index));}boolean images=collectionImages;working=true;event("busy","message","جارٍ إنشاء PDF");
+        worker.execute(()->{try{File output=DocumentCollection.export(this,selected,images);working=false;send(FilesUtil.info(output).put("type","result"));history();}catch(Exception|OutOfMemoryError e){working=false;error("تعذر إنشاء PDF. "+message(e));}});
+    }
+    private void startImageBatch(JSONArray order,JSONObject options)throws Exception{
+        if(isBusy())return;if(!collectionImages||!collectionBatch||order.length()<1||order.length()>20)throw new IOException("اختر صور الدفعة أولًا");
+        List<File> selected=new ArrayList<>();JSONArray names=new JSONArray();Set<Integer> used=new HashSet<>();for(int i=0;i<order.length();i++){int index=order.getInt(i);if(index<0||index>=collectionFiles.size()||!used.add(index))throw new IOException("ترتيب الصور غير صالح");selected.add(collectionFiles.get(index));names.put(collectionNames.getJSONObject(index).getString("name"));}JSONObject safe=ImageBatchQueue.validate(options);working=true;event("busy","message","حفظ صور الطابور للاستئناف");
+        worker.execute(()->{try{ImageBatchQueue.create(this,selected,names,safe);runOnUiThread(()->{working=false;try{startBatchService();}catch(Exception e){error("تعذر بدء الطابور. "+message(e));}});}catch(Exception|OutOfMemoryError e){working=false;error("تعذر تجهيز الطابور. "+message(e));}});
+    }
+    private void startBatchService(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);ImageBatchService.starting=true;try{startForegroundService(new Intent(this,ImageBatchService.class));}catch(RuntimeException e){ImageBatchService.starting=false;throw e;}}
+    private void batchStatus(){worker.execute(()->{try{JSONObject state=ImageBatchQueue.read(this);if(state==null)state=new JSONObject().put("status","empty").put("jobs",new JSONArray());send(ImageBatchQueue.view(state,ImageBatchService.active||ImageBatchService.starting));}catch(Exception e){error("تعذر قراءة طابور الصور");}});}
     private void history(){worker.execute(()->{try{File[] files=FilesUtil.directory(this).listFiles(f->f.isFile()&&!f.getName().endsWith(".partial"));JSONArray a=new JSONArray();if(files!=null){Arrays.sort(files,(x,y)->Long.compare(y.lastModified(),x.lastModified()));for(int i=0;i<Math.min(50,files.length);i++)a.put(FilesUtil.info(files[i]));}send(new JSONObject().put("type","history").put("files",a));}catch(Exception e){error("تعذر قراءة النتائج");}});}
     private void event(String type,String key,Object value){try{JSONObject o=new JSONObject().put("type",type);if(key!=null)o.put(key,value);send(o);}catch(JSONException ignored){}}
     private void error(String message){event("error","message",message);}
     private void send(JSONObject event){runOnUiThread(()->{if(ready&&web!=null)web.evaluateJavascript("window.receive("+event.toString()+");",null);});}
-    @Override protected void onResume(){super.onResume();if(ready&&VideoExportService.active&&VideoExportService.lastEvent!=null)try{send(new JSONObject(VideoExportService.lastEvent));}catch(JSONException ignored){}}
-    @Override protected void onDestroy(){ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.shutdown();previews.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onResume(){super.onResume();if(ready&&(ImageBatchService.active||ImageBatchService.starting))batchStatus();if(ready&&VideoExportService.active&&VideoExportService.lastEvent!=null)try{send(new JSONObject(VideoExportService.lastEvent));}catch(JSONException ignored){}}
+    @Override protected void onDestroy(){ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }
