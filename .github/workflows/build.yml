@@ -112,10 +112,12 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_6
+          ram-size: 2048M
+          heap-size: 512M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
           script: |
-            gradle --no-daemon connectedDebugAndroidTest
+            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 connectedDebugAndroidTest
             adb uninstall com.madar.files
             adb install upgrade-baseline/MadarFiles-1.2.0.apk
             adb shell am start -W -n com.madar.files/.MainActivity

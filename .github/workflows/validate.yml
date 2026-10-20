@@ -73,8 +73,11 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel_6
+          ram-size: 2048M
+          heap-size: 512M
           disable-animations: true
-          script: gradle -PvalidationBuild=true :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.DocumentToolsTest,com.madar.files.ImageBatchTest,com.madar.files.CaptionExportTest,com.madar.files.AudioWaveformTest --stacktrace
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
+          script: gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.DocumentToolsTest,com.madar.files.ImageBatchTest,com.madar.files.CaptionExportTest,com.madar.files.AudioWaveformTest --stacktrace
       - name: Remove disposable validation key
         if: always()
         run: rm -f "$MADAR_VALIDATION_KEYSTORE"
