@@ -103,3 +103,10 @@
 - New Android checks verify real fixture waveform decoding, finite bounded peak values, cancellation, PCM stereo peaks, float samples and timestamp placement. Previous caption/PDF/image checks also passed.
 - The final JS-only guard cancels waveform analysis when a new export starts. Its dependency-free contract test passed locally after the above full run; native decoder code is unchanged.
 - No release APK is delivered. Secure configuration of the original signing key is still required. Multi-file video editing/layers, audio export validation and physical-device speed/thermal measurements remain pending.
+
+### Signing migration and 1.3.0 release preparation — 2026-10-20
+- The original signing keystore and its three signing parameters are now configured in the repository GitHub Actions Secrets, with explicit owner authorization. Both certificate fingerprint and private/public key match were verified during migration.
+- SHA-256 remains `753b13a984815b725b41a8f2ae2ef07d9d9e8cc64811cbff004d5da8ccedfb5e` (same as 1.1/1.2). No replacement release signing key was generated.
+- Recovery restored the legacy cache once without saving it back, verified the certificate and uploaded only an AES-GCM/RSA-OAEP encrypted one-time envelope. The temporary recovery workflow/public transport key are removed from the final branch. Subsequent builds use Secrets only.
+- Release version is 1.3.0 / versionCode 4. The pipeline checks the original certificate, package and version, then tests installation from the signed 1.2.0 APK with `adb install -r`. APK upload follows successful processing and upgrade tests.
+- This section records preparation, not a delivered APK. Full build/native packaging and the in-place upgrade still need a successful release run.

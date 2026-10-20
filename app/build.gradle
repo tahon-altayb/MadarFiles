@@ -21,7 +21,7 @@ android {
     signingConfigs { debug { storeFile validationBuild ? file(System.getenv("MADAR_VALIDATION_KEYSTORE") ?: System.getProperty("user.home")+"/.android/debug.keystore") : rootProject.file(".signing/madar-development.keystore"); storePassword validationBuild ? "android" : (System.getenv("MADAR_STORE_PASSWORD") ?: "android"); keyAlias validationBuild ? "androiddebugkey" : (System.getenv("MADAR_KEY_ALIAS") ?: "androiddebugkey"); keyPassword validationBuild ? "android" : (System.getenv("MADAR_KEY_PASSWORD") ?: "android") } }
     buildTypes {
         release {
-            // Personal APK. A persistent signing secret can replace this before public distribution.
+            // Original release signing material is supplied by GitHub Secrets.
             signingConfig signingConfigs.debug
             minifyEnabled false
         }
