@@ -94,3 +94,6 @@ run("state.kind='video';showSubtitleEditor([{start:0,end:1,text:'ترجمة'}])"
 console.log('PASS: durable batch controls and caption style export settings');
 run("state.waveLoading=true;state.waveToken=10;$('close').onclick({});");assert.equal(requests.at(-1).action,'cancelWaveform');assert.equal(run('state.waveLoading'),false);assert.equal(run('state.waveToken'),11);assert.equal(get('sheet').hidden,true);
 console.log('PASS: closing the editor cancels waveform work and invalidates old results');
+
+run("state.segments=[[2,3],[0,1]];state.waveData={duration:3,peaks:[.1,.9,.2,.3,.4,.8]};");assert.equal(run('editedWavePeak(0,1)'),.8);assert.equal(run('editedWavePeak(1,2)'),.9);assert.equal(run('editedWavePeak(.75,1.75)'),.9);
+console.log('PASS: waveform keeps peak transients across reordered clip boundaries');
