@@ -20,11 +20,11 @@ public class DocumentToolsTest {
   File source=File.createTempFile("pdf-tool-",".pdf",c.getCacheDir()),compressed=null,protectedFile=null,extracted=null,merged=null;
   try{
    try(PDDocument doc=new PDDocument()){
-    PDPage page=new PDPage();doc.addPage(page);Bitmap bitmap=Bitmap.createBitmap(2400,1600,Bitmap.Config.ARGB_8888);
+    PDPage page=new PDPage();doc.addPage(page);Bitmap bitmap=Bitmap.createBitmap(2400,1600,Bitmap.Config.ARGB_8888);bitmap.setHasAlpha(false);
     int[] pixels=new int[2400];java.util.Random random=new java.util.Random(7);for(int y=0;y<1600;y++){for(int x=0;x<2400;x++)pixels[x]=0xff000000|random.nextInt(0x1000000);bitmap.setPixels(pixels,0,2400,0,y,2400,1);}
     try(PDPageContentStream stream=new PDPageContentStream(doc,page)){stream.drawImage(JPEGFactory.createFromImage(doc,bitmap,.99f),0,0,500,400);stream.beginText();stream.setFont(PDType1Font.HELVETICA,18);stream.newLineAtOffset(30,700);stream.showText("Madar searchable text");stream.endText();}finally{bitmap.recycle();}doc.save(source);
    }
-   compressed=PdfOptimizer.compress(c,source,"strong");assertTrue(compressed.length()<source.length());
+   compressed=PdfOptimizer.compress(c,source,"strong");assertTrue("opaque image PDF did not shrink: source="+source.length()+", result="+compressed.length(),compressed.length()<source.length());
    try(PDDocument doc=PDDocument.load(compressed)){assertEquals(1,doc.getNumberOfPages());assertEquals(612f,doc.getPage(0).getMediaBox().getWidth(),.1f);assertTrue(new PDFTextStripper().getText(doc).contains("Madar searchable text"));}
    extracted=PdfProcessor.export(c,source,new JSONObject().put("tool","extract").put("first",1).put("last",1));try(PDDocument doc=PDDocument.load(extracted)){assertTrue(new PDFTextStripper().getText(doc).contains("Madar searchable text"));}
    merged=DocumentCollection.export(c,java.util.Arrays.asList(source,extracted),false);try(PDDocument doc=PDDocument.load(merged)){assertEquals(2,doc.getNumberOfPages());assertTrue(new PDFTextStripper().getText(doc).contains("Madar searchable text"));}
