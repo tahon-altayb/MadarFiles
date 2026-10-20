@@ -47,7 +47,7 @@
 - These changes are not yet included in a delivered APK. Signing Secrets remain required before release.
 
 ### Daily document tools — development, not released
-- Embedded opaque PDF image compression: light/balanced/strong, retaining text and vector content. Transparency, masks and images over 16 MP are skipped to bound decoding memory. Already smaller originals are copied instead of returning a larger file. Signed PDF signatures are not preserved by rewriting.
+- Embedded opaque PDF image compression: light/balanced/strong, retaining text and vector content. Actual transparency, stencils and images over 16 MP are skipped to bound decoding memory. Already smaller originals are copied instead of returning a larger file. Signed PDF signatures are not preserved by rewriting.
 - Password protection (AES 256), original-preserving extraction of up to 100 pages.
 - Target JPEG size from 20–20000 KiB using quality search and dimension reduction as needed; transparency becomes white.
 - Interface tests pass. New Android instrumentation tests cover searchable text, page size, password rejection/acceptance, extraction and image byte limits; NOT executed in this environment yet. No new APK has been built.
@@ -68,3 +68,5 @@
 
 - Full source compilation, lint and unit tests passed in Actions run 39355758696. Its emulator stage stopped before tests because a disposable validation signing file was absent; validation now creates and removes a temporary key only for `com.madar.files.validation`, never for the installed app or signing cache.
 - Large tool sections use a responsive searchable grid to avoid overlapping circular buttons. Local headless-browser download was unavailable; layout checks run in Actions using its installed Chrome.
+
+- PDF optimization now checks decoded alpha instead of skipping every masked image: fully opaque images carrying an alpha mask can shrink, while real transparency remains untouched. Added an explicit transparency preservation test.

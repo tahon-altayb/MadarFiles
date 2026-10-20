@@ -39,11 +39,11 @@ final class PdfOptimizer {
    if(!(object instanceof PDImageXObject))continue;
    PDImageXObject image=(PDImageXObject)object;
    if(!seen.add(image.getCOSObject()))continue;
-   // Do not flatten transparency, stencils, or huge decoded images into memory.
-   if(image.isStencil()||image.getSoftMask()!=null||image.getMask()!=null||image.getColorKeyMask()!=null||image.getWidth()<1||image.getHeight()<1||(long)image.getWidth()*image.getHeight()>16000000L)continue;
+   // Never flatten actual transparency or stencils; bound decoded image memory.
+   if(image.isStencil()||image.getWidth()<1||image.getHeight()<1||(long)image.getWidth()*image.getHeight()>16000000L)continue;
    Bitmap bitmap=null,scaled=null;
    try{
-    bitmap=image.getImage();if(bitmap==null)continue;
+    bitmap=image.getImage();if(bitmap==null||!opaque(bitmap))continue;
     double ratio=Math.min(1.0,(double)bound/Math.max(bitmap.getWidth(),bitmap.getHeight()));
     int width=Math.max(1,(int)Math.round(bitmap.getWidth()*ratio)),height=Math.max(1,(int)Math.round(bitmap.getHeight()*ratio));
     scaled=Bitmap.createBitmap(width,height,Bitmap.Config.RGB_565);Canvas canvas=new Canvas(scaled);canvas.drawColor(android.graphics.Color.WHITE);canvas.drawBitmap(bitmap,null,new android.graphics.Rect(0,0,width,height),new Paint(Paint.FILTER_BITMAP_FLAG));
@@ -51,5 +51,9 @@ final class PdfOptimizer {
     if(candidate.getCOSObject().getLength()<image.getCOSObject().getLength())resources.put(name,candidate);
    }finally{if(scaled!=null)scaled.recycle();if(bitmap!=null)bitmap.recycle();}
   }
+ }
+ private static boolean opaque(Bitmap bitmap){
+  if(!bitmap.hasAlpha())return true;int[] pixels=new int[Math.min(1024,bitmap.getWidth())];
+  for(int y=0;y<bitmap.getHeight();y++)for(int x=0;x<bitmap.getWidth();x+=pixels.length){int count=Math.min(pixels.length,bitmap.getWidth()-x);bitmap.getPixels(pixels,0,count,x,y,count,1);for(int i=0;i<count;i++)if((pixels[i]>>>24)!=255)return false;}return true;
  }
 }
