@@ -97,3 +97,5 @@ console.log('PASS: closing the editor cancels waveform work and invalidates old 
 
 run("state.segments=[[2,3],[0,1]];state.waveData={duration:3,peaks:[.1,.9,.2,.3,.4,.8]};");assert.equal(run('editedWavePeak(0,1)'),.8);assert.equal(run('editedWavePeak(1,2)'),.9);assert.equal(run('editedWavePeak(.75,1.75)'),.9);
 console.log('PASS: waveform keeps peak transients across reordered clip boundaries');
+run("state.waveLoading=true;state.waveToken=20;setBusy(true,'تصدير');");assert.equal(requests.at(-1).action,'cancelWaveform');assert.equal(run('state.waveLoading'),false);assert.equal(run('state.waveToken'),21);run('setBusy(false)');
+console.log('PASS: starting an export cancels waveform decoding to avoid concurrent processing');

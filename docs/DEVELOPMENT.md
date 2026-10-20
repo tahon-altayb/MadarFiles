@@ -89,3 +89,17 @@
 - [Actions run 39364513269](https://github.com/tahon-altayb/MadarFiles/actions/runs/39364513269): eight Android 15 instrumentation tests passed, zero failures/errors/skips. This includes all six prior document/image checks plus timed Arabic caption MP4 export with retained audio/duration and bounded/cancellable timeline thumbnails.
 - The caption test compares decoded baseline and caption output frames before/during/after a cue. It does not measure translation accuracy or certify arbitrary codecs/device behavior.
 - No release APK was built. Original signing Secrets still need secure configuration. Native AI packaging, physical-device performance and new audio normalization/channel output remain unverified.
+
+### Optional streaming audio waveform — development
+- Video editor offers explicit waveform analysis and cancellation. Closing the editor or starting an export cancels outstanding analysis; old tokens/source results are discarded.
+- MediaCodec decodes audio directly into a bounded peak envelope (32–2400 values); no PCM file is saved and no separation/AI model is invoked. Files up to two hours are accepted; decoding aborts after two minutes of analysis time.
+- The canvas shows the edited order, including trims, duplicates and reordered clips; each visual bar retains the maximum peak of its interval. Clicking/dragging seeks within that edited order and pauses playback.
+- The envelope is a coarse audio-level view, not speech/silence detection or automatic cutting. Actual creation time and device thermal behavior have not been measured on the Galaxy.
+- Added Android tests for real fixture decoding/cancellation and PCM stereo/float timestamp bins; browser tests cover stale-result rejection, cancellation and seeking through reordered clips.
+
+### Verified waveform checkpoint — 2026-10-20
+- Source commit `08327ed550a8006d9b6455afc97fc5fe312c131b`: Java compilation, lint, five unit tests, JS contracts and Chrome layout/scrubbing/cancellation checks passed at 320/412/768 pixels.
+- [Actions run 39366668781, attempt 2](https://github.com/tahon-altayb/MadarFiles/actions/runs/39366668781/attempts/2): all ten Android 15 instrumentation tests passed. Attempt 1 lost the emulator during the unchanged caption export test and stopped before waveform tests; the retry completed the full suite.
+- New Android checks verify real fixture waveform decoding, finite bounded peak values, cancellation, PCM stereo peaks, float samples and timestamp placement. Previous caption/PDF/image checks also passed.
+- The final JS-only guard cancels waveform analysis when a new export starts. Its dependency-free contract test passed locally after the above full run; native decoder code is unchanged.
+- No release APK is delivered. Secure configuration of the original signing key is still required. Multi-file video editing/layers, audio export validation and physical-device speed/thermal measurements remain pending.

@@ -89,3 +89,4 @@ function showImageBatch(event){
 function stopEditorWaveform(){if(!state.waveLoading)return;state.waveToken=(state.waveToken||0)+1;state.waveLoading=false;native('cancelWaveform');if($('waveButton'))$('waveButton').textContent='إنشاء الموجة الصوتية';}
 const closeWithWaveform=$('close').onclick;$('close').onclick=e=>{stopEditorWaveform();closeWithWaveform(e);};
 const sheetWithWaveform=$('sheet').onclick;$('sheet').onclick=e=>{if(e.target===$('sheet'))stopEditorWaveform();sheetWithWaveform(e);};
+const busyWithWaveform=setBusy;setBusy=function(value,title){if(value)stopEditorWaveform();busyWithWaveform(value,title);};
