@@ -73,7 +73,7 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel_6
-          ram-size: 2048M
+          ram-size: 4096M
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
