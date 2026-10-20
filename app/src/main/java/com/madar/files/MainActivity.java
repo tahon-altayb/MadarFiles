@@ -54,10 +54,11 @@ public class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
                 String path=r.getUrl().toString();
+                if(path.startsWith("data:image/png;base64,")||path.startsWith("data:image/jpeg;base64,")||path.startsWith("data:image/webp;base64,"))return null;
                 if(path.equals("https://madar.local/")||path.startsWith("https://madar.local/")){
                     String route=r.getUrl().getPath();
-                    if("/source".equals(route)||"/result".equals(route)){
-                        try{File target="/source".equals(route)?source:FilesUtil.resolve(MainActivity.this,r.getUrl().getQueryParameter("name"));return mediaResponse(target,r);}catch(Exception e){return blocked();}
+                    if("/source".equals(route)||"/result".equals(route)||"/draft".equals(route)){
+                        try{String draftName=r.getUrl().getQueryParameter("name");if("/draft".equals(route)&&(draftName==null||!draftName.matches("madar_preview_[0-9]+\\.(mp4|m4a|wav|aac|mp3|flac|ogg)")))return blocked();File target="/source".equals(route)?source:"/draft".equals(route)?new File(getCacheDir(),draftName):FilesUtil.resolve(MainActivity.this,draftName);return mediaResponse(target,r);}catch(Exception e){return blocked();}
                     }
                     String file=r.getUrl().getPath();if(file==null||file.equals("/"))file="index.html";else file=file.substring(1);
                     if(!file.matches("index\\.html|style\\.css|app\\.js|crop\\.js|studio\\.js|experience\\.js"))return blocked();
@@ -120,10 +121,10 @@ public class MainActivity extends Activity {
             try{
                 String name="ملف",mime=getContentResolver().getType(uri);long declared=-1;
                 try(Cursor cursor=getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME,OpenableColumns.SIZE},null,null,null)){if(cursor!=null&&cursor.moveToFirst()){name=cursor.getString(0);if(!cursor.isNull(1))declared=cursor.getLong(1);}}
-                if(mime==null)mime="";
+                if(mime==null||mime.isEmpty()){mime=java.net.URLConnection.guessContentTypeFromName(name);if(mime==null)mime="";}
                 String kind=mime.startsWith("image/")?"image":mime.startsWith("audio/")?"audio":mime.startsWith("video/")?"video":mime.equals("application/pdf")?"pdf":expected;
                 if(kind==null&&name!=null&&name.toLowerCase(Locale.ROOT).endsWith(".pdf"))kind="pdf";
-                if(kind==null)throw new IOException("نوع الملف غير مدعوم. اختر صورة أو فيديو أو PDF");
+                if(kind==null)throw new IOException("نوع الملف غير مدعوم. اختر صورة أو فيديو أو PDF");if(mime.isEmpty())mime=kind.equals("video")?"video/mp4":kind.equals("audio")?"audio/mp4":kind.equals("image")?"image/jpeg":"application/pdf";
                 long available=getFilesDir().getUsableSpace();if(declared>available-64L*1024*1024)throw new IOException("المساحة المتاحة لا تكفي لاستيراد الملف");
                 imported=File.createTempFile("madar_input_",".media",getCacheDir());
                 try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(imported)){
@@ -168,7 +169,7 @@ public class MainActivity extends Activity {
         }catch(Exception e){try{send(new JSONObject().put("type","previewError").put("token",token).put("message","تعذر عرض هذه الصفحة"));}catch(Exception ignored){}}});
     }
     private WebResourceResponse mediaResponse(File file,WebResourceRequest request)throws Exception{
-        if(file==null||!file.isFile())return blocked();long length=file.length(),start=0,end=length-1;String range=request.getRequestHeaders().get("Range");boolean partial=false;
+        if(file==null||!file.isFile())return blocked();long length=file.length(),start=0,end=length-1;String range=null;for(Map.Entry<String,String> header:request.getRequestHeaders().entrySet())if(header.getKey().equalsIgnoreCase("Range"))range=header.getValue();boolean partial=false;
         if(range!=null&&range.matches("bytes=[0-9]+-[0-9]*")){String[] values=range.substring(6).split("-",-1);start=Long.parseLong(values[0]);if(!values[1].isEmpty())end=Math.min(end,Long.parseLong(values[1]));partial=true;}
         if(start<0||start>=length||end<start)return blocked();FileInputStream stream=new FileInputStream(file);stream.getChannel().position(start);final long count=end-start+1;
         InputStream limited=new FilterInputStream(stream){long left=count;@Override public int read()throws IOException{if(left<=0)return -1;int v=super.read();if(v>=0)left--;return v;}@Override public int read(byte[] b,int off,int len)throws IOException{if(left<=0)return -1;int n=super.read(b,off,(int)Math.min(left,len));if(n>0)left-=n;return n;}};
