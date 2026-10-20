@@ -77,7 +77,12 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
-          script: gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.DocumentToolsTest,com.madar.files.ImageBatchTest,com.madar.files.CaptionExportTest,com.madar.files.AudioWaveformTest,com.madar.files.InteractivePreviewTest,com.madar.files.PlayerLayoutTest,com.madar.files.TranslationPathsTest,com.madar.files.FrameStepperTest --stacktrace
+          script: |
+            adb shell wm density 180
+            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.DocumentToolsTest,com.madar.files.ImageBatchTest,com.madar.files.CaptionExportTest,com.madar.files.AudioWaveformTest,com.madar.files.InteractivePreviewTest,com.madar.files.PlayerLayoutTest,com.madar.files.TranslationPathsTest,com.madar.files.FrameStepperTest --stacktrace
+            mkdir -p phone-screenshots
+            adb pull /data/local/tmp/madar-editor.png phone-screenshots/editor.png
+            adb pull /data/local/tmp/madar-pdf.png phone-screenshots/pdf.png
       - name: Remove disposable validation key
         if: always()
         run: rm -f "$MADAR_VALIDATION_KEYSTORE"
@@ -89,4 +94,5 @@ jobs:
           path: |
             app/build/reports/androidTests
             app/build/outputs/androidTest-results
+            phone-screenshots/
           if-no-files-found: ignore

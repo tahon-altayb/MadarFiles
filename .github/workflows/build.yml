@@ -1,7 +1,7 @@
 name: Build MadarFiles APK
 on:
   push:
-    branches: [main, master, development/interactive-studio-20261020]
+    branches: [main, master]
   workflow_dispatch:
 permissions:
   contents: read
@@ -121,6 +121,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
+            adb shell wm density 180
             adb install upgrade-baseline/MadarFiles-1.3.0.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
