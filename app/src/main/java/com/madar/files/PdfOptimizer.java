@@ -41,6 +41,8 @@ final class PdfOptimizer {
    if(!seen.add(image.getCOSObject()))continue;
    // Never flatten actual transparency or stencils; bound decoded image memory.
    if(image.isStencil()||image.getWidth()<1||image.getHeight()<1||(long)image.getWidth()*image.getHeight()>16000000L)continue;
+   if(image.getMask()!=null||image.getColorKeyMask()!=null)continue;
+   PDImageXObject softMask=image.getSoftMask();if(softMask!=null&&!whiteMask(softMask))continue;
    Bitmap bitmap=null,scaled=null;
    try{
     bitmap=image.getImage();if(bitmap==null||!opaque(bitmap))continue;
@@ -51,6 +53,14 @@ final class PdfOptimizer {
     if(candidate.getCOSObject().getLength()<image.getCOSObject().getLength())resources.put(name,candidate);
    }finally{if(scaled!=null)scaled.recycle();if(bitmap!=null)bitmap.recycle();}
   }
+ }
+ private static boolean whiteMask(PDImageXObject mask)throws IOException{
+  if(mask.getWidth()<1||mask.getHeight()<1||(long)mask.getWidth()*mask.getHeight()>16000000L||mask.getSoftMask()!=null||mask.getMask()!=null||mask.getColorKeyMask()!=null)return false;
+  // Inspect the raw grayscale mask; composited getImage() may report opaque alpha.
+  Bitmap bitmap=mask.getOpaqueImage();if(bitmap==null)return false;
+  try{int[] pixels=new int[Math.min(1024,bitmap.getWidth())];boolean alpha=bitmap.getConfig()==Bitmap.Config.ALPHA_8;
+   for(int y=0;y<bitmap.getHeight();y++)for(int x=0;x<bitmap.getWidth();x+=pixels.length){int count=Math.min(pixels.length,bitmap.getWidth()-x);bitmap.getPixels(pixels,0,count,x,y,count,1);for(int i=0;i<count;i++)if(alpha?(pixels[i]>>>24)!=255:(pixels[i]&0xffffff)!=0xffffff)return false;}return true;
+  }finally{bitmap.recycle();}
  }
  private static boolean opaque(Bitmap bitmap){
   if(!bitmap.hasAlpha())return true;int[] pixels=new int[Math.min(1024,bitmap.getWidth())];
