@@ -19,3 +19,13 @@ Pinned checksums for bundled model bytes are recorded inside the APK at assets/m
 
 - FFmpeg 7.1.1, LGPL 2.1 or later build without GPL/nonfree components. Only local file demuxing/remuxing is enabled; runtime network protocols are disabled. Source: https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz. Build/relink integration: `scripts/prepare_containers.py` and CMake. License bundled as `FFMPEG-COPYING.txt`.
 - ML Kit selfie segmentation 16.0.0-beta6 for local person cutout. Google terms apply.
+
+## Optional multilingual speech models and test references (1.4)
+Whisper small and large-v3-turbo, exported by the sherpa-onnx maintainer, are optional first-use downloads. Upstream model license: MIT (OpenAI Whisper). Exact Hugging Face revisions and file SHA-256 hashes are pinned in SpeechModels.java. These models do not send user recordings to a server.
+- https://github.com/openai/whisper
+- https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small
+- https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo
+
+Three Android test-only recordings are downloaded from the public source during CI; the reference texts come from Google FLEURS, test split row 0 of ar_eg, ja_jp and en_us, licensed CC BY 4.0. They are attributed to the FLEURS dataset authors and contributors and are not bundled in the release APK. See speech-references.json and qa/speech/initial-comparison.json for provenance and measurement limits.
+- https://huggingface.co/datasets/google/fleurs
+- https://creativecommons.org/licenses/by/4.0/

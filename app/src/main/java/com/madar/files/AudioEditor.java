@@ -10,8 +10,8 @@ final class AudioEditor {
  private static native void mp3(String input,String output,AtomicBoolean cancel);
  static File render(Context c,File source,JSONObject o,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   AudioPipeline.Decoded decoded=null;File pcm=null,encoded=null,result=null,destination=null;
-  try{decoded=AudioPipeline.decode(c,source,0,cancel,progress);long total=decoded.pcm.length()/4;double duration=total/(double)decoded.sampleRate;
-   double start=o.optDouble("start",0),end=o.optDouble("end",duration);if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||end<=start||end>duration+.2)throw new IOException("حدود الصوت غير صالحة");
+  try{long previewLimit=o.optBoolean("previewDraft")?Math.round((o.optDouble("start",0)+10)*1000000):0;decoded=AudioPipeline.decode(c,source,previewLimit,cancel,progress);long total=decoded.pcm.length()/4;double duration=total/(double)decoded.sampleRate;
+   double start=o.optDouble("start",0),end=o.optDouble("end",duration);if(o.optBoolean("previewDraft"))end=Math.min(end,Math.min(duration,start+10));if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||end<=start||end>duration+.2)throw new IOException("حدود الصوت غير صالحة");
    if(o.optString("kind").equals("video")&&(start>.001||end<duration-.2))throw new IOException("تعديل مستوى صوت الفيديو يحافظ على مدته؛ استخدم المحرر للقص");
    String channel=o.optString("channel","stereo");if(!channel.matches("stereo|mono|left|right"))throw new IOException("قناة صوت غير صالحة");
    double normalization=1;if(o.optString("normalize","none").equals("peak")){progress.update(8,"قياس أعلى مستوى للصوت");double peak=0;try(RandomAccessFile scan=new RandomAccessFile(decoded.pcm,"r")){scan.seek(Math.round(start*decoded.sampleRate)*4);long remaining=Math.max(0,Math.min(decoded.pcm.length(),Math.round(end*decoded.sampleRate)*4)-scan.getFilePointer());byte[] block=new byte[65536];int n;while(remaining>0&&(n=scan.read(block,0,(int)Math.min(block.length,remaining)))!=-1){remaining-=n;MusicSeparator.check(cancel);for(int i=0;i+3<n;i+=4){double left=(short)((block[i]&255)|(block[i+1]<<8))/32768.0,right=(short)((block[i+2]&255)|(block[i+3]<<8))/32768.0;double a=channel.equals("mono")?(left+right)/2:channel.equals("right")?right:left,b=channel.equals("stereo")?right:a;peak=Math.max(peak,Math.max(Math.abs(a),Math.abs(b)));}}}if(peak>0.000001)normalization=Math.min(10,Math.pow(10,-1.0/20)/peak);}
@@ -22,7 +22,7 @@ final class AudioEditor {
    if(format.equals("mp3")){mp3(pcm.getPath(),result.getPath(),cancel);MusicSeparator.check(cancel);return finalizeOutput(result,destination);}
    if(format.equals("wav")){wave(pcm,result);return finalizeOutput(result,destination);}
    encoded=format.equals("aac")?File.createTempFile("madar_aac_",".m4a",c.getCacheDir()):result;
-   AudioPipeline.mux(source,pcm,encoded,video?decoded.offsetUs:0,0,!video,cancel,progress);
+   AudioPipeline.mux(source,pcm,encoded,video?decoded.offsetUs:0,o.optBoolean("previewDraft")?Math.round(end*1000000):0,!video,cancel,progress);
    if(format.equals("aac"))adts(encoded,result,cancel);return finalizeOutput(result,destination);
   }catch(Exception|OutOfMemoryError e){if(result!=null)result.delete();throw e;}finally{if(decoded!=null)decoded.pcm.delete();if(pcm!=null)pcm.delete();if(encoded!=null&&encoded!=result)encoded.delete();}
  }

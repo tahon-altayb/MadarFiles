@@ -1,0 +1,16 @@
+{
+  "dataset": "google/fleurs",
+  "license": "CC-BY-4.0",
+  "split": "test",
+  "row": 0,
+  "configs": {
+    "ar": "ar_eg",
+    "ja": "ja_jp",
+    "en": "en_us"
+  },
+  "references": {
+    "ar": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+    "ja": "インターネットで 敵対的環境コース について検索すると おそらく現地企業の住所が出てくるでしょう",
+    "en": "however due to the slow communication channels styles in the west could lag behind by 25 to 30 year"
+  }
+}

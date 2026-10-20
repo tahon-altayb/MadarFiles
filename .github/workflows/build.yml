@@ -76,6 +76,10 @@ jobs:
           curl -fL --retry 3 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
           ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.wav -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
           espeak-ng -v en-us -s 135 -w app/src/androidTest/assets/speech-test.wav "The quick brown fox jumps over the lazy dog. Welcome to this video. This is a test of speech recognition."
+      - name: Prepare public speech reference fixtures
+        run: |
+          python3 -m pip install --disable-pip-version-check pyarrow==26.0.0
+          python3 scripts/prepare_speech_references.py
       - name: Validate interface
         run: node qa/interface.test.cjs
       - name: Build and lint APK
@@ -85,18 +89,18 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 4 --version-name 1.3.0
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 5 --version-name 1.4.0
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.3.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.0.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
-          name: MadarFiles-1.2.0-APK
-          run-id: 39194587859
+          name: MadarFiles-1.3.0-APK
+          run-id: 39374268526
           github-token: ${{ github.token }}
           path: upgrade-baseline
       - name: Verify installed-version baseline certificate
-        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.2.0.apk --version-code 3 --version-name 1.2.0
+        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.3.0.apk --version-code 4 --version-name 1.3.0
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -112,12 +116,13 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_6
-          ram-size: 2048M
+          ram-size: 4096M
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
-            adb install upgrade-baseline/MadarFiles-1.2.0.apk
+            adb shell wm density 180
+            adb install upgrade-baseline/MadarFiles-1.3.0.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.madar.files/.MainActivity
@@ -133,8 +138,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.3.0-APK
-          path: MadarFiles-1.3.0.apk
+          name: MadarFiles-1.4.0-APK
+          path: MadarFiles-1.4.0.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports

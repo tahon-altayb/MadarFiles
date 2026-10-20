@@ -60,7 +60,7 @@ function attachPreview(){
  else container.innerHTML='<div class="previewLabel">معاينة الصفحة المحددة</div><img id="pagePreview" alt="معاينة الصفحة"><small id="pagePreviewStatus">جارٍ عرض الصفحة…</small>';
  $('form').prepend(container);
  if(state.kind==='video'){$('liveVideo').src='https://madar.local/source';$('liveVideo').muted=state.tool==='mute';$('liveVideo').ontimeupdate=()=>{if(state.tool==='trim'&&$('end')){const start=Number($('start').value),end=Number($('end').value);if($('liveVideo').currentTime>=end||$('liveVideo').currentTime<start-.1)$('liveVideo').currentTime=start;}};}
- $('form').oninput=e=>{if(e.target.id==='quality'&&$('qualityValue'))$('qualityValue').textContent=e.target.value;if(state.kind==='image')drawImagePreview();else if(state.kind==='pdf')schedulePagePreview();else if(state.tool==='trim'&&$('start')){$('liveVideo').currentTime=Number($('start').value)||0;}};
+ $('form').oninput=e=>{if(e.target.id==='quality'&&$('qualityValue'))$('qualityValue').textContent=e.target.value;if(state.kind==='image')drawImagePreview();else if(state.kind==='pdf')schedulePagePreview();else if(state.tool==='trim'&&$('start')&&$('liveVideo')){$('liveVideo').currentTime=Number($('start').value)||0;}};
  if(state.kind==='pdf')schedulePagePreview();
 }
 function drawImagePreview(){

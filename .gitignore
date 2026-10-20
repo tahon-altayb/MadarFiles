@@ -11,3 +11,10 @@ app/src/main/assets/models/
 .cxx/
 
 .signing/
+
+node_modules/
+
+# Downloaded public ASR fixtures are prepared in CI, never published as recordings.
+app/src/androidTest/assets/speech-reference-*.wav
+
+__pycache__/
