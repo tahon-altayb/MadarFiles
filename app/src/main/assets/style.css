@@ -20,3 +20,23 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 #editTimeline .clipRow{position:relative}#editTimeline .selectedClip{min-width:150px;padding-inline:24px}.trimHandle{position:absolute;top:0;bottom:0;width:22px;display:flex;align-items:center;justify-content:center;background:#b98e49;color:white;font-weight:bold;touch-action:none;cursor:ew-resize;z-index:2}.trimHandle.start{left:0;border-radius:7px 0 0 7px}.trimHandle.end{right:0;border-radius:0 7px 7px 0}
 
 #pdfViewport{overflow:auto;max-height:45dvh;direction:ltr;overscroll-behavior:contain}#pdfViewport img{flex:none}#livePreview label{font-size:11px}#livePreview label input[type=range]{display:block;width:100%;margin:5px 0}
+
+/* Keep search in normal flow; orbit owns every card's bounds. */
+#toolControls{display:flex;gap:8px;align-items:center;margin:12px 0 0;position:relative;z-index:1}
+#toolControls #toolsSearch{position:static;flex:1;min-width:0;width:auto;margin:0;padding:12px;font-size:13px}
+#toolControls #layoutMode{position:static;flex:0 0 86px;width:auto;margin:0;padding:12px 8px;font-size:12px}
+#orbit:not(.gridMode){width:min(100%,390px);margin:8px auto 0;isolation:isolate;overflow:hidden;touch-action:pan-y}
+#orbit:not(.gridMode) .tool{width:21%;height:78px;max-width:82px;padding:6px 3px;gap:3px;z-index:3;overflow:hidden;line-height:1.3;font-size:11px;border-radius:17px}
+#orbit .tool>span:last-child{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;max-width:100%;line-height:1.25}
+#orbit .tool .glyph{font-size:19px;line-height:21px;flex-shrink:0}
+#orbit:not(.gridMode) #file{width:30%;height:30%;padding:6px;gap:4px;border-radius:18px;overflow:hidden}
+#orbit:not(.gridMode) #file img{height:45%;max-width:85%}
+#orbit:not(.gridMode):after{content:none}
+#orbit.gridMode .tool{height:82px;overflow:hidden}
+.workspace{padding-bottom:12px}.intro{padding-top:12px;padding-bottom:4px}h1{font-size:29px;margin:8px 0}.intro p{margin:6px 0}
+#mediaRecovery{padding:10px;background:#eee7d9;border-radius:10px;font-size:12px;line-height:1.6}
+#sheet.editing .previewLabel,#sheet.editing #previewSize{display:none}
+#sheet.editing .livePreview{max-height:none;position:relative;border-radius:12px}
+#sheet.editing #editStage{max-height:29dvh}#sheet.editing #editStage video{max-height:29dvh}
+.editorAudio{border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}.editorAudio summary{cursor:pointer;font-size:13px;font-weight:bold}
+#editTimeline .clipRow button:first-child{min-width:0;flex:1}#editTimeline .clipRow button:first-child img{max-width:100%}

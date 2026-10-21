@@ -29,3 +29,8 @@ Whisper small and large-v3-turbo, exported by the sherpa-onnx maintainer, are op
 Three Android test-only recordings are downloaded from the public source during CI; the reference texts come from Google FLEURS, test split row 0 of ar_eg, ja_jp and en_us, licensed CC BY 4.0. They are attributed to the FLEURS dataset authors and contributors and are not bundled in the release APK. See speech-references.json and qa/speech/initial-comparison.json for provenance and measurement limits.
 - https://huggingface.co/datasets/google/fleurs
 - https://creativecommons.org/licenses/by/4.0/
+
+### PP-OCRv5 Arabic mobile (1.4.1)
+Apache-2.0 PaddlePaddle models; derivative ONNX export from `vladadu/pp-ocrv5-arabic-mobile-onnx`, pinned revision `047899f6baac72fb983dfe29122d946bc14f7426`. Upstream recognition model: `PaddlePaddle/arabic_PP-OCRv5_mobile_rec` at `33d91636a65dca87f5562cc48860332ae367ee1b`; detector upstream at `0d63e78e2b680928f6b1747d76a08db6e645efb7`. Model/dictionary SHA-256 values are pinned in scripts/prepare_vision.py. Added local Android preprocessing, CTC decoding, Arabic visual-to-logical order and row grouping. These are not Google Lens models. Images stay on device.
+
+ONNX Runtime C API header v1.17.3 (MIT), from microsoft/onnxruntime; linked to the existing sherpa-packaged ONNX Runtime shared library, not a second runtime copy.
