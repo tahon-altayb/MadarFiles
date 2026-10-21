@@ -50,7 +50,7 @@ def main():
         while not vad.empty():
             part=vad.front;a=max(0,part.start-4800);b=min(count,part.start+len(part.samples)+4800)
             if b>a:
-                if regions and a-regions[-1][1]<=8000:regions[-1][1]=max(regions[-1][1],b)
+                if regions and a-regions[-1][1]<=32000:regions[-1][1]=max(regions[-1][1],b)
                 else:regions.append([a,b])
             vad.pop()
         for a,b in regions:
