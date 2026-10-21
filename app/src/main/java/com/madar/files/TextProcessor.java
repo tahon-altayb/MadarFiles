@@ -46,11 +46,13 @@ final class TextProcessor {
  }
  private static String xml(String s){return s.replaceAll("[\\x00-\\x08\\x0B\\x0E-\\x1F]","").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;");}
  private static void entry(ZipOutputStream zip,String name,String content)throws IOException{zip.putNextEntry(new ZipEntry(name));zip.write(content.getBytes(StandardCharsets.UTF_8));zip.closeEntry();}
+ private static void wordRun(StringBuilder body,String text,boolean rtl){body.append("<w:r><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/>").append(rtl?"<w:rtl/>":"<w:rtl w:val=\"0\"/>").append("</w:rPr>");String[] pieces=text.split("\\t",-1);for(int i=0;i<pieces.length;i++){if(i>0)body.append("<w:tab/>");body.append("<w:t xml:space=\"preserve\">").append(xml(pieces[i])).append("</w:t>");}body.append("</w:r>");}
  static void docx(File output,String text)throws IOException{
   StringBuilder body=new StringBuilder();String[] pages=text.split("\\f",-1);
   for(int page=0;page<pages.length;page++){
    if(page>0)body.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
-   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"right\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/>").append(rtl?"<w:rtl/>":"").append("</w:rPr><w:t xml:space=\"preserve\">").append(xml(line)).append("</w:t></w:r></w:p>");}
+   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"right\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr>");java.util.regex.Matcher latin=java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9 \\t.,:/%+\\-]*").matcher(line);int at=0;while(latin.find()){if(latin.start()>at)wordRun(body,line.substring(at,latin.start()),rtl);wordRun(body,latin.group(),false);at=latin.end();}if(at<line.length())wordRun(body,line.substring(at),rtl);if(line.isEmpty())wordRun(body,"",rtl);body.append("</w:p>");}
+
   }
   try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(output))){
    entry(zip,"[Content_Types].xml","<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>");
