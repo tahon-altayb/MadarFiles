@@ -29,10 +29,22 @@ extern "C" JNIEXPORT jlong JNICALL Java_com_madar_files_SpeechProcessor_open(JNI
 }
 extern "C" JNIEXPORT jobjectArray JNICALL Java_com_madar_files_SpeechProcessor_recognize(JNIEnv* e,jclass,jlong handle,jfloatArray audio){
  auto* r=reinterpret_cast<const SherpaOnnxOfflineRecognizer*>(handle);auto* stream=SherpaOnnxCreateOfflineStream(r);int n=e->GetArrayLength(audio);std::vector<float> samples(n);e->GetFloatArrayRegion(audio,0,n,samples.data());SherpaOnnxAcceptWaveformOffline(stream,16000,samples.data(),n);SherpaOnnxDecodeOfflineStream(r,stream);auto* result=SherpaOnnxGetOfflineStreamResult(stream);std::vector<std::string> values;
- if(result){if(result->segment_count>0&&result->segment_timestamps&&result->segment_durations){for(int i=0;i<result->segment_count;i++){values.push_back(std::to_string(result->segment_timestamps[i]));values.push_back(std::to_string(result->segment_durations[i]));values.push_back(result->segment_texts_arr[i]?result->segment_texts_arr[i]:"");}}else{values={"0",std::to_string(n/16000.0),result->text?result->text:""};}}
+ values.push_back(result&&result->lang?result->lang:"");
+ if(result){if(result->segment_count>0&&result->segment_timestamps&&result->segment_durations){for(int i=0;i<result->segment_count;i++){values.push_back(std::to_string(result->segment_timestamps[i]));values.push_back(std::to_string(result->segment_durations[i]));values.push_back(result->segment_texts_arr[i]?result->segment_texts_arr[i]:"");}}else{values.insert(values.end(),{"0",std::to_string(n/16000.0),result->text?result->text:""});}}
  auto out=e->NewObjectArray(values.size(),e->FindClass("java/lang/String"),nullptr);for(int i=0;i<(int)values.size();i++){jstring s=e->NewStringUTF(values[i].c_str());e->SetObjectArrayElement(out,i,s);e->DeleteLocalRef(s);}if(result)SherpaOnnxDestroyOfflineRecognizerResult(result);SherpaOnnxDestroyOfflineStream(stream);return out;
 }
 extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechProcessor_close(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxDestroyOfflineRecognizer(reinterpret_cast<const SherpaOnnxOfflineRecognizer*>(handle));}
+extern "C" JNIEXPORT jlong JNICALL Java_com_madar_files_SpeechActivity_open(JNIEnv* e,jclass,jstring model){
+ const char* path=e->GetStringUTFChars(model,nullptr);SherpaOnnxVadModelConfig c{};c.silero_vad.model=path;c.silero_vad.threshold=.5f;c.silero_vad.min_silence_duration=.35f;c.silero_vad.min_speech_duration=.15f;c.silero_vad.max_speech_duration=20;c.silero_vad.window_size=512;c.sample_rate=16000;c.num_threads=1;c.provider="cpu";
+ auto* vad=SherpaOnnxCreateVoiceActivityDetector(&c,30);e->ReleaseStringUTFChars(model,path);if(!vad)fail(e,"تعذر تحميل كاشف الكلام");return reinterpret_cast<jlong>(vad);
+}
+extern "C" JNIEXPORT jintArray JNICALL Java_com_madar_files_SpeechActivity_regions(JNIEnv* e,jclass,jlong handle,jfloatArray audio){
+ auto* vad=reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle);if(!vad){fail(e,"كاشف الكلام غير متاح");return nullptr;}int n=e->GetArrayLength(audio);if(n>320000){fail(e,"نافذة كشف الكلام طويلة");return nullptr;}std::vector<float> samples(n);e->GetFloatArrayRegion(audio,0,n,samples.data());SherpaOnnxVoiceActivityDetectorReset(vad);std::vector<jint> ranges;
+ for(int at=0;at<n;at+=512)SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad,samples.data()+at,std::min(512,n-at));SherpaOnnxVoiceActivityDetectorFlush(vad);
+ while(!SherpaOnnxVoiceActivityDetectorEmpty(vad)){auto* part=SherpaOnnxVoiceActivityDetectorFront(vad);if(part){ranges.push_back(std::max(0,part->start));ranges.push_back(std::min(n,part->start+part->n));SherpaOnnxDestroySpeechSegment(part);}SherpaOnnxVoiceActivityDetectorPop(vad);}
+ auto out=e->NewIntArray(ranges.size());if(out&&!ranges.empty())e->SetIntArrayRegion(out,0,ranges.size(),ranges.data());return out;
+}
+extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechActivity_release(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxDestroyVoiceActivityDetector(reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle));}
 #include <cstdio>
 #include "lame.h"
 extern "C" JNIEXPORT void JNICALL Java_com_madar_files_AudioEditor_mp3(JNIEnv* e,jclass,jstring input,jstring output,jobject cancel){
