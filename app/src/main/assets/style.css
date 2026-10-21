@@ -42,4 +42,4 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 #editTimeline .clipRow button:first-child{min-width:0;flex:1}#editTimeline .clipRow button:first-child img{max-width:100%}
 #orbit:not(.gridMode) .tool{height:auto;aspect-ratio:1;max-height:82px;padding:5px 3px}
 @media(max-width:360px){#orbit:not(.gridMode) .tool{font-size:10px;padding:3px 2px;gap:1px}#orbit:not(.gridMode) .tool .glyph{font-size:16px;line-height:18px}#orbit .tool>span:last-child{line-height:1.1}}
-.editTransport .transportUndo{font-size:20px;min-width:32px;padding:4px 7px}
+.editTransport .transportUndo{font-size:20px;width:40px;min-width:40px;min-height:40px;flex:0 0 40px;margin:0;padding:4px 7px}
