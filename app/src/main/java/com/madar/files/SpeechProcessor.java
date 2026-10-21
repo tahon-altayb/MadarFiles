@@ -17,7 +17,7 @@ final class SpeechProcessor {
  }
  static JSONArray transcribe(Context c,File input,String language,String quality,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   if(!language.matches("auto|ar|en|ja|fr|de|es|zh"))throw new IOException("لغة غير مدعومة");AudioPipeline.Decoded decoded=null;long engine=0;
-  try{File[] models=!quality.equals("fast")?SpeechModels.get(c,quality,cancel,progress):new File[]{OfflineAssets.file(c,"tiny-encoder.int8.onnx"),OfflineAssets.file(c,"tiny-decoder.int8.onnx"),OfflineAssets.file(c,"tiny-tokens.txt")};decoded=AudioPipeline.decode(c,input,limitUs,cancel,progress);progress.update(10,"تحميل نموذج التفريغ وكاشف الكلام");engine=open(models[0].getPath(),models[1].getPath(),models[2].getPath(),language.equals("auto")?"":language);JSONArray cues=new JSONArray();long frames=decoded.pcm.length()/4;int chunk=20*16000;long total=Math.round(frames*16000.0/decoded.sampleRate);
+  try{File[] models=!quality.equals("fast")?SpeechModels.get(c,quality,cancel,progress):new File[]{OfflineAssets.file(c,"tiny-encoder.int8.onnx"),OfflineAssets.file(c,"tiny-decoder.int8.onnx"),OfflineAssets.file(c,"tiny-tokens.txt")};decoded=AudioPipeline.decode(c,input,limitUs,cancel,progress);progress.update(10,"تحميل نموذج التفريغ وكاشف الكلام");File vocabulary=SpeechTokens.safeVocabulary(c,models[2]);engine=open(models[0].getPath(),models[1].getPath(),vocabulary.getPath(),language.equals("auto")?"":language);JSONArray cues=new JSONArray();long frames=decoded.pcm.length()/4;int chunk=20*16000;long total=Math.round(frames*16000.0/decoded.sampleRate);
    SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);
    try(RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r");SpeechActivity activity=new SpeechActivity(c)){
     String spokenLanguage=language;
@@ -28,7 +28,7 @@ final class SpeechProcessor {
      for(SpeechLanguage.Sample sample:candidates){MusicSeparator.check(cancel);String[] guess=recognize(engine,sample.audio);languages.add(guess.length>0?guess[0]:"");weights.add(sample.voiced);}
      spokenLanguage=SpeechLanguage.decide(languages,weights);
      if(spokenLanguage.isEmpty())throw new IOException("لم تتضح لغة الكلام؛ اختر لغة المقطع يدويًا وأعد المحاولة");
-     close(engine);engine=0;engine=open(models[0].getPath(),models[1].getPath(),models[2].getPath(),spokenLanguage);
+     close(engine);engine=0;engine=open(models[0].getPath(),models[1].getPath(),vocabulary.getPath(),spokenLanguage);
      progress.update(12,"لغة الكلام المكتشفة · "+spokenLanguage);
     }
     for(long start=0;start<total;){
