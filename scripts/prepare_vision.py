@@ -11,3 +11,9 @@ def get(url,path,sha):
 with concurrent.futures.ThreadPoolExecutor(3) as pool:
  for task in [pool.submit(get,base+n,assets/local,sha) for n,local,sha in files]:task.result()
 get('https://raw.githubusercontent.com/microsoft/onnxruntime/v1.17.3/include/onnxruntime/core/session/onnxruntime_c_api.h',vendor/'onnxruntime_c_api.h','7e47eb78563da119f740dc0ddfda96800e779e0bcbd169a9a49e9c10746c4cd5')
+
+get('https://huggingface.co/Xenova/modnet/resolve/fa2fa546052fba4c08921230a26cc69a333fca12/onnx/model.onnx',assets/'portrait-matte.onnx','07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9')
+
+import json
+manifest={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in assets.iterdir() if p.is_file() and p.suffix!='.json'}
+(assets/'checksums.json').write_text(json.dumps(manifest,indent=2))

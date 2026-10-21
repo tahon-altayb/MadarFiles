@@ -40,3 +40,5 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 #sheet.editing #editStage{max-height:29dvh}#sheet.editing #editStage video{max-height:29dvh}
 .editorAudio{border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}.editorAudio summary{cursor:pointer;font-size:13px;font-weight:bold}
 #editTimeline .clipRow button:first-child{min-width:0;flex:1}#editTimeline .clipRow button:first-child img{max-width:100%}
+#orbit:not(.gridMode) .tool{height:auto;aspect-ratio:1;max-height:82px;padding:5px 3px}
+@media(max-width:360px){#orbit:not(.gridMode) .tool{font-size:10px;padding:3px 2px;gap:1px}#orbit:not(.gridMode) .tool .glyph{font-size:16px;line-height:18px}#orbit .tool>span:last-child{line-height:1.1}}
