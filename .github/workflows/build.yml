@@ -82,7 +82,9 @@ jobs:
           python3 -m pip install --disable-pip-version-check pyarrow==26.0.0
           python3 scripts/prepare_speech_references.py
       - name: Validate interface
-        run: node qa/interface.test.cjs
+        run: |
+          node qa/interface.test.cjs
+          node qa/translation-mode.test.cjs
       - name: Build and lint APK
         env:
           MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
