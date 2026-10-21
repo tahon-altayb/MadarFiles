@@ -21,6 +21,7 @@ import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
     private WebView web;
+    private PreviewProxy mediaProxy;private LocalMediaServer mediaServer;private File webAssets;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
     private volatile int previewToken;private volatile int stepToken;private final ExecutorService navigation=Executors.newSingleThreadExecutor();
@@ -49,24 +50,27 @@ public class MainActivity extends Activity {
         root.addView(web,new FrameLayout.LayoutParams(-1,-1));
         root.setOnApplyWindowInsetsListener((v,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets b=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());v.setPadding(b.left,b.top,b.right,b.bottom);}else{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());}return insets;});
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setDomStorageEnabled(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setBlockNetworkLoads(false);settings.setMediaPlaybackRequiresUserGesture(false);
+        mediaProxy=new PreviewProxy(this,this::send);
+        try{webAssets=new File(getCacheDir(),"web_ui");if(!webAssets.isDirectory()&&!webAssets.mkdirs())throw new IOException("Web assets unavailable");for(String name:new String[]{"index.html","style.css","app.js","crop.js","studio.js","experience.js","recovery.js"})try(InputStream in=getAssets().open(name);OutputStream out=new FileOutputStream(new File(webAssets,name))){FilesUtil.copy(in,out);}mediaServer=new LocalMediaServer((route,name)->{File target;if(route.matches("index\\.html|style\\.css|app\\.js|crop\\.js|studio\\.js|experience\\.js|recovery\\.js"))return new LocalMediaServer.Media(new File(webAssets,route),route.endsWith(".html")?"text/html":route.endsWith(".css")?"text/css":"application/javascript");if(route.equals("source")){target=source;String mime=sourceInfo==null?"video/mp4":sourceInfo.optString("mime","video/mp4");if(sourceInfo!=null){String guessed=java.net.URLConnection.guessContentTypeFromName(sourceInfo.optString("name"));if(guessed!=null&&(guessed.startsWith("video/")||guessed.startsWith("audio/")))mime=guessed;}return new LocalMediaServer.Media(target,mime);}if(route.equals("proxy")&&name!=null&&name.matches("madar_proxy_[0-9]+\\.mp4"))target=new File(getCacheDir(),name);else if(route.equals("draft")&&name!=null&&name.matches("madar_preview_[0-9]+\\.(mp4|m4a|wav|aac|mp3|flac|ogg)"))target=new File(getCacheDir(),name);else if(route.equals("layer")&&name!=null&&name.matches("madar_layer_[0-9]+\\.png"))target=new File(getCacheDir(),name);else if(route.equals("result"))target=FilesUtil.resolve(this,name);else return null;return new LocalMediaServer.Media(target,FilesUtil.mime(target));});}catch(IOException e){android.util.Log.w("Madar","Local media transport unavailable",e);}
         web.addJavascriptInterface(new Bridge(),"Android");
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
+                if(mediaServer!=null&&mediaServer.owns(r.getUrl()))return null;
                 String path=r.getUrl().toString();
                 if(path.startsWith("data:image/png;base64,")||path.startsWith("data:image/jpeg;base64,")||path.startsWith("data:image/webp;base64,"))return null;
                 if(path.equals("https://madar.local/")||path.startsWith("https://madar.local/")){
                     String route=r.getUrl().getPath();
-                    if("/source".equals(route)||"/result".equals(route)||"/draft".equals(route)||"/layer".equals(route)){
-                        try{String draftName=r.getUrl().getQueryParameter("name");if("/layer".equals(route)&&(draftName==null||!draftName.matches("madar_layer_[0-9]+\\.png")))return blocked();if("/draft".equals(route)&&(draftName==null||!draftName.matches("madar_preview_[0-9]+\\.(mp4|m4a|wav|aac|mp3|flac|ogg)")))return blocked();File target="/source".equals(route)?source:("/draft".equals(route)||"/layer".equals(route))?new File(getCacheDir(),draftName):FilesUtil.resolve(MainActivity.this,draftName);return mediaResponse(target,r);}catch(Exception e){return blocked();}
+                    if("/source".equals(route)||"/result".equals(route)||"/draft".equals(route)||"/layer".equals(route)||"/proxy".equals(route)){
+                        try{String draftName=r.getUrl().getQueryParameter("name");if("/proxy".equals(route)&&(draftName==null||!draftName.matches("madar_proxy_[0-9]+\\.mp4")))return blocked();if("/layer".equals(route)&&(draftName==null||!draftName.matches("madar_layer_[0-9]+\\.png")))return blocked();if("/draft".equals(route)&&(draftName==null||!draftName.matches("madar_preview_[0-9]+\\.(mp4|m4a|wav|aac|mp3|flac|ogg)")))return blocked();File target="/source".equals(route)?source:("/draft".equals(route)||"/layer".equals(route)||"/proxy".equals(route))?new File(getCacheDir(),draftName):FilesUtil.resolve(MainActivity.this,draftName);return mediaResponse(target,r);}catch(Exception e){return blocked();}
                     }
                     String file=r.getUrl().getPath();if(file==null||file.equals("/"))file="index.html";else file=file.substring(1);
-                    if(!file.matches("index\\.html|style\\.css|app\\.js|crop\\.js|studio\\.js|experience\\.js"))return blocked();
+                    if(!file.matches("index\\.html|style\\.css|app\\.js|crop\\.js|studio\\.js|experience\\.js|recovery\\.js"))return blocked();
                     try{return new WebResourceResponse(file.endsWith("css")?"text/css":file.endsWith("js")?"application/javascript":"text/html","UTF-8",getAssets().open(file));}catch(IOException e){return blocked();}
                 }return blocked();
             }
         });
-        setContentView(root);root.requestApplyInsets();web.loadUrl("https://madar.local/");
+        setContentView(root);root.requestApplyInsets();web.loadUrl(mediaServer==null?"https://madar.local/":mediaServer.base()+"/index.html");
         IntentFilter filter=new IntentFilter(VideoExportService.EVENT);
         androidx.core.content.ContextCompat.registerReceiver(this,updates,filter,androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered=true;
@@ -83,6 +87,8 @@ public class MainActivity extends Activity {
         String action=request.getString("action");
         switch(action){
             case "ready":ready=true;history();restoreSource();if(VideoExportService.lastEvent!=null)send(new JSONObject(VideoExportService.lastEvent));if(ImageBatchService.active||ImageBatchService.starting)batchStatus();if(Intent.ACTION_SEND.equals(getIntent().getAction())){Uri u=getIntent().getParcelableExtra(Intent.EXTRA_STREAM);getIntent().setAction(Intent.ACTION_MAIN);if(u!=null)importFile(u,null);}break;
+            case "prepareMediaPreview":int mediaToken=request.getInt("token");try{if(source!=null&&!isBusy())mediaProxy.prepare(source,mediaToken);else throw new IOException("انتظر انتهاء العملية الحالية");}catch(Exception e){send(new JSONObject().put("type","proxyError").put("token",mediaToken).put("message","تعذر تجهيز المعاينة؛ يمكنك فتح الأصل في المشغل. "+message(e)));}break;
+            case "cancelMediaPreview":mediaProxy.stopPreparing();break;
             case "pick":if(isBusy())return;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);String k=request.optString("kind","image");requestedKind=k;pick.setType(k.equals("audio")?"audio/*":k.equals("video")?"video/*":k.equals("pdf")?"application/pdf":"image/*");startActivityForResult(pick,10);break;
             case "pickCollection":if(isBusy())return;pickingImages=request.optBoolean("images");pickingBatch=request.optBoolean("batch");startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(pickingImages?"image/*":"application/pdf").putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true),12);break;
             case "batchStatus":batchStatus();break;
@@ -92,7 +98,7 @@ public class MainActivity extends Activity {
             case "clearImageBatch":if(isBusy())return;worker.execute(()->{try{ImageBatchQueue.clear(this);batchStatus();}catch(Exception e){error("تعذر مسح الطابور");}});break;
             case "exportCollection":exportCollection(request.getJSONArray("order"));break;
             case "export":export(request.getJSONObject("options"));break;
-            case "cutoutPreview":int cutToken=request.optInt("token",0);previewToken=cutToken;File cutSource=source;String cutColor=request.optString("color","#eadcc7");boolean transparent=request.optBoolean("transparent",true);if(cutSource!=null)previews.execute(()->{if(cutToken!=previewToken)return;Bitmap b=null,out=null;try{b=FilesUtil.image(cutSource,640);out=PersonCutout.cut(b,transparent,Color.parseColor(cutColor));ByteArrayOutputStream bytes=new ByteArrayOutputStream();out.compress(Bitmap.CompressFormat.PNG,100,bytes);if(cutToken==previewToken)send(new JSONObject().put("type","cutoutPreview").put("token",cutToken).put("thumbnail","data:image/png;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP)));}catch(Exception e){if(cutToken==previewToken)event("previewError","message","تعذر إنشاء معاينة العزل");}finally{if(b!=null)b.recycle();if(out!=null)out.recycle();}});break;
+            case "cutoutPreview":int cutToken=request.optInt("token",0);previewToken=cutToken;File cutSource=source;String cutColor=request.optString("color","#eadcc7");boolean transparent=request.optBoolean("transparent",true);String cutModel=request.optString("cutModel","fine");double cutThreshold=request.optDouble("cutThreshold",50),cutSoftness=request.optDouble("cutSoftness",50);if(cutSource!=null)previews.execute(()->{if(cutToken!=previewToken)return;Bitmap b=null,out=null;try{b=FilesUtil.image(cutSource,640);out=PersonCutout.cut(MainActivity.this,b,transparent,Color.parseColor(cutColor),cutModel,cutThreshold,cutSoftness);ByteArrayOutputStream bytes=new ByteArrayOutputStream();out.compress(Bitmap.CompressFormat.PNG,100,bytes);if(cutToken==previewToken)send(new JSONObject().put("type","cutoutPreview").put("token",cutToken).put("thumbnail","data:image/png;base64,"+android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP)));}catch(Exception e){if(cutToken==previewToken)event("previewError","message","تعذر إنشاء معاينة العزل");}finally{if(b!=null)b.recycle();if(out!=null)out.recycle();}});break;
             case "cancelWaveform":waveformToken++;break;
             case "waveform":int waveToken=request.optInt("token",0);waveformToken=waveToken;File waveSource=source;if(waveSource!=null)waveforms.execute(()->{try{JSONObject result=AudioWaveform.read(waveSource,()->waveformToken!=waveToken||source!=waveSource);if(waveformToken==waveToken&&source==waveSource)send(result.put("type","waveform").put("token",waveToken));}catch(java.util.concurrent.CancellationException ignored){}catch(Exception e){if(waveformToken==waveToken&&source==waveSource)try{send(new JSONObject().put("type","waveformError").put("token",waveToken).put("message","تعذر إنشاء الموجة الصوتية؛ يمكنك متابعة التحرير"));}catch(Exception ignored){}}});break;
             case "timelineFrames":int frameToken=request.optInt("token",0);timelineToken=frameToken;File frameSource=source;if(frameSource!=null)previews.execute(()->{try{JSONArray frames=TimelineFrames.read(frameSource,()->timelineToken!=frameToken||source!=frameSource||Thread.currentThread().isInterrupted());if(timelineToken==frameToken&&source==frameSource)send(new JSONObject().put("type","timelineFrames").put("token",frameToken).put("frames",frames));}catch(Exception e){if(timelineToken==frameToken&&source==frameSource)event("timelineFramesError","message","تعذر إنشاء الصور المصغرة؛ يمكنك متابعة التحرير");}});break;
@@ -142,12 +148,12 @@ public class MainActivity extends Activity {
                 }else{
                     try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(imported,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer pdf=new PdfRenderer(fd)){if(pdf.getPageCount()==0)throw new IOException("ملف PDF فارغ");info.put("pages",pdf.getPageCount());Bitmap b=PdfProcessor.render(pdf,0,400);try{info.put("thumbnail",FilesUtil.thumbnail(b));}finally{b.recycle();}}
                 }
-                File old=source;source=imported;sourceInfo=info;getPreferences(MODE_PRIVATE).edit().putString("sourcePath",source.getAbsolutePath()).putString("sourceInfo",info.toString()).apply();imported=null;if(old!=null)old.delete();working=false;send(info);
+                mediaProxy.cancel();File old=source;source=imported;sourceInfo=info;getPreferences(MODE_PRIVATE).edit().putString("sourcePath",source.getAbsolutePath()).putString("sourceInfo",info.toString()).apply();imported=null;if(old!=null)old.delete();working=false;send(info);
             }catch(Exception|OutOfMemoryError e){working=false;error("تعذر فتح الملف. "+message(e));}finally{if(imported!=null)imported.delete();}
         });
     }
     private void export(JSONObject o)throws Exception{
-        if(isBusy())return;File input=source;JSONObject info=sourceInfo;if(input==null||info==null)throw new IOException("اختر الملف أولًا");
+        if(isBusy())return;mediaProxy.stopPreparing();File input=source;JSONObject info=sourceInfo;if(input==null||info==null)throw new IOException("اختر الملف أولًا");
         String kind=info.getString("kind");if(!kind.equals(o.getString("kind")))throw new IOException("نوع الملف لا يطابق الأداة");
         if(kind.equals("video")||kind.equals("audio")){
             if((o.optString("tool").equals("audio")||o.optString("tool").equals("music"))&&!info.optBoolean("hasAudio"))throw new IOException("الفيديو لا يحتوي على صوت");
@@ -157,9 +163,9 @@ public class MainActivity extends Activity {
         }else{
             working=true;worker.execute(()->{try{
                 String tool=o.optString("tool");
-                if(tool.equals("layoutWord")){File f=LayoutWordExporter.export(this,input,o.optInt("first",1),o.optInt("last",1));working=false;send(FilesUtil.info(f).put("type","result"));}
+                if(tool.equals("layoutWord")){File f=LayoutWordExporter.export(this,input,o.optInt("first",1),o.optInt("last",1),o.optString("ocrLanguage","ara"),o.optString("pdfTextMode").equals("ocr"));working=false;send(FilesUtil.info(f).put("type","result"));}
                 else if(tool.equals("ocr")||tool.equals("text")||tool.equals("word")){
-                    String text=kind.equals("image")?TextProcessor.image(this,input,o.optString("ocrLanguage","ara")):TextProcessor.pdf(this,input,o.optInt("first",1),o.optInt("last",1),p->event("workProgress","message",p));
+                    String text=kind.equals("image")?TextProcessor.image(this,input,o.optString("ocrLanguage","ara")):TextProcessor.pdf(this,input,o.optInt("first",1),o.optInt("last",1),o.optString("ocrLanguage","ara"),o.optString("pdfTextMode").equals("ocr"),p->event("workProgress","message",p));
                     working=false;if(text.trim().isEmpty())throw new IOException("لم يُعثر على نص واضح في الملف");send(new JSONObject().put("type","text").put("text",text));
                 }else{File f=kind.equals("image")?ImageProcessor.export(this,input,o):PdfProcessor.export(this,input,o);working=false;send(FilesUtil.info(f).put("type","result"));}
             }catch(Exception|OutOfMemoryError e){working=false;error("لم يكتمل التصدير. "+message(e));}});
@@ -182,7 +188,7 @@ public class MainActivity extends Activity {
         if(start<0||start>=length||end<start)return blocked();FileInputStream stream=new FileInputStream(file);stream.getChannel().position(start);final long count=end-start+1;
         InputStream limited=new FilterInputStream(stream){long left=count;@Override public int read()throws IOException{if(left<=0)return -1;int v=super.read();if(v>=0)left--;return v;}@Override public int read(byte[] b,int off,int len)throws IOException{if(left<=0)return -1;int n=super.read(b,off,(int)Math.min(left,len));if(n>0)left-=n;return n;}};
         Map<String,String> headers=new HashMap<>();headers.put("Accept-Ranges","bytes");headers.put("Content-Length",Long.toString(count));headers.put("Cache-Control","no-store");if(partial)headers.put("Content-Range","bytes "+start+"-"+end+"/"+length);
-        String mime=file==source&&sourceInfo!=null?sourceInfo.optString("mime","video/mp4"):FilesUtil.mime(file);return new WebResourceResponse(mime,null,partial?206:200,partial?"Partial Content":"OK",headers,limited);
+        String mime=file==source&&sourceInfo!=null?sourceInfo.optString("mime","video/mp4"):FilesUtil.mime(file);if(file==source&&sourceInfo!=null){String guessed=java.net.URLConnection.guessContentTypeFromName(sourceInfo.optString("name"));if(guessed!=null&&(guessed.startsWith("video/")||guessed.startsWith("audio/")))mime=guessed;if(mime.contains("*")||mime.equals("application/octet-stream"))mime=sourceInfo.optString("kind").equals("audio")?"audio/mp4":"video/mp4";}return new WebResourceResponse(mime,null,partial?206:200,partial?"Partial Content":"OK",headers,limited);
     }
     private String message(Throwable e){if(e instanceof OutOfMemoryError)return "الملف يتجاوز الذاكرة المتاحة؛ جرّب دقة أقل.";if(e instanceof SecurityException)return "الملف محمي أو تعذر الحصول على إذن قراءته.";String m=e.getMessage();return m==null?"تحقق من الملف والمساحة المتاحة.":m;}
     private void openOutput(File f,boolean share){
@@ -216,7 +222,7 @@ public class MainActivity extends Activity {
     private void history(){worker.execute(()->{try{File[] files=FilesUtil.directory(this).listFiles(f->f.isFile()&&!f.getName().endsWith(".partial"));JSONArray a=new JSONArray();if(files!=null){Arrays.sort(files,(x,y)->Long.compare(y.lastModified(),x.lastModified()));for(int i=0;i<Math.min(50,files.length);i++)a.put(FilesUtil.info(files[i]));}send(new JSONObject().put("type","history").put("files",a));}catch(Exception e){error("تعذر قراءة النتائج");}});}
     private void event(String type,String key,Object value){try{JSONObject o=new JSONObject().put("type",type);if(key!=null)o.put(key,value);send(o);}catch(JSONException ignored){}}
     private void error(String message){event("error","message",message);}
-    private void send(JSONObject event){runOnUiThread(()->{if(ready&&web!=null)web.evaluateJavascript("window.receive("+event.toString()+");",null);});}
+    private void send(JSONObject event){String encoded=event.toString();runOnUiThread(()->{String data=encoded;try{if(mediaServer!=null)data=new JSONObject(encoded).put("mediaBase",mediaServer.base()).toString();}catch(JSONException ignored){}if(ready&&web!=null)web.evaluateJavascript("window.receive("+data+");",null);});}
     @Override protected void onResume(){super.onResume();if(ready&&(ImageBatchService.active||ImageBatchService.starting))batchStatus();if(ready&&VideoExportService.active&&VideoExportService.lastEvent!=null)try{send(new JSONObject(VideoExportService.lastEvent));}catch(JSONException ignored){}}
-    @Override protected void onDestroy(){reviewCancel.set(true);ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();navigation.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){if(mediaServer!=null)mediaServer.close();if(mediaProxy!=null)mediaProxy.cancel();reviewCancel.set(true);ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();navigation.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }

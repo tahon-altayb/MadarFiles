@@ -23,20 +23,21 @@ final class TextProcessor {
  static String image(Context c,File file)throws Exception{return image(c,file,"ara+eng");}
  static String image(Context c,File file,String language)throws Exception{
   if(!language.matches("ara|eng|ara\\+eng"))throw new IOException("لغة قراءة غير مدعومة");
-  TessBaseAPI tess=engine(c,language);Bitmap b=FilesUtil.image(file,3000);try{tess.setImage(b);return tess.getUTF8Text().trim();}finally{b.recycle();tess.recycle();}
+  Bitmap b=FilesUtil.image(file,3000);try{if(!language.equals("eng")){try(ArabicOcr ocr=new ArabicOcr(c)){return ArabicOcr.text(ocr.read(b));}}TessBaseAPI tess=engine(c,"eng");try{tess.setImage(b);return TextQuality.clean(tess.getUTF8Text());}finally{tess.recycle();}}finally{b.recycle();}
  }
- static String pdf(Context c,File file,int first,int last,Progress progress)throws Exception{
-  PDFBoxResourceLoader.init(c);StringBuilder text=new StringBuilder();TessBaseAPI tess=null;
+ static String pdf(Context c,File file,int first,int last,Progress progress)throws Exception{return pdf(c,file,first,last,"ara+eng",false,progress);}
+ static String pdf(Context c,File file,int first,int last,String language,boolean forceOcr,Progress progress)throws Exception{
+  if(!language.matches("ara|eng|ara\\+eng"))throw new IOException("لغة قراءة غير مدعومة");PDFBoxResourceLoader.init(c);StringBuilder text=new StringBuilder();TessBaseAPI tess=null;ArabicOcr ocr=null;
   try(PDDocument doc=PDDocument.load(file);ParcelFileDescriptor fd=ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
-   if(first<1||last<first||last>doc.getNumberOfPages()||last-first>=50)throw new IllegalArgumentException("اختر نطاقًا صحيحًا لا يزيد عن 50 صفحة");
-   PDFTextStripper stripper=new PDFTextStripper();stripper.setSortByPosition(true);
+   if(first<1||last<first||last>doc.getNumberOfPages()||last-first>=50)throw new IllegalArgumentException("اختر نطاقًا صحيحًا لا يزيد عن 50 صفحة");PDFTextStripper stripper=new PDFTextStripper();stripper.setSortByPosition(true);
    for(int page=first;page<=last;page++){
-    progress.update("قراءة الصفحة "+page+" من "+last);stripper.setStartPage(page);stripper.setEndPage(page);String content=stripper.getText(doc).trim();
-    if(content.replaceAll("\\s","").length()<3){if(tess==null)tess=engine(c,"ara+eng");Bitmap b=PdfProcessor.render(renderer,page-1,2400);try{tess.setImage(b);content=tess.getUTF8Text().trim();tess.clear();}finally{b.recycle();}}
+    progress.update("قراءة الصفحة "+page+" من "+last);stripper.setStartPage(page);stripper.setEndPage(page);String content=TextQuality.clean(stripper.getText(doc));
+    if(forceOcr||!TextQuality.usable(content,language)){
+     progress.update("إعادة قراءة الصفحة "+page+" بصريًا؛ طبقة النص مفقودة أو مشوّهة");Bitmap bitmap=PdfProcessor.render(renderer,page-1,2400);try{if(language.equals("eng")){if(tess==null)tess=engine(c,"eng");tess.setImage(bitmap);content=TextQuality.clean(tess.getUTF8Text());tess.clear();}else{if(ocr==null)ocr=new ArabicOcr(c);content=ArabicOcr.text(ocr.read(bitmap));}}finally{bitmap.recycle();}
+    }
     if(page>first)text.append('\f');text.append(content);if(text.length()>1000000)throw new IOException("النص كبير جدًا؛ اختر نطاق صفحات أصغر");
    }
-  }finally{if(tess!=null)tess.recycle();}
-  return text.toString();
+  }finally{if(tess!=null)tess.recycle();if(ocr!=null)ocr.close();}return text.toString();
  }
  static File save(Context c,String text,String format)throws Exception{
   if(text==null||text.trim().isEmpty())throw new IllegalArgumentException("لا يوجد نص للحفظ");if(text.length()>1000000)throw new IllegalArgumentException("النص طويل جدًا");
@@ -45,11 +46,13 @@ final class TextProcessor {
  }
  private static String xml(String s){return s.replaceAll("[\\x00-\\x08\\x0B\\x0E-\\x1F]","").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;");}
  private static void entry(ZipOutputStream zip,String name,String content)throws IOException{zip.putNextEntry(new ZipEntry(name));zip.write(content.getBytes(StandardCharsets.UTF_8));zip.closeEntry();}
+ private static void wordRun(StringBuilder body,String text,boolean rtl){body.append("<w:r><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/>").append(rtl?"<w:rtl/>":"<w:rtl w:val=\"0\"/>").append("</w:rPr>");String[] pieces=text.split("\\t",-1);for(int i=0;i<pieces.length;i++){if(i>0)body.append("<w:tab/>");body.append("<w:t xml:space=\"preserve\">").append(xml(pieces[i])).append("</w:t>");}body.append("</w:r>");}
  static void docx(File output,String text)throws IOException{
   StringBuilder body=new StringBuilder();String[] pages=text.split("\\f",-1);
   for(int page=0;page<pages.length;page++){
    if(page>0)body.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
-   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"right\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/>").append(rtl?"<w:rtl/>":"").append("</w:rPr><w:t xml:space=\"preserve\">").append(xml(line)).append("</w:t></w:r></w:p>");}
+   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"right\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr>");java.util.regex.Matcher latin=java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9 \\t.,:/%+\\-]*").matcher(line);int at=0;while(latin.find()){if(latin.start()>at)wordRun(body,line.substring(at,latin.start()),rtl);wordRun(body,latin.group(),false);at=latin.end();}if(at<line.length())wordRun(body,line.substring(at),rtl);if(line.isEmpty())wordRun(body,"",rtl);body.append("</w:p>");}
+
   }
   try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(output))){
    entry(zip,"[Content_Types].xml","<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>");
