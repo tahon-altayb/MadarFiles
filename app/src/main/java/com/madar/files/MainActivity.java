@@ -21,7 +21,7 @@ import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
     private WebView web;
-    private PreviewProxy mediaProxy;
+    private PreviewProxy mediaProxy;private LocalMediaServer mediaServer;private File webAssets;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
     private volatile int previewToken;private volatile int stepToken;private final ExecutorService navigation=Executors.newSingleThreadExecutor();
@@ -51,10 +51,12 @@ public class MainActivity extends Activity {
         root.setOnApplyWindowInsetsListener((v,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets b=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());v.setPadding(b.left,b.top,b.right,b.bottom);}else{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());}return insets;});
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setDomStorageEnabled(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setBlockNetworkLoads(false);settings.setMediaPlaybackRequiresUserGesture(false);
         mediaProxy=new PreviewProxy(this,this::send);
+        try{webAssets=new File(getCacheDir(),"web_ui");if(!webAssets.isDirectory()&&!webAssets.mkdirs())throw new IOException("Web assets unavailable");for(String name:new String[]{"index.html","style.css","app.js","crop.js","studio.js","experience.js","recovery.js"})try(InputStream in=getAssets().open(name);OutputStream out=new FileOutputStream(new File(webAssets,name))){FilesUtil.copy(in,out);}mediaServer=new LocalMediaServer((route,name)->{File target;if(route.matches("index\\.html|style\\.css|app\\.js|crop\\.js|studio\\.js|experience\\.js|recovery\\.js"))return new LocalMediaServer.Media(new File(webAssets,route),route.endsWith(".html")?"text/html":route.endsWith(".css")?"text/css":"application/javascript");if(route.equals("source")){target=source;String mime=sourceInfo==null?"video/mp4":sourceInfo.optString("mime","video/mp4");if(sourceInfo!=null){String guessed=java.net.URLConnection.guessContentTypeFromName(sourceInfo.optString("name"));if(guessed!=null&&(guessed.startsWith("video/")||guessed.startsWith("audio/")))mime=guessed;}return new LocalMediaServer.Media(target,mime);}if(route.equals("proxy")&&name!=null&&name.matches("madar_proxy_[0-9]+\\.mp4"))target=new File(getCacheDir(),name);else if(route.equals("draft")&&name!=null&&name.matches("madar_preview_[0-9]+\\.(mp4|m4a|wav|aac|mp3|flac|ogg)"))target=new File(getCacheDir(),name);else if(route.equals("layer")&&name!=null&&name.matches("madar_layer_[0-9]+\\.png"))target=new File(getCacheDir(),name);else if(route.equals("result"))target=FilesUtil.resolve(this,name);else return null;return new LocalMediaServer.Media(target,FilesUtil.mime(target));});}catch(IOException e){android.util.Log.w("Madar","Local media transport unavailable",e);}
         web.addJavascriptInterface(new Bridge(),"Android");
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
+                if(mediaServer!=null&&mediaServer.owns(r.getUrl()))return null;
                 String path=r.getUrl().toString();
                 if(path.startsWith("data:image/png;base64,")||path.startsWith("data:image/jpeg;base64,")||path.startsWith("data:image/webp;base64,"))return null;
                 if(path.equals("https://madar.local/")||path.startsWith("https://madar.local/")){
@@ -68,7 +70,7 @@ public class MainActivity extends Activity {
                 }return blocked();
             }
         });
-        setContentView(root);root.requestApplyInsets();web.loadUrl("https://madar.local/");
+        setContentView(root);root.requestApplyInsets();web.loadUrl(mediaServer==null?"https://madar.local/":mediaServer.base()+"/index.html");
         IntentFilter filter=new IntentFilter(VideoExportService.EVENT);
         androidx.core.content.ContextCompat.registerReceiver(this,updates,filter,androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered=true;
@@ -220,7 +222,7 @@ public class MainActivity extends Activity {
     private void history(){worker.execute(()->{try{File[] files=FilesUtil.directory(this).listFiles(f->f.isFile()&&!f.getName().endsWith(".partial"));JSONArray a=new JSONArray();if(files!=null){Arrays.sort(files,(x,y)->Long.compare(y.lastModified(),x.lastModified()));for(int i=0;i<Math.min(50,files.length);i++)a.put(FilesUtil.info(files[i]));}send(new JSONObject().put("type","history").put("files",a));}catch(Exception e){error("تعذر قراءة النتائج");}});}
     private void event(String type,String key,Object value){try{JSONObject o=new JSONObject().put("type",type);if(key!=null)o.put(key,value);send(o);}catch(JSONException ignored){}}
     private void error(String message){event("error","message",message);}
-    private void send(JSONObject event){runOnUiThread(()->{if(ready&&web!=null)web.evaluateJavascript("window.receive("+event.toString()+");",null);});}
+    private void send(JSONObject event){runOnUiThread(()->{try{if(mediaServer!=null)event.put("mediaBase",mediaServer.base());}catch(JSONException ignored){}if(ready&&web!=null)web.evaluateJavascript("window.receive("+event.toString()+");",null);});}
     @Override protected void onResume(){super.onResume();if(ready&&(ImageBatchService.active||ImageBatchService.starting))batchStatus();if(ready&&VideoExportService.active&&VideoExportService.lastEvent!=null)try{send(new JSONObject(VideoExportService.lastEvent));}catch(JSONException ignored){}}
-    @Override protected void onDestroy(){if(mediaProxy!=null)mediaProxy.cancel();reviewCancel.set(true);ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();navigation.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){if(mediaServer!=null)mediaServer.close();if(mediaProxy!=null)mediaProxy.cancel();reviewCancel.set(true);ready=false;if(receiverRegistered)unregisterReceiver(updates);worker.execute(()->{for(File f:collectionFiles)f.delete();collectionFiles.clear();});worker.shutdown();previews.shutdownNow();navigation.shutdownNow();waveformToken++;waveforms.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }

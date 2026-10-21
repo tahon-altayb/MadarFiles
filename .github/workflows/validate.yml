@@ -79,7 +79,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
             adb shell wm density 180
-            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.DocumentToolsTest,com.madar.files.ImageBatchTest,com.madar.files.CaptionExportTest,com.madar.files.AudioWaveformTest,com.madar.files.InteractivePreviewTest,com.madar.files.PlayerLayoutTest,com.madar.files.TranslationPathsTest,com.madar.files.FrameStepperTest --stacktrace
+            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.DocumentToolsTest,com.madar.files.ImageBatchTest,com.madar.files.CaptionExportTest,com.madar.files.AudioWaveformTest,com.madar.files.InteractivePreviewTest,com.madar.files.PlayerLayoutTest,com.madar.files.TranslationPathsTest,com.madar.files.FrameStepperTest,com.madar.files.LocalMediaServerTest,com.madar.files.EditorAudioProcessorTest,com.madar.files.PreviewRecoveryTest --stacktrace
             mkdir -p phone-screenshots
             adb pull /data/local/tmp/madar-editor.png phone-screenshots/editor.png
             adb pull /data/local/tmp/madar-pdf.png phone-screenshots/pdf.png
