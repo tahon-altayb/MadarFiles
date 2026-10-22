@@ -31,23 +31,28 @@ final class SpeechProcessor {
      close(engine);engine=0;engine=open(models[0].getPath(),models[1].getPath(),vocabulary.getPath(),spokenLanguage);
      progress.update(12,"لغة الكلام المكتشفة · "+spokenLanguage);
     }
-    for(long start=0;start<total;){
-     MusicSeparator.check(cancel);int count=(int)Math.min(chunk,total-start);float[] samples=resampler.read(in,frames,start,count);
-     if(total-start>chunk){count=SpeechChunking.boundary(samples,16000);samples=java.util.Arrays.copyOf(samples,count);}
-     for(int[] region:SpeechRegions.padded(activity.regions(samples),count)){
-      MusicSeparator.check(cancel);float[] spoken=java.util.Arrays.copyOfRange(samples,region[0],region[1]);
-      float[] inference=spokenLanguage.equals("ar")?arabicPadding(spoken):spoken;
-      String[] results=recognize(engine,inference);
-      String detected=results.length>0?results[0]:"";if(detected.isEmpty())detected=spokenLanguage;
-      double offset=(start+region[0])/16000.0,limit=(start+region[1])/16000.0;
-      for(int i=1;i+2<results.length;i+=3){
-       String text=results[i+2].trim();if(text.isEmpty())continue;
-       double from=Double.parseDouble(results[i]),length=Double.parseDouble(results[i+1]);if(!Double.isFinite(from)||!Double.isFinite(length))continue;
-       double begin=Math.max(offset,offset+from),end=Math.min(limit,offset+from+length);
-       if(end>begin)cues.put(new JSONObject().put("start",begin).put("end",end).put("text",text).put("language",detected));
-      }
+    if(total>Integer.MAX_VALUE)throw new IOException("المقطع أطول من حد التفريغ المدعوم");
+    activity.restart();java.util.List<Integer> intervals=new java.util.ArrayList<>();
+    for(long at=0;at<total;at+=chunk){
+     MusicSeparator.check(cancel);int count=(int)Math.min(chunk,total-at);
+     int[] spans=activity.accept(resampler.read(in,frames,at,count),at+count>=total);
+     for(int value:spans)intervals.add(value);
+     progress.update(12+(int)(8*(at+count)/Math.max(1,total)),"تحديد الكلام مع الحفاظ على اتصال الجمل");
+    }
+    int[] spans=new int[intervals.size()];for(int i=0;i<spans.length;i++)spans[i]=intervals.get(i);
+    for(int[] region:SpeechRegions.continuous(spans,(int)total)){
+     MusicSeparator.check(cancel);float[] spoken=resampler.read(in,frames,region[0],region[1]-region[0]);
+     float[] inference=spokenLanguage.equals("ar")?arabicPadding(spoken):spoken;
+     String[] results=recognize(engine,inference);
+     String detected=results.length>0?results[0]:"";if(detected.isEmpty())detected=spokenLanguage;
+     double offset=region[0]/16000.0,limit=region[1]/16000.0;
+     for(int i=1;i+2<results.length;i+=3){
+      String text=results[i+2].trim();if(text.isEmpty())continue;
+      double from=Double.parseDouble(results[i]),length=Double.parseDouble(results[i+1]);if(!Double.isFinite(from)||!Double.isFinite(length))continue;
+      double begin=Math.max(offset,offset+from),end=Math.min(limit,offset+from+length);
+      if(end>begin)cues.put(new JSONObject().put("start",begin).put("end",end).put("text",text).put("language",detected));
      }
-     progress.update(12+(int)(78*Math.min(total,start+count)/Math.max(1,total)),"تفريغ الكلام · "+Math.round(100.0*Math.min(total,start+count)/Math.max(1,total))+"%");start+=count;
+     progress.update(20+(int)(70L*region[1]/Math.max(1,total)),"تفريغ الكلام · "+Math.round(100.0*region[1]/Math.max(1,total))+"%");
     }
    }
    return cues;

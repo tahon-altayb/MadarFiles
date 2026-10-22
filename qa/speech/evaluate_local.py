@@ -15,7 +15,7 @@ def boundary(samples):
     return cut
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('audio');p.add_argument('--models',required=True);p.add_argument('--prefix',default='turbo');p.add_argument('--vad',required=True);p.add_argument('--language',default='auto');p.add_argument('--output',required=True);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('audio');p.add_argument('--models',required=True);p.add_argument('--prefix',default='turbo');p.add_argument('--vad',required=True);p.add_argument('--language',default='auto');p.add_argument('--output',required=True);p.add_argument('--legacy-windowing',action='store_true');args=p.parse_args()
     root=Path(args.models);name=args.prefix
     original=root/f'{name}-tokens.txt';vocabulary=root/f'{name}-tokens.hex-v1.txt';rows=[]
     for line in original.read_text().splitlines():
@@ -46,30 +46,46 @@ def main():
         print('Dominant language:',chosen,'votes:',votes,flush=True)
         del model
         model=sherpa_onnx.OfflineRecognizer.from_whisper(encoder=str(root/f'{name}-encoder.int8.onnx'),decoder=str(root/f'{name}-decoder.int8.onnx'),tokens=str(vocabulary),language=chosen,num_threads=3,enable_segment_timestamps=True)
-    result=[];start=0;windows=0
-    while start<len(audio):
-        samples=audio[start:start+320000];count=boundary(samples) if len(audio)-start>320000 else len(samples);samples=samples[:count];vad.reset()
-        for at in range(0,count,512):vad.accept_waveform(samples[at:at+512])
-        vad.flush();regions=[]
-        while not vad.empty():
-            part=vad.front;a=max(0,part.start-4800);b=min(count,part.start+len(part.samples)+4800)
-            if b>a:
-                if regions and a-regions[-1][1]<=32000:regions[-1][1]=max(regions[-1][1],b)
-                else:regions.append([a,b])
-            vad.pop()
-        for a,b in regions:
-            spoken=samples[a:b]
-            def decode(data):
-                stream=model.create_stream();stream.accept_waveform(16000,data);model.decode_stream(stream);return stream.result
-            def pad(data):return np.pad(data,(0,min(27*16000,len(data)+max(48000,len(data)//3))-len(data)))
-            r=decode(pad(spoken) if chosen=='ar' else spoken)
-            times=r.segment_timestamps or [0];durations=r.segment_durations or [len(spoken)/16000];texts=r.segment_texts or [r.text]
-            offset=(start+a)/16000;limit=(start+b)/16000
-            for t,d,text in zip(times,durations,texts):
-                begin=max(offset,offset+t);end=min(limit,offset+t+d)
-                if text.strip() and end>begin:result.append(dict(start=begin,end=end,text=bytes.fromhex(text).decode('utf-8').strip(),language=r.lang))
-            windows+=1
-        start+=count
-        Path(args.output).write_text(json.dumps(dict(segments=result,windows=windows),ensure_ascii=False,indent=2))
-        print(f'{start/16000:.1f}/{len(audio)/16000:.1f}s; cues={len(result)}',flush=True)
+    result=[];windows=0
+    spans=[]
+    if args.legacy_windowing:
+        start=0
+        while start<len(audio):
+            samples=audio[start:start+320000];count=boundary(samples) if len(audio)-start>320000 else len(samples);samples=samples[:count];vad.reset()
+            for at in range(0,count,512):vad.accept_waveform(samples[at:at+512])
+            vad.flush();regions=[]
+            while not vad.empty():
+                part=vad.front;a=max(0,part.start-4800);b=min(count,part.start+len(part.samples)+4800)
+                if b>a:
+                    if regions and a-regions[-1][1]<=32000:regions[-1][1]=max(regions[-1][1],b)
+                    else:regions.append([a,b])
+                vad.pop()
+            spans.extend((start+a,start+b) for a,b in regions);start+=count
+    else:
+        vad.reset();raw=[]
+        def drain():
+            while not vad.empty():
+                part=vad.front;raw.append((part.start,part.start+len(part.samples)));vad.pop()
+        for at in range(0,len(audio),512):vad.accept_waveform(audio[at:at+512]);drain()
+        vad.flush();drain()
+        for a,b in raw:
+            a=max(0,a-4800);b=min(len(audio),b+4800)
+            if b<=a:continue
+            if spans and a-spans[-1][1]<=32000 and max(spans[-1][1],b)-spans[-1][0]<=384000:
+                spans[-1]=(spans[-1][0],max(spans[-1][1],b));continue
+            if spans and a<spans[-1][1]:
+                middle=a+(spans[-1][1]-a)//2;spans[-1]=(spans[-1][0],middle);a=middle
+            while a<b:
+                end=min(b,a+384000);spans.append((a,end));a=end
+    for a,b in spans:
+        spoken=audio[a:b]
+        if chosen=='ar':spoken=np.pad(spoken,(0,min(432000,len(spoken)+max(48000,len(spoken)//3))-len(spoken)))
+        stream=model.create_stream();stream.accept_waveform(16000,spoken);model.decode_stream(stream);r=stream.result
+        times=r.segment_timestamps or [0];durations=r.segment_durations or [(b-a)/16000];texts=r.segment_texts or [r.text]
+        for t,d,text in zip(times,durations,texts):
+            begin=max(a/16000,a/16000+t);end=min(b/16000,a/16000+t+d)
+            if text.strip() and end>begin:result.append(dict(start=begin,end=end,text=bytes.fromhex(text).decode('utf-8').strip(),language=r.lang))
+        windows+=1
+        Path(args.output).write_text(json.dumps(dict(segments=result,windows=windows,continuous=not args.legacy_windowing),ensure_ascii=False,indent=2))
+        print(f'{b/16000:.1f}/{len(audio)/16000:.1f}s; cues={len(result)}',flush=True)
 if __name__=='__main__':main()

@@ -56,6 +56,17 @@ extern "C" JNIEXPORT jintArray JNICALL Java_com_madar_files_SpeechActivity_regio
  auto out=e->NewIntArray(ranges.size());if(out&&!ranges.empty())e->SetIntArrayRegion(out,0,ranges.size(),ranges.data());return out;
 }
 extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechActivity_release(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxDestroyVoiceActivityDetector(reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle));}
+extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechActivity_reset(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxVoiceActivityDetectorReset(reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle));}
+// Preserve the detector's recurrent state across input buffers. Returned sample
+// offsets refer to the complete recording, never to the latest input buffer.
+extern "C" JNIEXPORT jintArray JNICALL Java_com_madar_files_SpeechActivity_accept(JNIEnv* e,jclass,jlong handle,jfloatArray audio,jboolean finish){
+ auto* vad=reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle);if(!vad){fail(e,"كاشف الكلام غير متاح");return nullptr;}
+ int n=e->GetArrayLength(audio);if(n>320000){fail(e,"نافذة كشف الكلام طويلة");return nullptr;}std::vector<float> samples(n);if(n>0)e->GetFloatArrayRegion(audio,0,n,samples.data());
+ for(int at=0;at<n;at+=512)SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad,samples.data()+at,std::min(512,n-at));
+ if(finish)SherpaOnnxVoiceActivityDetectorFlush(vad);std::vector<jint> ranges;
+ while(!SherpaOnnxVoiceActivityDetectorEmpty(vad)){auto* part=SherpaOnnxVoiceActivityDetectorFront(vad);if(part){ranges.push_back(std::max(0,part->start));ranges.push_back(part->start+part->n);SherpaOnnxDestroySpeechSegment(part);}SherpaOnnxVoiceActivityDetectorPop(vad);}
+ auto out=e->NewIntArray(ranges.size());if(out&&!ranges.empty())e->SetIntArrayRegion(out,0,ranges.size(),ranges.data());return out;
+}
 #include <cstdio>
 #include "lame.h"
 extern "C" JNIEXPORT void JNICALL Java_com_madar_files_AudioEditor_mp3(JNIEnv* e,jclass,jstring input,jstring output,jobject cancel){
