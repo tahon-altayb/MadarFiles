@@ -84,9 +84,9 @@ final class ColabKernel {
     long now=System.nanoTime();if(now>deadline)throw new IOException("Colab · PROCESS_TIMEOUT");
     if(now>=nextPoll){nextPoll=now+TimeUnit.MILLISECONDS.toNanos(policy.pollMs);try{if(poll.finished())return;seen=true;lastRest=System.nanoTime();}
      catch(ColabRuntime.HttpFailure e){if(e.status==404){if(now-begin>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw new IOException("Colab · WORKER_NOT_STARTED");}
-      else if(e.status==429||e.status>=500){if(now-lastRest>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw new IOException("Colab · PROGRESS_HTTP_"+e.status);events.record("PROGRESS_RETRY");}
+      else if(e.status==429||e.status>=500){if(System.nanoTime()-lastRest>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw new IOException("Colab · PROGRESS_HTTP_"+e.status);events.record("PROGRESS_RETRY");}
       else throw new IOException("Colab · PROGRESS_HTTP_"+e.status);}
-     catch(ColabRuntime.NetworkFailure e){if(now-lastRest>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw e;events.record("PROGRESS_RETRY");}
+     catch(ColabRuntime.NetworkFailure e){if(System.nanoTime()-lastRest>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw e;events.record("PROGRESS_RETRY");}
     }
     if(!a.transport.get().isEmpty()&&!reportedDisconnect){events.record(a.transport.get());if(seen)events.record("REST_CONTINUES");reportedDisconnect=true;}
     if(!a.transport.get().isEmpty()&&!seen&&now-begin>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw new IOException("Colab · "+a.transport.get());

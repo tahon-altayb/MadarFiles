@@ -57,6 +57,7 @@ class WorkerTest(unittest.TestCase):
             self.assertNotIn('private server', (folder/'result.json').read_text())
 
 class FailureTest(unittest.TestCase):
+    def setUp(self):w._environment = {}
     def test_bootstrap_discovers_libraries_installed_during_preparation(self):
         import subprocess
         bootstrap=Path('app/src/main/assets/colab/bootstrap.py').resolve()
@@ -146,5 +147,9 @@ class HealthTest(unittest.TestCase):
                 w.environment(folder)
             data=json.loads((folder/'environment.json').read_text())
             self.assertEqual(set(data),{'disk_free_mb'});self.assertGreater(data['disk_free_mb'],0)
+            w.status(folder,'gpu_check',29)
+            self.assertEqual(json.loads((folder/'progress.json').read_text())['environment'],data)
+            w.failure(folder,'GPU_MISSING')
+            self.assertEqual(json.loads((folder/'progress.json').read_text())['environment'],data)
 
 if __name__=='__main__':unittest.main()

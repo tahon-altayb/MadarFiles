@@ -18,6 +18,7 @@ import wave
 
 
 _io_lock = threading.RLock()
+_environment = {}
 
 
 def write_json(path, data):
@@ -29,7 +30,9 @@ def write_json(path, data):
 
 
 def status(folder, stage, progress):
-    write_json(folder / 'progress.json', {'stage': stage, 'progress': progress, 'heartbeat': time.monotonic_ns()})
+    data = {'stage': stage, 'progress': progress, 'heartbeat': time.monotonic_ns()}
+    if _environment:data['environment'] = dict(_environment)
+    write_json(folder / 'progress.json', data)
 
 
 STAGES = {'bootstrap', 'install', 'gpu_check', 'asr_download', 'asr_load', 'asr',
@@ -67,8 +70,10 @@ def failure(folder, code):
     stage = previous.get('stage')
     if stage == 'failed':return  # Keep the child's more precise diagnostic.
     if stage not in STAGES:stage = 'bootstrap'
-    write_json(folder / 'progress.json', {'stage':'failed', 'last_stage':stage,
-        'progress':previous.get('progress',27), 'error':code, 'heartbeat':time.monotonic_ns()})
+    data = {'stage':'failed', 'last_stage':stage, 'progress':previous.get('progress',27),
+        'error':code, 'heartbeat':time.monotonic_ns()}
+    if previous.get('environment'):data['environment'] = previous['environment']
+    write_json(folder / 'progress.json', data)
 
 
 def heartbeat(folder, stop, interval=5):
@@ -96,6 +101,7 @@ def prepare_dependencies(folder):
 
 
 def environment(folder, torch=None):
+    global _environment
     data = {}
     for name in ('torch','ctranslate2','av','transformers','accelerate','bitsandbytes','huggingface-hub'):
         try:
@@ -106,6 +112,7 @@ def environment(folder, torch=None):
     if torch is not None:
         cuda = str(torch.version.cuda)
         if re.fullmatch(r'[0-9]{1,3}(\.[0-9]{1,3}){1,3}',cuda):data['cuda'] = cuda
+    _environment = dict(data)
     write_json(Path(folder) / 'environment.json', data)
 
 
@@ -274,6 +281,9 @@ def run(folder):
 
 
 def main(folder, prepare=False):
+    global _environment
+    try:_environment = json.loads((Path(folder) / 'environment.json').read_text('utf-8'))
+    except (OSError, ValueError):_environment = {}
     stop = threading.Event()
     pulse = threading.Thread(target=heartbeat, args=(folder,stop), daemon=True)
     pulse.start()

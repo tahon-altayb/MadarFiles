@@ -46,10 +46,10 @@ final class ColabSpeech {
     String script;try(InputStream asset=context.getAssets().open("colab/worker.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);script=bytes.toString("UTF-8");}runtime.put(folder+"/worker.py",script,"text");
     diagnostic.record("UPLOAD_COMPLETE");
     String bootstrap;try(InputStream asset=context.getAssets().open("colab/bootstrap.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);bootstrap=bytes.toString("UTF-8");}
-    progress.update(27,"بدء قناة تنفيذ Colab وتهيئة العامل");final String[] lastStage={"bootstrap"};final int[] environmentAttempts={0};ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(android.os.SystemClock.elapsedRealtime());
+    progress.update(27,"بدء قناة تنفيذ Colab وتهيئة العامل");final String[] lastStage={"bootstrap"};final boolean[] environmentRead={false};ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(android.os.SystemClock.elapsedRealtime());
     try{channel.execute("JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap,()->{
      JSONObject state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536));String key=state.optString("stage");
-     if(!key.equals("bootstrap")&&!key.equals("install")&&environmentAttempts[0]<3){environmentAttempts[0]++;try{diagnostic.environment(ColabRuntime.parseJson(runtime.getText(folder+"/environment.json",65536)));environmentAttempts[0]=3;}catch(IOException ignored){}}
+     if(!environmentRead[0]&&state.optJSONObject("environment")!=null){diagnostic.environment(state.getJSONObject("environment"));environmentRead[0]=true;}
      if(key.equals("failed")){lastStage[0]=failedStage(state,lastStage[0]);diagnostic.record("STAGE_"+lastStage[0].toUpperCase(java.util.Locale.ROOT));throw new IOException("Colab · "+workerCode(state.optString("error")));}
      watch.update(state,android.os.SystemClock.elapsedRealtime());lastStage[0]=key;diagnostic.record("STAGE_"+key.toUpperCase(java.util.Locale.ROOT));
      progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),stage(key)+" · "+Math.max(0,(android.os.SystemClock.elapsedRealtime()-watch.stageAt)/1000)+" ثانية");return key.equals("done");
