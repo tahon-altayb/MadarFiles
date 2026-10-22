@@ -92,7 +92,10 @@ public class VideoExportService extends Service {
             String language=options.optString("language","auto"),target=options.optString("target","original"),mode=options.optString("translationMode","local"),names=options.optString("subtitleNames","");
             new SubtitleNames(names);long limit=options.optBoolean("speechSample")?30000000L:0;
             JSONArray cues,originalCues;String resultTarget=target,translationWarning="";
-            if(mode.equals("online")){
+            if(mode.equals("colab")){
+                if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");
+                ColabSpeech.Result result=ColabSpeech.run(this,input,language,target,names,limit,ColabCredentials.take(),musicCancel,callback);originalCues=result.original;cues=result.translated;resultTarget=result.target;translationWarning=result.warning;
+            }else if(mode.equals("online")){
                 if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("فعّل إرسال الصوت لخدمة Gemini في شاشة التفريغ أولًا");
                 OnlineSpeech.Result result=OnlineSpeech.transcribe(this,input,language,target,names,limit,musicCancel,callback);
                 originalCues=result.original;cues=result.translated;
@@ -108,7 +111,7 @@ public class VideoExportService extends Service {
             JSONObject data=FilesUtil.info(f).put("type","subtitles").put("cues",cues).put("originalCues",originalCues).put("language",SpeechProcessor.language(originalCues,language)).put("target",resultTarget).put("warning",translationWarning);
             handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});
         }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
-        catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر التفريغ أو الترجمة: "+(e instanceof OutOfMemoryError?"الذاكرة لا تكفي؛ اختر النموذج المتوازن أو السريع":e.getMessage()==null?"تحقق من توفر النموذج والمساحة":e.getMessage()));});}},"madar-speech");musicWorker.start();
+        catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر التفريغ أو الترجمة: "+(e instanceof OutOfMemoryError?"الذاكرة لا تكفي؛ اختر النموذج المتوازن أو السريع":options.optString("translationMode").equals("colab")&&!(e instanceof java.io.IOException)?"استجابة Colab غير مكتملة؛ أرسل آخر مرحلة ظهرت للمراجعة":e.getMessage()==null?"تحقق من توفر النموذج والمساحة":e.getMessage()));});}},"madar-speech");musicWorker.start();
     }
     private void startSound(File input,JSONObject options)throws Exception{
         cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:AudioEdit");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);
