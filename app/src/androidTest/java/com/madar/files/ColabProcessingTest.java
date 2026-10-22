@@ -21,9 +21,10 @@ public class ColabProcessingTest {
   List<JSONObject> candidates=ColabRuntime.candidates(response);assertEquals(3,candidates.size());assertEquals("L4",candidates.get(0).getString("accelerator"));assertEquals("T4",candidates.get(1).getString("accelerator"));
   assertTrue(ColabRuntime.candidates(new JSONObject().put("runtimeSpecs",new JSONArray().put(spec("L4",false)))).isEmpty());
  }
- @Test public void confinesProxyCredentialsToTrustedHttpsUrls()throws Exception{
+ @Test public void acceptsAuthenticatedRuntimeAddressesWithoutGuessingGoogleDnsSuffixes()throws Exception{
   assertEquals("https://runtime.colab.googleusercontent.com/base/",ColabRuntime.runtimeUrl("https://runtime.colab.googleusercontent.com/base").toString());
-  for(String bad:new String[]{"http://runtime.googleusercontent.com/","https://evil.example/","https://googleusercontent.com.evil.example/","https://secret@runtime.googleusercontent.com/","https://runtime.googleusercontent.com/?token=secret","https://runtime.googleusercontent.com:8443/"})try{ColabRuntime.runtimeUrl(bad);fail(bad);}catch(java.io.IOException expected){}
+  assertEquals("https://assigned.runtime.example.net/base/",ColabRuntime.runtimeUrl("https://assigned.runtime.example.net/base").toString());
+  for(String bad:new String[]{"http://runtime.googleusercontent.com/","https://localhost/","https://127.0.0.1/","https://192.168.1.1/","https://[::1]/","https://host.internal/","https://secret@runtime.googleusercontent.com/","https://runtime.googleusercontent.com/?token=secret","https://runtime.googleusercontent.com:8443/"})try{ColabRuntime.runtimeUrl(bad);fail(bad);}catch(java.io.IOException expected){}
  }
  @Test public void credentialsAreOneUseAndNeverInIntent()throws Exception{ColabCredentials.put("PRIVATE_TOKEN","madarfiles");assertTrue(ColabCredentials.ready());assertEquals("PRIVATE_TOKEN",ColabCredentials.take().token);assertNull(ColabCredentials.take());}
  @Test public void onlyMatchingExecutionReplyCanCompleteJob()throws Exception{
@@ -42,8 +43,10 @@ public class ColabProcessingTest {
    if(method.equals("POST")){assertTrue(context.getSharedPreferences("colab_owned_runtime",0).contains("name"));name[0]=context.getSharedPreferences("colab_owned_runtime",0).getString("name","");assertTrue(ColabRuntime.ownName(name[0]));return new JSONObject().put("name","operations/test").put("done",true);}
    if(method.equals("DELETE")){assertTrue(path.startsWith("v1beta/"+name[0]+"?allowMissing=true"));return new JSONObject();}
    if(path.startsWith("v1/operations"))return new JSONObject().put("done",true);
-   return new JSONObject().put("name",name[0]).put("connectionInfo",new JSONObject().put("url","https://runtime.colab.googleusercontent.com/").put("token","PROXY_SECRET").put("expireTime",java.time.Instant.now().plusSeconds(600).toString()));};
-  try(ColabRuntime runtime=new ColabRuntime(context,new ColabCredentials.Grant("OAUTH_SECRET","madarfiles"),stop,transport)){runtime.create((p,m)->{});assertTrue(runtime.cleanup());}
+   return new JSONObject().put("name",name[0]).put("connectionInfo",new JSONObject().put("url","https://assigned.runtime.example.net/base/").put("token","PROXY_SECRET").put("expireTime",java.time.Instant.now().plusSeconds(600).toString()));};
+  try(ColabRuntime runtime=new ColabRuntime(context,new ColabCredentials.Grant("OAUTH_SECRET","madarfiles"),stop,transport)){runtime.create((p,m)->{});
+   okhttp3.Request request=runtime.runtimeRequest("api/kernels").build();assertEquals("https://assigned.runtime.example.net/base/api/kernels",request.url().toString());assertEquals("PROXY_SECRET",request.header("X-Colab-Runtime-Proxy-Token"));assertNull(request.header("Authorization"));assertFalse(runtime.http.followRedirects());assertFalse(runtime.http.followSslRedirects());
+   assertTrue(runtime.cleanup());}
   assertEquals(5,calls.size());assertFalse(calls.toString().contains("SECRET"));assertFalse(context.getSharedPreferences("colab_owned_runtime",0).contains("name"));
  }
  @Test public void failedAssignmentFallsBackOnceAndForeignJournalIsProtected()throws Exception{
