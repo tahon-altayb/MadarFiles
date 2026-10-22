@@ -40,7 +40,7 @@ final class ColabProbe {
    String text=(variant.equals("VARIANT_CPU")?"CPU":variant.equals("VARIANT_GPU")?"GPU":"TPU")+" · "+accelerator+(shape.equals("SHAPE_HIGHMEM")?" · ذاكرة مرتفعة":" · ذاكرة عادية");
    if((Boolean)allowed){available++;eligible.append("• ").append(text).append('\n');}else ineligible.append("• ").append(text).append('\n');
   }
-  StringBuilder out=new StringBuilder("مدار 1.4.7 · فحص Colab\nالمشروع: ").append(project).append("\nالاتصال: نجح\nالاشتراك: ").append(tier).append("\n\nالموارد المؤهلة: ").append(available).append('\n');
+  StringBuilder out=new StringBuilder("مدار 1.4.8 · فحص Colab\nالمشروع: ").append(project).append("\nالاتصال: نجح\nالاشتراك: ").append(tier).append("\n\nالموارد المؤهلة: ").append(available).append('\n');
   out.append(available==0?"لم تُرجع الخدمة موارد مؤهلة لهذا الحساب.\n":eligible);
   if(ineligible.length()>0)out.append("\nموارد غير مؤهلة حاليًا:\n").append(ineligible);
   out.append("\nهذا فحص للأهلية فقط؛ لم تُنشأ جلسة ولم يُرفع صوت أو فيديو. أهلية المورد لا تضمن توفره وقت التشغيل. لتجربة المعالجة اختر Colab من أداة التفريغ والترجمة؛ قد تستهلك وحدات حسابك.");

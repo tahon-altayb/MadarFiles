@@ -74,16 +74,8 @@ final class ColabRuntime implements AutoCloseable {
  JSONObject jupyter(String method,String path,JSONObject data,int maximum)throws Exception{return request(runtimeRequest(path),method,data,cancel,maximum);}
  void put(String path,String content,String format)throws Exception{jupyter("PUT","api/contents/"+path,new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}
  String getText(String path,int max)throws Exception{return jupyter("GET","api/contents/"+path+"?format=text",null,max).getString("content");}
- void execute(String kernel,String code,Runnable poll)throws Exception{
-  String id=UUID.randomUUID().toString(),session=UUID.randomUUID().toString();CountDownLatch done=new CountDownLatch(1);AtomicBoolean ok=new AtomicBoolean();JSONObject header=new JSONObject().put("msg_id",id).put("username","madar").put("session",session).put("msg_type","execute_request").put("version","5.3").put("date",java.time.Instant.now().toString());
-  String message=new JSONObject().put("header",header).put("parent_header",new JSONObject()).put("metadata",new JSONObject()).put("channel","shell").put("content",new JSONObject().put("code",code).put("silent",true).put("store_history",false).put("user_expressions",new JSONObject()).put("allow_stdin",false).put("stop_on_error",true)).toString();
-  socket=http.newWebSocket(runtimeRequest("api/kernels/"+kernel+"/channels?session_id="+session).build(),new WebSocketListener(){
-   @Override public void onOpen(WebSocket ws,Response response){ws.send(message);}
-   @Override public void onMessage(WebSocket ws,String text){if(text.length()>1024*1024){ws.cancel();done.countDown();return;}try{Boolean success=executionReply(id,text);if(success!=null){ok.set(success);done.countDown();}}catch(Exception ignored){}}
-   @Override public void onFailure(WebSocket ws,Throwable failure,Response response){done.countDown();}
-   @Override public void onClosed(WebSocket ws,int status,String reason){done.countDown();}
-  });
-  long end=System.nanoTime()+TimeUnit.MINUTES.toNanos(35);try{while(!done.await(2,TimeUnit.SECONDS)){ColabProbe.check(cancel);if(System.nanoTime()>end)throw new IOException("تجاوزت معالجة Colab مهلة 35 دقيقة");poll.run();}ColabProbe.check(cancel);if(!ok.get())throw new IOException("لم تكتمل أوامر جلسة Colab؛ أعد التجربة وأرسل حالة المعالجة");}finally{socket.cancel();socket=null;}
+ void execute(String kernel,String code,ColabKernel.Poll poll)throws Exception{
+  ColabKernel.run(http,runtimeRequest("api/kernels/"+kernel+"/channels?session_id="+UUID.randomUUID()).build(),code,cancel,poll);
  }
  static Boolean executionReply(String id,String text)throws JSONException{
   JSONObject m=new JSONObject(text);if(m.optJSONObject("parent_header")==null||!id.equals(m.getJSONObject("parent_header").optString("msg_id"))||!m.getJSONObject("header").optString("msg_type").equals("execute_reply"))return null;

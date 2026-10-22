@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 final class ColabSpeech {
  static final class Result {JSONArray original,translated;String language,target,warning="";}
- static String stage(String key){switch(key){case "install":return "تجهيز مكتبات المعالجة على Colab";case "asr_load":return "تحميل Whisper large-v3 على GPU";case "asr":return "تفريغ الكلام مع توقيت الكلمات";case "translation_load":return "تحميل نموذج ترجمة Qwen3 · قد يستغرق دقائق";case "translation":return "ترجمة الحوار بالسياق وتثبيت الأسماء";case "done":return "اكتملت معالجة Colab؛ استرجاع النتيجة";case "failed":return "تعذر تشغيل النموذج؛ أرسل آخر مرحلة ظهرت";default:return "انتظار بدء نموذج Colab";}}
+ static String stage(String key){switch(key){case "bootstrap":return "تهيئة عامل المعالجة داخل مجلد المقطع";case "install":return "تجهيز مكتبات المعالجة على Colab";case "asr_load":return "تحميل Whisper large-v3 على GPU";case "asr":return "تفريغ الكلام مع توقيت الكلمات";case "translation_load":return "تحميل نموذج ترجمة Qwen3 · قد يستغرق دقائق";case "translation":return "ترجمة الحوار بالسياق وتثبيت الأسماء";case "done":return "اكتملت معالجة Colab؛ استرجاع النتيجة";case "failed":return "تعذر تشغيل النموذج؛ أرسل آخر مرحلة ظهرت";default:return "انتظار بدء نموذج Colab";}}
  static Result run(Context context,File input,String language,String target,String hints,long limitUs,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   if(grant==null)throw new IOException("أعد تسجيل الدخول إلى Colab من شاشة التفريغ");
   if(!language.matches("auto|ar|en|ja|fr|de|es|zh")||!target.matches("original|ar|en|ja"))throw new IOException("لغة غير مدعومة");
@@ -28,12 +28,14 @@ final class ColabSpeech {
     JSONArray glossary=new JSONArray();for(Map.Entry<String,String> e:names.entries.entrySet())glossary.put(new JSONObject().put("source",e.getKey()).put("target",e.getValue()));
     runtime.put(folder+"/request.json",new JSONObject().put("language",language).put("target",target).put("names",glossary).put("chunks",chunks).toString(),"text");
     String script;try(InputStream asset=context.getAssets().open("colab/worker.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);script=bytes.toString("UTF-8");}runtime.put(folder+"/worker.py",script,"text");
-    JSONObject kernel=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3"),1024*1024);String kernelId=kernel.getString("id");if(!kernelId.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرّف جلسة غير صالح");
-    progress.update(27,"بدء معالجة الصوت على GPU");final String[] lastStage={"install"};final int[] misses={0};
-    runtime.execute(kernelId,"import os, sys, site, glob, subprocess\nenv = dict(os.environ)\nlibs = [p for root in site.getsitepackages() for p in glob.glob(root + '/nvidia/*/lib')]\nenv['LD_LIBRARY_PATH'] = ':'.join(libs + [env.get('LD_LIBRARY_PATH', '')])\nsubprocess.run([sys.executable, "+JSONObject.quote(folder+"/worker.py")+", "+JSONObject.quote(folder)+"], env=env, check=True)",()->{
-     try{JSONObject state=new JSONObject(runtime.getText(folder+"/progress.json",65536));String key=state.optString("stage");lastStage[0]=key;misses[0]=0;progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),stage(key));}
-     catch(java.util.concurrent.CancellationException e){throw e;}catch(Exception ignored){if(++misses[0]>=8)throw new IllegalStateException("تعذر متابعة جلسة Colab؛ آخر مرحلة: "+stage(lastStage[0]));}
-    });
+    JSONObject kernel=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",folder),1024*1024);String kernelId=kernel.getString("id");if(!kernelId.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرّف جلسة غير صالح");
+    String bootstrap;try(InputStream asset=context.getAssets().open("colab/bootstrap.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);bootstrap=bytes.toString("UTF-8");}
+    progress.update(27,"بدء قناة تنفيذ Colab وتهيئة العامل");final String[] lastStage={"bootstrap"};
+    try{runtime.execute(kernelId,"JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap,()->{
+     JSONObject state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536));String key=state.optString("stage");lastStage[0]=key;
+     if(key.equals("failed"))throw new IOException("Colab · WORKER_FAILED");
+     progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),stage(key));return key.equals("done");
+    });}catch(java.util.concurrent.CancellationException e){throw e;}catch(Exception e){String detail=e instanceof IOException?e.getMessage():"Colab · EXECUTION_FAILED";throw new IOException(detail+" · المرحلة: "+stage(lastStage[0]));}
     result=parse(ColabRuntime.parseJson(runtime.getText(folder+"/result.json",4*1024*1024)),total/16000.0,decoded.offsetUs/1000000.0,target);
    }finally{
     progress.update(98,"إنهاء جلسة مدار في Colab وإيقاف استهلاك مواردها…");cleaned=runtime.cleanup();
