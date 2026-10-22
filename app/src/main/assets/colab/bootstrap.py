@@ -19,7 +19,21 @@ os.chdir(job)
 temporary = Path('progress.tmp')
 temporary.write_text(json.dumps({'stage': 'bootstrap', 'progress': 27}), encoding='utf-8')
 temporary.replace('progress.json')
+# Preparation runs without importing inference libraries into the kernel.
+preparation = subprocess.run([sys.executable, 'worker.py', '.', '--prepare'])
+if preparation.returncode:
+    raise RuntimeError('MADAR_PREPARATION_FAILED')
 env = dict(os.environ)
 libs = [p for root in site.getsitepackages() for p in glob.glob(root + '/nvidia/*/lib')]
 env['LD_LIBRARY_PATH'] = ':'.join(libs + [env.get('LD_LIBRARY_PATH', '')])
-subprocess.run([sys.executable, 'worker.py', '.'], env=env, check=True)
+env.update(HF_HUB_DISABLE_XET='1', HF_HUB_DISABLE_IMPLICIT_TOKEN='1',
+           HF_HUB_DOWNLOAD_TIMEOUT='60', HF_HUB_ETAG_TIMEOUT='30')
+process = subprocess.run([sys.executable, 'worker.py', '.'], env=env)
+if process.returncode:
+    # Native library aborts may bypass Python's exception handler. Preserve stage.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('madar_worker_report', 'worker.py')
+    reporter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reporter)
+    reporter.failure(Path('.'), 'NATIVE_ABORT' if process.returncode < 0 else 'PROCESS_EXIT')
+    raise RuntimeError('MADAR_WORKER_FAILED')

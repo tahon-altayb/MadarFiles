@@ -45,7 +45,7 @@ def main():
                     time.sleep(.2)
             folder = 'madar_' + uuid.uuid4().hex
             api('PUT', 'api/contents/' + folder, {'type':'directory'})
-            stub = "from pathlib import Path\nimport json,sys\np=Path(sys.argv[1])\nassert json.loads((p/'request.json').read_text())['fixture']==73\n(p/'result.json').write_text(json.dumps({'fixture':73}))\n(p/'progress.json').write_text(json.dumps({'stage':'done','progress':97}))\n"
+            stub = "from pathlib import Path\nimport json,sys\np=Path(sys.argv[1])\nif '--prepare' in sys.argv:sys.exit(0)\nassert json.loads((p/'request.json').read_text())['fixture']==73\n(p/'result.json').write_text(json.dumps({'fixture':73}))\n(p/'progress.json').write_text(json.dumps({'stage':'done','progress':97}))\n"
             for name, text in [('request.json', '{"fixture":73}'), ('worker.py', stub)]:
                 api('PUT', 'api/contents/'+folder+'/'+name, {'type':'file','format':'text','content':text})
             kernel = api('POST', 'api/kernels', {'name':'python3','path':folder})['id']

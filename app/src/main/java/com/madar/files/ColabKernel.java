@@ -44,7 +44,7 @@ final class ColabKernel {
    @Override public void onClosed(WebSocket socket,int status,String reason){transport.compareAndSet("","WS_CLOSED_"+status);}
   });
   long begin=System.nanoTime(),end=begin+TimeUnit.MINUTES.toNanos(35),nextPoll=begin;boolean seenProgress=false;
-  try{while(true){ColabProbe.check(cancel);String reply=result.get();if("OK".equals(reply))return;if(reply!=null)throw new IOException("Colab · "+reply);
+  try{while(true){ColabProbe.check(cancel);String reply=result.get();if("OK".equals(reply))return;if(reply!=null){try{if(poll.finished())return;}catch(ColabRuntime.HttpFailure e){if(e.status!=404)throw e;}throw new IOException("Colab · "+reply);}
     if(!opened.get()&&!transport.get().isEmpty())throw new IOException("Colab · "+transport.get());
     if(System.nanoTime()-begin>TimeUnit.SECONDS.toNanos(30)&&!opened.get())throw new IOException("Colab · WS_CONNECT_TIMEOUT");
     if(System.nanoTime()>end)throw new IOException("Colab · PROCESS_TIMEOUT");

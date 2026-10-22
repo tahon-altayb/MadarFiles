@@ -22,6 +22,55 @@ def status(folder, stage, progress):
     write_json(folder / 'progress.json', {'stage': stage, 'progress': progress})
 
 
+STAGES = {'bootstrap', 'install', 'gpu_check', 'asr_download', 'asr_load', 'asr',
+          'translation_load', 'translation', 'done'}
+
+
+def error_code(error):
+    # Inspect locally; export only fixed categories, never a message, URL or traceback.
+    seen = set()
+    while error is not None and id(error) not in seen and len(seen) < 6:
+        seen.add(id(error))
+        name, text = type(error).__name__, str(error).lower()
+        response = getattr(error, 'response', None)
+        http = getattr(response, 'status_code', None)
+        if http in (401, 403, 404, 429, 500, 502, 503, 504):
+            return 'MODEL_HTTP_' + str(http)
+        if 'out of memory' in text or name == 'OutOfMemoryError':return 'GPU_MEMORY'
+        if any(x in text for x in ('cudnn', 'cublas', 'libcuda', 'cuda driver', 'cuda runtime', 'cuda failed')):return 'GPU_LIBRARIES'
+        if 'gpu_missing' in text:return 'GPU_MISSING'
+        if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)) or 'timeout' in name.lower():return 'NETWORK_TIMEOUT'
+        if 'connection' in name.lower() or 'network' in name.lower():return 'MODEL_NETWORK'
+        if isinstance(error, TypeError) and 'metadata_errors' in text:return 'AUDIO_DEPENDENCY'
+        if isinstance(error, ModuleNotFoundError):return 'MODULE_MISSING'
+        if isinstance(error, ImportError):return 'MODULE_IMPORT'
+        if isinstance(error, OSError) and getattr(error, 'errno', None) == 28:return 'DISK_FULL'
+        error = error.__cause__ or error.__context__
+    return 'MODEL_EXECUTION'
+
+
+def failure(folder, code):
+    folder = Path(folder)
+    try:previous = json.loads((folder / 'progress.json').read_text('utf-8'))
+    except (OSError, ValueError):previous = {}
+    stage = previous.get('stage')
+    if stage == 'failed':return  # Keep the child's more precise diagnostic.
+    if stage not in STAGES:stage = 'bootstrap'
+    write_json(folder / 'progress.json', {'stage':'failed', 'last_stage':stage,
+        'progress':previous.get('progress',27), 'error':code})
+
+
+def prepare_dependencies(folder):
+    status(Path(folder), 'install', 28)
+    # Install before the fresh inference process builds its loader search path.
+    # Leave the existing CUDA-enabled torch in place.
+    subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '--disable-pip-version-check',
+        'faster-whisper==1.2.1', 'ctranslate2==4.6.0', 'av==18.0.0', 'transformers==4.51.3',
+        'accelerate==1.6.0', 'bitsandbytes==0.45.5', 'huggingface-hub==0.36.0',
+        'nvidia-cublas-cu12>=12,<13', 'nvidia-cudnn-cu12>=9,<10'],
+        check=True, timeout=720, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def translation_payload(raw, expected_ids):
     raw = raw.strip()
     if raw.startswith('```') and raw.endswith('```'):
@@ -62,6 +111,14 @@ def split_segment(segment, language):
     return [line for line in out if line['text'] and line['end'] > line['start']]
 
 
+def whisper_options(source, hints):
+    return dict(language=None if source == 'auto' else source,
+        beam_size=5, word_timestamps=True, vad_filter=True,
+        vad_parameters={'threshold': .35, 'min_speech_duration_ms': 100, 'min_silence_duration_ms': 400, 'speech_pad_ms': 400},
+        initial_prompt=', '.join(item['source'] for item in hints) or None,
+        condition_on_previous_text=True, hallucination_silence_threshold=2)
+
+
 def run(folder):
     folder = Path(folder).resolve()
     request = json.loads((folder / 'request.json').read_text('utf-8'))
@@ -71,12 +128,7 @@ def run(folder):
     count = request['chunks']
     if type(count) is not int or not 1 <= count <= 20:
         raise ValueError('chunks')
-    status(folder, 'install', 28)
-    # Keep the Colab CUDA-enabled torch; install inference libraries in a fresh kernel.
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '--disable-pip-version-check',
-                    'faster-whisper==1.2.1', 'ctranslate2==4.6.0', 'transformers==4.51.3',
-                    'accelerate==1.6.0', 'bitsandbytes==0.45.5'],
-                   check=True, timeout=720, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    status(folder, 'gpu_check', 29)
     import torch
     if not torch.cuda.is_available():
         raise RuntimeError('gpu_missing')
@@ -89,15 +141,15 @@ def run(folder):
                 output.writeframes(chunk.readframes(chunk.getnframes()))
     with wave.open(str(folder / 'input.wav'), 'rb') as sound:
         duration = sound.getnframes() / sound.getframerate()
-    status(folder, 'asr_load', 34)
+    status(folder, 'asr_download', 30)
     from faster_whisper import WhisperModel
-    recognizer = WhisperModel('large-v3', device='cuda', compute_type='float16')
+    from faster_whisper.utils import download_model
+    model_path = download_model('large-v3')
+    status(folder, 'asr_load', 34)
+    recognizer = WhisperModel(model_path, device='cuda', compute_type='float16', local_files_only=True)
+    status(folder, 'asr', 39)
     hints = request.get('names', [])
-    segments, info = recognizer.transcribe(str(folder / 'input.wav'), language=None if source == 'auto' else source,
-        beam_size=5, word_timestamps=True, vad_filter=True,
-        vad_parameters={'threshold': .35, 'min_speech_duration_ms': 100, 'min_silence_duration_ms': 400, 'speech_pad_ms': 400},
-        initial_prompt=', '.join(item['source'] for item in hints) or None,
-        condition_on_previous_text=True, hallucination_silence_threshold=2)
+    segments, info = recognizer.transcribe(str(folder / 'input.wav'), **whisper_options(source, hints))
     cues = []
     for segment in segments:
         cues.extend(split_segment(segment, info.language))
@@ -161,20 +213,22 @@ def run(folder):
             translated.extend(dict(cues[i], text=texts[i]) for i in ids)
             status(folder, 'translation', 70 + int(25 * len(translated) / len(cues)))
         result.update(translated=translated, target=target)
-    except Exception:
+    except Exception as error:
         result['warning'] = 'translation_failed'
+        result['warning_code'] = error_code(error)
     write_json(folder / 'result.json', result)
     status(folder, 'done', 97)
 
 
-def main(folder):
+def main(folder, prepare=False):
     try:
-        run(folder)
-    except Exception:
-        status(Path(folder), 'failed', 0)
+        prepare_dependencies(folder) if prepare else run(folder)
+    except Exception as error:
+        code = ('INSTALL_TIMEOUT' if isinstance(error, subprocess.TimeoutExpired) else 'INSTALL_FAILED') if prepare else error_code(error)
+        failure(folder, code)
         # Never write raw exception messages, tracebacks, credentials or paths to a report.
         raise RuntimeError('Madar worker failed; inspect the last stage') from None
 
 
 if __name__ == '__main__':
-    main(sys.argv[1])
+    main(sys.argv[1], len(sys.argv) > 2 and sys.argv[2] == '--prepare')

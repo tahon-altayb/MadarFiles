@@ -32,6 +32,10 @@ public class ColabKernelTest {
  @Test(timeout=20000) public void rejectedHandshakeIncludesOnlyHttpStatus()throws Exception{
   server.enqueue(new MockResponse().setResponseCode(403).setBody("SECRET_TOKEN_MUST_NOT_APPEAR"));try{ColabKernel.run(client,request(),"test",new AtomicBoolean(),()->false);fail();}catch(java.io.IOException e){assertTrue(e.getMessage().contains("WS_HTTP_403"));assertFalse(e.getMessage().contains("SECRET"));}
  }
+ @Test(timeout=20000) public void pythonFailureFetchesPreciseWorkerDiagnosticBeforeThrowing()throws Exception{
+  AtomicBoolean replied=new AtomicBoolean();server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener(){@Override public void onMessage(WebSocket socket,String message){try{replied.set(true);socket.send(reply(message,"error").toString());}catch(Exception e){socket.cancel();}}}));
+  try{ColabKernel.run(client,request(),"test",new AtomicBoolean(),()->{if(replied.get())throw new java.io.IOException("Colab · GPU_LIBRARIES");return false;});fail();}catch(java.io.IOException e){assertEquals("Colab · GPU_LIBRARIES",e.getMessage());}
+ }
  @Test(timeout=20000) public void disconnectedSocketCanRecoverFromCompletedRestProgress()throws Exception{
   AtomicInteger polls=new AtomicInteger();server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener(){@Override public void onMessage(WebSocket socket,String message){socket.close(1000,"private reason ignored");}}));ColabKernel.run(client,request(),"test",new AtomicBoolean(),()->polls.incrementAndGet()>1);assertTrue(polls.get()>1);
  }

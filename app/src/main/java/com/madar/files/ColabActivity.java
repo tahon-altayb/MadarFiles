@@ -62,7 +62,7 @@ public final class ColabActivity extends Activity {
   worker.execute(()->{try{String summary;if(cleanupRequested){try(ColabRuntime runtime=new ColabRuntime(this,new ColabCredentials.Grant(token,selected),operation)){runtime.cleanupPrevious();summary="تم تأكيد إنهاء جلسة مدار السابقة؛ لم تُمس جلساتك الأخرى.";}}else summary=ColabProbe.run(token,selected,operation,message->runOnUiThread(()->{if(current(ticket))status.setText(message);}));runOnUiThread(()->{if(current(ticket))complete(summary);});}
    catch(CancellationException ignored){}
    catch(Exception e){int statusCode=e instanceof ColabProbe.Failure?((ColabProbe.Failure)e).status:0;String message=e instanceof ColabProbe.Failure?e.getMessage():e instanceof org.json.JSONException?"استجابة Colab غير مكتملة؛ أعد الفحص أو أرسل النتيجة للمراجعة.":e instanceof java.io.IOException?e.getMessage():"تعذر إكمال فحص Colab؛ أعد المحاولة.";
-    runOnUiThread(()->{if(current(ticket)){if(statusCode==401)Identity.getAuthorizationClient(this).clearToken(ClearTokenRequest.builder().setToken(token).build());complete("مدار 1.4.8 · فحص Colab\nالمشروع: "+selected+"\nلم يكتمل الفحص: "+message+"\nلم تُنشأ جلسة ولم تُرفع ملفات.");}});
+    runOnUiThread(()->{if(current(ticket)){if(statusCode==401)Identity.getAuthorizationClient(this).clearToken(ClearTokenRequest.builder().setToken(token).build());complete("مدار 1.4.9 · فحص Colab\nالمشروع: "+selected+"\nلم يكتمل الفحص: "+message+"\nلم تُنشأ جلسة ولم تُرفع ملفات.");}});
    }
   });
  }

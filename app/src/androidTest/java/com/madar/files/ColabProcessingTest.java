@@ -12,6 +12,12 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ColabProcessingTest {
+ @Test public void workerFailureKeepsActualStageAndWhitelistsDiagnosticCodes()throws Exception{
+  JSONObject failure=new JSONObject().put("stage","failed").put("last_stage","asr_load").put("error","GPU_LIBRARIES");
+  assertEquals("asr_load",ColabSpeech.failedStage(failure,"bootstrap"));assertEquals("GPU_LIBRARIES",ColabSpeech.workerCode(failure.getString("error")));
+  assertEquals("WORKER_FAILED",ColabSpeech.workerCode("PRIVATE_TOKEN https://secret.invalid"));
+  assertEquals("asr_download",ColabSpeech.failedStage(new JSONObject().put("stage","failed"),"asr_download"));
+ }
  private Context context;private final AtomicBoolean stop=new AtomicBoolean();
  @Before public void setup(){context=InstrumentationRegistry.getInstrumentation().getTargetContext();context.getSharedPreferences("colab_owned_runtime",0).edit().clear().commit();}
  @After public void clear(){context.getSharedPreferences("colab_owned_runtime",0).edit().clear().commit();ColabCredentials.clear();}
