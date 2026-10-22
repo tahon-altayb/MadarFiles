@@ -10,6 +10,16 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ColabDiagnosticsTest {
+ @Test public void translationFailureIsNotReportedAsFullSuccess()throws Exception{
+  Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();
+  try{
+   JSONObject cue=new JSONObject().put("start",0).put("end",1).put("text","シン");
+   JSONObject response=new JSONObject().put("original",new org.json.JSONArray().put(cue)).put("translated",new org.json.JSONArray().put(cue)).put("language","ja").put("target","original").put("warning","translation_failed").put("warning_code","MODEL_ATTRIBUTE").put("warning_stage","translation_check");
+   ColabSpeech.Result result=ColabSpeech.parse(response,2,0,"ar");ColabDiagnostics diagnostic=new ColabDiagnostics(context);ColabSpeech.recordOutcome(diagnostic,result);
+   String saved=ColabDiagnostics.last(context);assertTrue(saved.contains("STAGE_TRANSLATION_CHECK"));assertTrue(saved.contains("MODEL_ATTRIBUTE"));assertTrue(saved.endsWith("DONE_ORIGINAL_ONLY"));assertFalse(saved.endsWith(" · DONE"));
+   ColabSpeech.Result intentional=ColabSpeech.parse(response.put("warning",""),2,0,"original");intentional.warning="cleanup warning";ColabSpeech.recordOutcome(diagnostic,intentional);assertTrue(ColabDiagnostics.last(context).endsWith(" · DONE"));
+  }finally{context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();}
+ }
  @Test public void workerHeartbeatDistinguishesSlowWorkFromDeadWorker()throws Exception{
   ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(0);
   JSONObject state=new JSONObject().put("stage","asr_download").put("progress",30).put("heartbeat",1);

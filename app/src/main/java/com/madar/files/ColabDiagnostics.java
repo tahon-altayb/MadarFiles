@@ -10,8 +10,8 @@ import java.util.regex.*;
 /** A bounded, local report of fixed codes only. Never accepts server error text or URLs. */
 final class ColabDiagnostics {
  private final Context context;private final long started=System.nanoTime();private final List<String> lines=new ArrayList<>();private String environment="";
- private static final Set<String> FIXED=new HashSet<>(Arrays.asList("ORIGINAL_RECOVERED","RESPONSE_SCHEMA","RUNTIME_ID_MISMATCH","RUNTIME_TOKEN_INVALID","RUNTIME_TOKEN_EXPIRED","RUNTIME_EXPIRY_INVALID","RUNTIME_URL_INVALID","JUPYTER_START_TIMEOUT","LOCAL_MEMORY","LOCAL_NATIVE","START","DONE","FAILED","CANCELLED","UNCLASSIFIED","AUDIO_DECODE","AUDIO_READY","RUNTIME_CREATE","JUPYTER_READY","KERNEL_CREATE","UPLOAD_AUDIO","UPLOAD_COMPLETE","FETCH_RESULT","CLEANUP_OK","CLEANUP_PENDING","WS_OPEN","WS_RETRY","WS_CONNECT_TIMEOUT","WS_NETWORK_TIMEOUT","WS_NETWORK","WS_DNS","WS_TLS","WS_CLOSED","WS_SEND","WS_LOST_BEFORE_EXECUTION","WS_FRAME_FORMAT","WS_FRAME_SIZE","EXECUTION_QUEUED","EXECUTION_ALREADY_SENT","KERNEL_DEAD","PROCESS_TIMEOUT","REST_CONTINUES","PROGRESS_RETRY","WORKER_NOT_STARTED","WORKER_HEARTBEAT_TIMEOUT","STAGE_TIMEOUT","IO_DNS","IO_TLS","IO_TIMEOUT","IO_NETWORK","RESPONSE_TOO_LARGE","RESPONSE_INVALID_JSON","PY_FILE_NOT_FOUND","PY_MODULE_MISSING","PY_IMPORT","PY_WORKER_EXIT","PY_PERMISSION","PY_SYNTAX","PY_NAME","PY_EXECUTION"));
- static boolean stageKnown(String stage){return Arrays.asList("bootstrap","install","gpu_check","asr_download","asr_load","asr","translation_load","translation","done").contains(stage);}
+ private static final Set<String> FIXED=new HashSet<>(Arrays.asList("ORIGINAL_RECOVERED","RESPONSE_SCHEMA","RUNTIME_ID_MISMATCH","RUNTIME_TOKEN_INVALID","RUNTIME_TOKEN_EXPIRED","RUNTIME_EXPIRY_INVALID","RUNTIME_URL_INVALID","JUPYTER_START_TIMEOUT","LOCAL_MEMORY","LOCAL_NATIVE","START","DONE","DONE_ORIGINAL_ONLY","FAILED","CANCELLED","UNCLASSIFIED","AUDIO_DECODE","AUDIO_READY","RUNTIME_CREATE","JUPYTER_READY","KERNEL_CREATE","UPLOAD_AUDIO","UPLOAD_COMPLETE","FETCH_RESULT","CLEANUP_OK","CLEANUP_PENDING","WS_OPEN","WS_RETRY","WS_CONNECT_TIMEOUT","WS_NETWORK_TIMEOUT","WS_NETWORK","WS_DNS","WS_TLS","WS_CLOSED","WS_SEND","WS_LOST_BEFORE_EXECUTION","WS_FRAME_FORMAT","WS_FRAME_SIZE","EXECUTION_QUEUED","EXECUTION_ALREADY_SENT","KERNEL_DEAD","PROCESS_TIMEOUT","REST_CONTINUES","PROGRESS_RETRY","WORKER_NOT_STARTED","WORKER_HEARTBEAT_TIMEOUT","STAGE_TIMEOUT","IO_DNS","IO_TLS","IO_TIMEOUT","IO_NETWORK","RESPONSE_TOO_LARGE","RESPONSE_INVALID_JSON","PY_FILE_NOT_FOUND","PY_MODULE_MISSING","PY_IMPORT","PY_WORKER_EXIT","PY_PERMISSION","PY_SYNTAX","PY_NAME","PY_EXECUTION"));
+ static boolean stageKnown(String stage){return Arrays.asList("bootstrap","install","gpu_check","asr_download","asr_load","asr","translation_check","translation_tokenizer","translation_download","translation_load","translation","done").contains(stage);}
  static boolean safe(String code){if(FIXED.contains(code)||code.equals("WORKER_FAILED"))return true;if(!ColabSpeech.workerCode(code).equals("WORKER_FAILED"))return true;
   if(code.matches("(HTTP_|WS_HTTP_|PROGRESS_HTTP_)[1-5][0-9]{2}|WS_ATTEMPT_[12]"))return true;
   return code.startsWith("STAGE_")&&stageKnown(code.substring(6).toLowerCase(Locale.ROOT));}
@@ -36,7 +36,7 @@ final class ColabDiagnostics {
    if(!next.equals(stage)||p>progress){stage=next;stageAt=now;progress=p;}
    long beat=state.optLong("heartbeat",-1);if(beat>=0&&beat!=lastHeartbeat){lastHeartbeat=beat;lastHeartbeatAt=now;}
    if(now-lastHeartbeatAt>120000)throw new IOException("Colab · WORKER_HEARTBEAT_TIMEOUT");
-   long limit=stage.equals("install")?13*60000L:stage.equals("translation_load")?20*60000L:stage.equals("asr_load")?5*60000L:10*60000L;
+   long limit=stage.equals("install")?13*60000L:(stage.equals("translation_load")||stage.equals("translation_download"))?20*60000L:stage.equals("asr_load")?5*60000L:10*60000L;
    if(now-stageAt>limit)throw new IOException("Colab · STAGE_TIMEOUT");
   }
  }

@@ -22,6 +22,23 @@ class WorkerTest(unittest.TestCase):
         for lines in [[{'id':1,'text':'x'}], [{'id':1,'text':'x'}, {'id':1,'text':'y'}], [{'id':1,'text':'x'}, {'id':3,'text':'y'}], [{'id':True,'text':'x'}, {'id':2,'text':'y'}], [{'id':1,'text':''}, {'id':2,'text':'y'}]]:
             with self.assertRaises(ValueError):w.translation_payload(json.dumps({'lines':lines}), [1,2])
 
+    def test_quantization_is_checked_before_loading_translation_weights(self):
+        calls=[]
+        fake=SimpleNamespace(shape=(64,64))
+        torch=SimpleNamespace(float16='float16',zeros=lambda *a,**k:fake,
+            isfinite=lambda x:SimpleNamespace(all=lambda:SimpleNamespace(item=lambda:True)),
+            cuda=SimpleNamespace(synchronize=lambda:calls.append('sync'),empty_cache=lambda:None))
+        functional=SimpleNamespace(quantize_4bit=lambda x,**k:(calls.append(k) or fake, 'state'),
+            dequantize_4bit=lambda x,state:fake)
+        with patch.dict(sys.modules,{'bitsandbytes':SimpleNamespace(functional=functional),'bitsandbytes.functional':functional}):
+            w.quantization_preflight(torch)
+        self.assertEqual(calls,[{'quant_type':'nf4','compress_statistics':True},'sync'])
+
+    def test_translation_error_codes_remain_specific_and_private(self):
+        for error,code in [(AttributeError('secret token'),'MODEL_ATTRIBUTE'),
+                (TypeError('private URL'),'MODEL_TYPE'), (ValueError('private text'),'MODEL_VALUE')]:
+            self.assertEqual(w.error_code(error),code)
+
     def test_natural_word_groups_preserve_text_and_time(self):
         words = [SimpleNamespace(start=i,end=i+.5,word=t) for i,t in enumerate(['シン','、','来て','！']*4)]
         lines=w.split_segment(SimpleNamespace(words=words), 'ja')
@@ -42,18 +59,21 @@ class WorkerTest(unittest.TestCase):
         torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True,empty_cache=lambda:None))
         modules={'torch':torch,'faster_whisper':SimpleNamespace(WhisperModel=Recognizer),
           'faster_whisper.utils':SimpleNamespace(download_model=lambda name:'fixture-model'),
-          'transformers':SimpleNamespace(AutoTokenizer=BrokenTokenizer,AutoModelForCausalLM=None,BitsAndBytesConfig=None)}
+          'transformers':SimpleNamespace(AutoTokenizer=BrokenTokenizer,AutoModelForCausalLM=None,BitsAndBytesConfig=None),
+          'transformers.models.qwen3.modeling_qwen3':SimpleNamespace(Qwen3ForCausalLM=None)}
         with tempfile.TemporaryDirectory() as directory:
             folder=Path(directory)
             (folder/'request.json').write_text(json.dumps({'language':'ja','target':'ar','chunks':1,'names':[]}))
             with wave.open(str(folder/'chunk_0.wav'),'wb') as f:f.setparams((1,2,16000,0,'NONE','not compressed'));f.writeframes(bytes(32000))
-            with patch.dict(sys.modules,modules),patch.object(w.subprocess,'run'),patch.object(w,'gpu_preflight'),patch.object(w,'environment'):
+            with patch.dict(sys.modules,modules),patch.object(w.subprocess,'run'),patch.object(w,'gpu_preflight'),patch.object(w,'quantization_preflight'),patch.object(w,'environment'):
                 w.run(folder)
             result=json.loads((folder/'result.json').read_text())
             self.assertEqual(result['original'],result['translated'])
             self.assertEqual(result['original'][0]['text'],'シン！')
             self.assertEqual(result['warning'],'translation_failed')
             self.assertEqual(result['target'],'original')
+            self.assertEqual(result['warning_stage'],'translation_tokenizer')
+            self.assertEqual(result['warning_code'],'MODEL_RUNTIME')
             self.assertNotIn('private server', (folder/'result.json').read_text())
 
 class FailureTest(unittest.TestCase):

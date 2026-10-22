@@ -36,6 +36,7 @@ def status(folder, stage, progress):
 
 
 STAGES = {'bootstrap', 'install', 'gpu_check', 'asr_download', 'asr_load', 'asr',
+          'translation_check', 'translation_tokenizer', 'translation_download',
           'translation_load', 'translation', 'done'}
 
 
@@ -53,13 +54,21 @@ def error_code(error):
         if any(x in text for x in ('cudnn', 'cublas', 'libcuda', 'cuda driver', 'cuda runtime', 'cuda failed', 'cuda error')):return 'GPU_LIBRARIES'
         if 'gpu_missing' in text:return 'GPU_MISSING'
         if 'gpu_unsupported' in text:return 'GPU_UNSUPPORTED'
+        if 'quantization_preflight' in text:return 'QUANTIZATION_PREFLIGHT'
         if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)) or 'timeout' in name.lower():return 'NETWORK_TIMEOUT'
         if 'connection' in name.lower() or 'network' in name.lower():return 'MODEL_NETWORK'
         if isinstance(error, TypeError) and 'metadata_errors' in text:return 'AUDIO_DEPENDENCY'
         if isinstance(error, ModuleNotFoundError):return 'MODULE_MISSING'
         if isinstance(error, ImportError):return 'MODULE_IMPORT'
         if isinstance(error, OSError) and getattr(error, 'errno', None) == 28:return 'DISK_FULL'
-        error = error.__cause__ or error.__context__
+        nested = error.__cause__ or error.__context__
+        if nested is None:
+            if isinstance(error, NotImplementedError):return 'MODEL_UNSUPPORTED'
+            if isinstance(error, AttributeError):return 'MODEL_ATTRIBUTE'
+            if isinstance(error, TypeError):return 'MODEL_TYPE'
+            if isinstance(error, ValueError):return 'MODEL_VALUE'
+            if isinstance(error, RuntimeError):return 'MODEL_RUNTIME'
+        error = nested
     return 'MODEL_EXECUTION'
 
 
@@ -94,7 +103,7 @@ def prepare_dependencies(folder):
     # Leave the existing CUDA-enabled torch in place.
     subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '--disable-pip-version-check',
         'faster-whisper==1.2.1', 'ctranslate2==4.6.0', 'av==18.0.0', 'transformers==4.51.3',
-        'accelerate==1.6.0', 'bitsandbytes==0.45.5', 'huggingface-hub==0.36.0',
+        'accelerate==1.6.0', 'bitsandbytes==0.48.2', 'huggingface-hub==0.36.0',
         'nvidia-cublas-cu12>=12,<13', 'nvidia-cudnn-cu12>=9,<10'],
         check=True, timeout=720, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     environment(folder)
@@ -126,6 +135,20 @@ def gpu_preflight(torch):
     tensor = torch.empty(1, device='cuda')
     torch.cuda.synchronize()
     del tensor
+    torch.cuda.empty_cache()
+
+
+def quantization_preflight(torch):
+    # Run the same NF4 CUDA operation used by Qwen before downloading its weights.
+    # A working torch/CT2 GPU alone does not establish bitsandbytes compatibility.
+    import bitsandbytes.functional as functional
+    tensor = torch.zeros((64, 64), device='cuda', dtype=torch.float16)
+    packed, state = functional.quantize_4bit(tensor, quant_type='nf4', compress_statistics=True)
+    restored = functional.dequantize_4bit(packed, state)
+    torch.cuda.synchronize()
+    if restored.shape != tensor.shape or not torch.isfinite(restored).all().item():
+        raise RuntimeError('quantization_preflight')
+    del tensor, packed, state, restored
     torch.cuda.empty_cache()
 
 
@@ -228,10 +251,18 @@ def run(folder):
         status(folder, 'done', 97)
         return
     try:
-        status(folder, 'translation_load', 65)
+        status(folder, 'translation_check', 64)
+        quantization_preflight(torch)
         from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+        from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM  # Resolve lazy imports before weights download.
+        status(folder, 'translation_tokenizer', 65)
         tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3-8B', trust_remote_code=False)
-        model = AutoModelForCausalLM.from_pretrained('Qwen/Qwen3-8B', trust_remote_code=False,
+        status(folder, 'translation_download', 66)
+        from huggingface_hub import snapshot_download
+        translation_path = snapshot_download('Qwen/Qwen3-8B',
+            allow_patterns=['*.json', '*.safetensors', '*.model', 'merges.txt', 'vocab.txt'], max_workers=2)
+        status(folder, 'translation_load', 68)
+        model = AutoModelForCausalLM.from_pretrained(translation_path, trust_remote_code=False, local_files_only=True,
             device_map={'': 0}, torch_dtype=torch.float16,
             quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4',
                 bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16))
@@ -276,6 +307,8 @@ def run(folder):
     except Exception as error:
         result['warning'] = 'translation_failed'
         result['warning_code'] = error_code(error)
+        state = json.loads((folder / 'progress.json').read_text('utf-8'))
+        result['warning_stage'] = state['stage'] if state.get('stage') in STAGES else 'translation_load'
     write_json(folder / 'result.json', result)
     status(folder, 'done', 97)
 

@@ -102,6 +102,13 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check faster-whisper==1.2.1 ctranslate2==4.6.0 av==18.0.0 huggingface-hub==0.36.0
           python3 qa/colab-whisper.test.py
+      - name: Test pinned Qwen runtime with current PyTorch
+        timeout-minutes: 10
+        run: |
+          python3 -m venv "$RUNNER_TEMP/madar-qwen"
+          "$RUNNER_TEMP/madar-qwen/bin/pip" install --disable-pip-version-check torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          "$RUNNER_TEMP/madar-qwen/bin/pip" install --disable-pip-version-check transformers==4.51.3 accelerate==1.6.0 bitsandbytes==0.48.2 huggingface-hub==0.36.0
+          "$RUNNER_TEMP/madar-qwen/bin/python" qa/colab-qwen.test.py
       - name: Build and lint APK
         env:
           MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
@@ -109,18 +116,18 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 15 --version-name 1.4.10
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 16 --version-name 1.4.11
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.10.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.11.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
-          name: MadarFiles-1.4.9-APK
-          run-id: 39788383821
+          name: MadarFiles-1.4.10-APK
+          run-id: 39801567352
           github-token: ${{ github.token }}
           path: upgrade-baseline
       - name: Verify installed-version baseline certificate
-        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.9.apk --version-code 14 --version-name 1.4.9
+        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.10.apk --version-code 15 --version-name 1.4.10
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -142,7 +149,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
             adb shell wm density 180
-            adb install upgrade-baseline/MadarFiles-1.4.9.apk
+            adb install upgrade-baseline/MadarFiles-1.4.10.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.madar.files/.MainActivity
@@ -159,8 +166,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.4.10-APK
-          path: MadarFiles-1.4.10.apk
+          name: MadarFiles-1.4.11-APK
+          path: MadarFiles-1.4.11.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
