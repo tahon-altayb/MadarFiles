@@ -27,6 +27,7 @@ jobs:
         run: |
           node qa/interface.test.cjs
           node qa/translation-mode.test.cjs
+          node qa/colab-connection.test.cjs
       - name: Check mobile layouts and tool search
         run: |
           npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1

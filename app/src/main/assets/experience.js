@@ -108,3 +108,9 @@ window.receive=function(e){
   const panel=$('subtitleEditor');if(panel)[...panel.querySelectorAll('.subtitleRow')].forEach((row,i)=>row.dataset.language=e.cues[i]?.language||e.language||'');
  }
 };
+
+// Native OAuth and diagnostics: no credentials or account data cross the bridge.
+function colabConnectionButton(){const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent='اتصال Colab · تجربة الربط';button.onclick=()=>native('colabConnect');return button;}
+const colabHome=$('colabConnect');if(colabHome)colabHome.onclick=()=>native('colabConnect');
+const colabOpenTool=openTool;
+openTool=function(tool){colabOpenTool(tool);if(['music','subtitles'].includes(tool))$('form').append(colabConnectionButton());};

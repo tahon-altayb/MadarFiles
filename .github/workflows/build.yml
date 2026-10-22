@@ -85,6 +85,7 @@ jobs:
         run: |
           node qa/interface.test.cjs
           node qa/translation-mode.test.cjs
+          node qa/colab-connection.test.cjs
       - name: Build and lint APK
         env:
           MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
@@ -92,18 +93,18 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 9 --version-name 1.4.4
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 10 --version-name 1.4.5
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.4.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.5.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
-          name: MadarFiles-1.4.3-APK
-          run-id: 39701717456
+          name: MadarFiles-1.4.4-APK
+          run-id: 39709070444
           github-token: ${{ github.token }}
           path: upgrade-baseline
       - name: Verify installed-version baseline certificate
-        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.3.apk --version-code 8 --version-name 1.4.3
+        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.4.apk --version-code 9 --version-name 1.4.4
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -125,7 +126,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
             adb shell wm density 180
-            adb install upgrade-baseline/MadarFiles-1.4.3.apk
+            adb install upgrade-baseline/MadarFiles-1.4.4.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.madar.files/.MainActivity
@@ -135,14 +136,15 @@ jobs:
             adb pull /sdcard/madar-home.png phone-screenshots/home.png
             gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 connectedDebugAndroidTest
             adb pull /data/local/tmp/madar-clean.mp4 phone-screenshots/clean-music-test.mp4 || echo "Optional audio evidence unavailable; see processing test results"
+            adb pull /data/local/tmp/madar-colab.png phone-screenshots/colab.png || true
             adb pull /data/local/tmp/madar-player.png phone-screenshots/player.png || true
             adb pull /data/local/tmp/madar-crop.png phone-screenshots/crop.png || true
             cp app/src/androidTest/assets/music-test.mp4 phone-screenshots/original-music-test.mp4
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.4.4-APK
-          path: MadarFiles-1.4.4.apk
+          name: MadarFiles-1.4.5-APK
+          path: MadarFiles-1.4.5.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
