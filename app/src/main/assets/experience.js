@@ -90,9 +90,9 @@ function translationNotice(textOnly=false){const note=document.createElement('p'
 const modeOpenTool=openTool;
 openTool=function(tool){modeOpenTool(tool);if(tool==='subtitles'){
  const label=document.createElement('label');label.textContent='طريقة التفريغ والترجمة';const mode=translationModeSelect(true);mode.id='translationMode';
- const consentLabel=document.createElement('label');const consent=document.createElement('input');consent.type='checkbox';consent.id='onlineAudioConsent';consent.checked=false;consentLabel.append(consent,document.createTextNode(' أوافق على إرسال صوت هذا المقطع إلى Gemini للتفريغ والترجمة؛ قد تنطبق رسوم حسابي.'));
+ const consentLabel=document.createElement('label');const consent=document.createElement('input');consent.type='checkbox';consent.id='onlineAudioConsent';consent.checked=false;const consentText=document.createTextNode(' أوافق على إرسال صوت هذا المقطع إلى Gemini للتفريغ والترجمة؛ قد تنطبق رسوم حسابي.');consentLabel.append(consent,consentText);
  const namesLabel=document.createElement('label');namesLabel.textContent='قاموس أسماء اختياري · اسم أصلي = اسم مترجم في كل سطر';const names=document.createElement('textarea');names.id='subtitleNames';names.maxLength=2000;names.placeholder='シン = شين';names.dir='auto';
- const update=()=>{consentLabel.hidden=mode.value==='local';consent.checked=false;consentLabel.children[1].textContent=mode.value==='colab'?' أوافق على رفع صوت المقطع إلى جلستي في Colab؛ قد تُستهلك وحدات حسابي، وسيحاول مدار إنهاء جلسته بعد المعالجة أو الإلغاء.':' أوافق على إرسال صوت هذا المقطع إلى Gemini للتفريغ والترجمة؛ قد تنطبق رسوم حسابي.';const quality=$('speechQuality');if(quality)quality.disabled=mode.value!=='local';};
+ const update=()=>{consentLabel.hidden=mode.value==='local';consent.checked=false;consentText.textContent=mode.value==='colab'?' أوافق على رفع صوت المقطع إلى جلستي في Colab؛ قد تُستهلك وحدات حسابي، وسيحاول مدار إنهاء جلسته بعد المعالجة أو الإلغاء.':' أوافق على إرسال صوت هذا المقطع إلى Gemini للتفريغ والترجمة؛ قد تنطبق رسوم حسابي.';const quality=$('speechQuality');if(quality)quality.disabled=mode.value!=='local';};
  const remember=mode.onchange;mode.onchange=()=>{remember();update();};
  $('form').append(label,mode,translationSettingsButton(),translationNotice(),consentLabel,namesLabel,names);update();
 }};
