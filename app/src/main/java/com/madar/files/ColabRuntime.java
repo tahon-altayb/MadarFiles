@@ -74,7 +74,7 @@ final class ColabRuntime implements AutoCloseable {
  void execute(String kernel,String code,Runnable poll)throws Exception{
   String id=UUID.randomUUID().toString(),session=UUID.randomUUID().toString();CountDownLatch done=new CountDownLatch(1);AtomicBoolean ok=new AtomicBoolean();JSONObject header=new JSONObject().put("msg_id",id).put("username","madar").put("session",session).put("msg_type","execute_request").put("version","5.3").put("date",java.time.Instant.now().toString());
   String message=new JSONObject().put("header",header).put("parent_header",new JSONObject()).put("metadata",new JSONObject()).put("channel","shell").put("content",new JSONObject().put("code",code).put("silent",true).put("store_history",false).put("user_expressions",new JSONObject()).put("allow_stdin",false).put("stop_on_error",true)).toString();
-  socket=http.newWebSocket(runtimeRequest("api/kernels/"+kernel+"/channels?session_id="+session),new WebSocketListener(){
+  socket=http.newWebSocket(runtimeRequest("api/kernels/"+kernel+"/channels?session_id="+session).build(),new WebSocketListener(){
    @Override public void onOpen(WebSocket ws,Response response){ws.send(message);}
    @Override public void onMessage(WebSocket ws,String text){if(text.length()>1024*1024){ws.cancel();done.countDown();return;}try{Boolean success=executionReply(id,text);if(success!=null){ok.set(success);done.countDown();}}catch(Exception ignored){}}
    @Override public void onFailure(WebSocket ws,Throwable failure,Response response){done.countDown();}
