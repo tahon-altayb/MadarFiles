@@ -172,4 +172,67 @@ class HealthTest(unittest.TestCase):
             w.failure(folder,'GPU_MISSING')
             self.assertEqual(json.loads((folder/'progress.json').read_text())['environment'],data)
 
+class RecoveryTest(unittest.TestCase):
+    def test_download_recovers_from_transient_failure_without_retrying_auth_denial(self):
+        calls=[]
+        def download():
+            calls.append(1)
+            if len(calls)==1:raise TimeoutError('PRIVATE_URL')
+            if len(calls)==2:
+                error=RuntimeError('PRIVATE_TOKEN');error.response=SimpleNamespace(status_code=503);raise error
+            return 'downloaded'
+        delays=[]
+        self.assertEqual(w.retry_download(download,pause=delays.append),'downloaded')
+        self.assertEqual(len(calls),3);self.assertEqual(delays,[1,2])
+        denied=RuntimeError('PRIVATE');denied.response=SimpleNamespace(status_code=401)
+        with patch.object(w,'attempt_model',side_effect=lambda call:(None,w.error_code(denied))) as attempt:
+            with self.assertRaises(w.TranslationError) as caught:w.retry_download(download,pause=delays.append)
+            self.assertEqual(caught.exception.code,'MODEL_HTTP_401');self.assertEqual(attempt.call_count,1)
+        with patch.object(w,'attempt_model',return_value=(None,'NETWORK_TIMEOUT')) as attempt:
+            with self.assertRaises(w.TranslationError):w.retry_download(download,pause=lambda seconds:None)
+            self.assertEqual(attempt.call_count,3)
+
+    def test_backend_uses_same_model_fp16_only_when_generation_headroom_exists(self):
+        torch=SimpleNamespace(cuda=SimpleNamespace(empty_cache=lambda:None,mem_get_info=lambda:(21*1024**3,24*1024**3)))
+        with patch.object(w,'quantization_preflight',side_effect=RuntimeError('backend failed')):
+            self.assertEqual(w.translation_backend(torch),'FP16')
+            torch.cuda.mem_get_info=lambda:(12*1024**3,16*1024**3)
+            with self.assertRaises(w.TranslationError):w.translation_backend(torch)
+
+    def test_failed_quantized_load_releases_and_retries_same_weights_without_quantizer(self):
+        calls=[];model=SimpleNamespace(eval=lambda:'same-model')
+        def load(path,**options):
+            calls.append((path,options))
+            if 'quantization_config' in options:raise RuntimeError('quantizer backend failed')
+            return model
+        torch=SimpleNamespace(float16='fp16',cuda=SimpleNamespace(empty_cache=lambda:None,mem_get_info=lambda:(21*1024**3,24*1024**3)))
+        actual,precision=w.load_translation_model(torch,SimpleNamespace(from_pretrained=load),lambda **kw:kw,'same-8b-weights','NF4')
+        self.assertEqual((actual,precision),('same-model','FP16'));self.assertEqual([x[0] for x in calls],['same-8b-weights']*2)
+        self.assertNotIn('quantization_config',calls[1][1]);self.assertEqual(calls[1][1]['device_map'],{'':0})
+
+    def test_memory_failure_reduces_batch_and_preserves_every_completed_line(self):
+        cues=[{'start':i,'end':i+.5,'text':str(i)} for i in range(25)]
+        attempts=[];accepted=[];recoveries=[];progress=[]
+        def translate(content,ids):
+            attempts.append(list(ids))
+            if len(ids)>3:raise RuntimeError('CUDA out of memory PRIVATE')
+            accepted.extend(ids)
+            return {i:'سطر '+str(i) for i in ids},[]
+        result=w.translate_batches(cues,'ja','ar',[],translate,progress.append,lambda:recoveries.append(1))
+        self.assertEqual(accepted,list(range(25)));self.assertEqual(len(result),25)
+        self.assertEqual([x['start'] for x in result],list(range(25)));self.assertEqual(progress[-1],25)
+        self.assertEqual(len(recoveries),2);self.assertEqual([len(x) for x in attempts[:3]],[12,6,3])
+
+    def test_invalid_generation_splits_to_single_lines_and_cannot_loop_forever(self):
+        cues=[{'start':i,'end':i+.5,'text':str(i)} for i in range(5)];calls=[]
+        def translate(content,ids):
+            calls.append(ids)
+            if len(ids)>1:raise w.TranslationError('TRANSLATION_FORMAT')
+            return {ids[0]:'صحيح'},[]
+        result=w.translate_batches(cues,'ja','ar',[],translate,lambda n:None,lambda:None)
+        self.assertEqual(len(result),5);self.assertEqual(len(calls),7)
+        with self.assertRaises(w.TranslationError) as caught:
+            w.translate_batches(cues[:1],'ja','ar',[],lambda *args:(_ for _ in ()).throw(w.TranslationError('TRANSLATION_FORMAT')),lambda n:None,lambda:None)
+        self.assertEqual(caught.exception.code,'TRANSLATION_FORMAT')
+
 if __name__=='__main__':unittest.main()
