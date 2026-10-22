@@ -15,6 +15,8 @@ assert quantization.bnb_4bit_quant_type == 'nf4'
 # Exercise the real Qwen3 class, save/load path, and generation APIs with small
 # random weights, avoiding the user's multi-GB model in a CPU CI job.
 import tempfile
+import runpy
+production=runpy.run_path('app/src/main/assets/colab/worker.py')
 torch.manual_seed(7)
 config = Qwen3Config(vocab_size=128, hidden_size=64, intermediate_size=128,
     num_hidden_layers=1, num_attention_heads=4, num_key_value_heads=2,
@@ -27,6 +29,6 @@ with tempfile.TemporaryDirectory() as directory:
     with torch.inference_mode():
         inputs = torch.tensor([[1, 3, 4]])
         generated = model.generate(inputs, attention_mask=torch.ones_like(inputs),
-            max_new_tokens=4, do_sample=False, pad_token_id=0)
+            max_new_tokens=4, **production['GENERATION_OPTIONS'], pad_token_id=0)
     assert generated.shape[0] == 1 and 3 < generated.shape[1] <= 7
 print('PASS: torch 2.11 + pinned Transformers Qwen3 save/load/generation, NF4 configuration and CUDA 13 binary presence. CPU/random weights only; CUDA NF4 requires a GPU.')

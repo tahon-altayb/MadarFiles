@@ -357,4 +357,101 @@ class TimestampBoundaryTest(unittest.TestCase):
         self.assertEqual(w.cue_error([{'start':.5,'end':.9,'text':'x'},{'start':.1,'end':.3,'text':'y'}],1.),'ASR_TIME_ORDER')
         self.assertEqual(w.cue_error([{'start':0.,'end':.8,'text':''}],1.),'ASR_TEXT_INVALID')
 
+class TranslationScriptTest(unittest.TestCase):
+    def test_arabic_translation_rejects_untranslated_scripts_and_attached_latin(self):
+        for value in ['اسم殿','أWord عبارة','未翻訳','Untranslated sentence']:
+            self.assertEqual(w.translation_issue({0:value},'ar'),'TRANSLATION_LANGUAGE')
+        self.assertEqual(w.translation_issue({0:'هذه جملة عربية.'},'ar'),'')
+
+    def test_explicit_glossary_and_nonverbal_cues_are_preserved(self):
+        self.assertEqual(w.translation_issue({0:'هاتف iPhone',1:'!!!',2:'123'},'ar',('iPhone',)),'')
+        self.assertEqual(w.translation_issue({0:'بالـiPhone'},'ar',('iPhone',)),'')
+        self.assertEqual(w.translation_issue({0:'日本語'},'ja'),'')
+
+    def test_script_check_does_not_claim_to_validate_meaning(self):
+        self.assertEqual(w.translation_issue({0:'جملة عربية سليمة الحروف لكنها خاطئة المعنى.'},'ar'),'')
+
+class TranslationRepairTest(unittest.TestCase):
+    def generate(self,outputs):
+        from contextlib import nullcontext
+        class Inputs(dict):
+            input_ids=SimpleNamespace(shape=(1,1))
+            def to(self,device):return self
+        class Tokenizer:
+            eos_token_id=0
+            def __call__(self,*args,**kwargs):return Inputs()
+            def apply_chat_template(self,*args,**kwargs):return 'prompt'
+            def decode(self,*args,**kwargs):return next(outputs)
+        model=SimpleNamespace(device='fixture',config=SimpleNamespace(max_position_embeddings=32768),
+            generate=lambda **kwargs:[[0,1,2]])
+        return w.generate_translation(SimpleNamespace(inference_mode=nullcontext),Tokenizer(),model,
+            [{'role':'user','content':'fixture'}],[0],target='ar')
+
+    def test_contaminated_generation_is_retranslated_before_acceptance(self):
+        result=self.generate(iter([json.dumps({'lines':[{'id':0,'text':'اسم殿'}]}),
+            json.dumps({'lines':[{'id':0,'text':'السيد زيد'}]})]))
+        self.assertEqual(result,({0:'السيد زيد'},[]))
+
+    def test_repeated_contamination_fails_without_removing_characters_or_accepting_it(self):
+        bad=json.dumps({'lines':[{'id':0,'text':'أWord عبارة'}]})
+        with self.assertRaises(w.TranslationError) as caught:self.generate(iter([bad,bad]))
+        self.assertEqual(caught.exception.code,'TRANSLATION_LANGUAGE')
+
+class SourceReviewTest(unittest.TestCase):
+    def test_review_receives_original_context_and_only_reviewed_text_is_returned(self):
+        content={'sourceLanguage':'en','targetLanguage':'ar',
+            'lines':[{'id':4,'text':'Alex did not leave.'}],
+            'glossary':[{'source':'Alex','target':'أليكس'}],
+            'previousDialogue':[{'source':'Where is Alex?','translation':'أين أليكس؟'}],
+            'followingContext':['He is here.']}
+        original=json.dumps(content,sort_keys=True);calls=[]
+        def generate(messages,ids):
+            calls.append(messages);self.assertEqual(ids,[4])
+            if len(calls)==1:return {4:'غادر أليكس.'},[{'source':'Invented','target':'اسم مخترع'}]
+            received=json.loads(messages[1]['content'])
+            self.assertEqual(received['lines'],content['lines'])
+            self.assertEqual(received['glossary'],content['glossary'])
+            self.assertEqual(received['previousDialogue'],content['previousDialogue'])
+            self.assertEqual(received['followingContext'],content['followingContext'])
+            self.assertEqual(received['draft'],[{'id':4,'text':'غادر أليكس.'}])
+            return {4:'لم يغادر أليكس.'},[{'source':'Alex','target':'أليكس'},{'source':'Invented','target':'مخترع'}]
+        result=w.reviewed_translation(content,[4],generate)
+        self.assertEqual(result,({4:'لم يغادر أليكس.'},[{'source':'Alex','target':'أليكس'}]))
+        self.assertEqual(json.dumps(content,sort_keys=True),original)
+        self.assertEqual(len(calls),2)
+
+    def test_failed_review_cannot_publish_or_checkpoint_the_draft(self):
+        cues=[{'start':0,'end':1,'text':'Do not go.'}];calls=[]
+        def generate(messages,ids):
+            calls.append(1)
+            if len(calls)==1:return {0:'اذهب.'},[]
+            raise w.TranslationError('TRANSLATION_LANGUAGE')
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint=Path(directory)/'translation.json'
+            with self.assertRaises(w.TranslationError):
+                w.translate_batches(cues,'en','ar',[],
+                    lambda content,ids:w.reviewed_translation(content,ids,generate),
+                    lambda n:self.fail('unreviewed progress'),lambda:None,checkpoint)
+            self.assertFalse(checkpoint.exists())
+            self.assertEqual(cues[0]['text'],'Do not go.')
+
+    def test_changed_review_policy_invalidates_previously_completed_checkpoints(self):
+        cues=[{'start':0,'end':1,'text':'hello'}]
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint=Path(directory)/'translation.json'
+            w.translate_batches(cues,'en','ar',[],lambda c,ids:({0:'قديم'},[]),lambda n:None,lambda:None,checkpoint)
+            with patch.object(w,'TRANSLATION_POLICY','next-policy'):
+                result=w.translate_batches(cues,'en','ar',[],lambda c,ids:({0:'جديد'},[]),lambda n:None,lambda:None,checkpoint)
+            self.assertEqual(result[0]['text'],'جديد')
+
+    def test_persistent_script_failure_has_bounded_batch_recovery(self):
+        cues=[{'start':i,'end':i+1,'text':str(i)} for i in range(4)];calls=[]
+        def translate(content,ids):
+            calls.append(ids)
+            raise w.TranslationError('TRANSLATION_LANGUAGE')
+        with self.assertRaises(w.TranslationError) as caught:
+            w.translate_batches(cues,'en','ar',[],translate,lambda n:None,lambda:None)
+        self.assertEqual(caught.exception.code,'TRANSLATION_LANGUAGE')
+        self.assertEqual([len(ids) for ids in calls],[4,2,1])
+
 if __name__=='__main__':unittest.main()

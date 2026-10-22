@@ -30,6 +30,14 @@ public class ColabDiagnosticsTest {
   watch.update(new JSONObject().put("stage","asr_validate").put("progress",63).put("heartbeat",1),100);
   assertEquals("asr_validate",watch.stage);
  }
+ @Test public void rejectedTranslationRetainsSourceAndReportsLanguageFailure()throws Exception{
+  JSONObject cue=new JSONObject().put("start",0).put("end",1).put("text","original source");
+  JSONObject response=new JSONObject().put("original",new org.json.JSONArray().put(cue)).put("translated",new org.json.JSONArray().put(cue)).put("language","en").put("target","original").put("warning","translation_failed").put("warning_code","TRANSLATION_LANGUAGE").put("warning_stage","translation");
+  ColabSpeech.Result result=ColabSpeech.parse(response,2,0,"ar");
+  assertEquals("TRANSLATION_LANGUAGE",result.warningCode);assertEquals("translation",result.warningStage);
+  assertTrue(ColabDiagnostics.safe(result.warningCode));assertTrue(result.originalOnly);
+  assertTrue(result.warning.contains("احتُفظ بالنص الأصلي"));
+ }
  @Test public void workerHeartbeatDistinguishesSlowWorkFromDeadWorker()throws Exception{
   ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(0);
   JSONObject state=new JSONObject().put("stage","asr_download").put("progress",30).put("heartbeat",1);
