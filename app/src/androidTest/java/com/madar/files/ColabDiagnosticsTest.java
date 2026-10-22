@@ -32,9 +32,9 @@ public class ColabDiagnosticsTest {
  }
  @Test public void rejectedTranslationRetainsSourceAndReportsLanguageFailure()throws Exception{
   JSONObject cue=new JSONObject().put("start",0).put("end",1).put("text","original source");
-  JSONObject response=new JSONObject().put("original",new org.json.JSONArray().put(cue)).put("translated",new org.json.JSONArray().put(cue)).put("language","en").put("target","original").put("warning","translation_failed").put("warning_code","TRANSLATION_LANGUAGE").put("warning_stage","translation");
+  JSONObject response=new JSONObject().put("original",new org.json.JSONArray().put(cue)).put("translated",new org.json.JSONArray().put(cue)).put("language","en").put("target","original").put("warning","translation_failed").put("warning_code","TRANSLATION_LANGUAGE").put("warning_stage","translation_review");
   ColabSpeech.Result result=ColabSpeech.parse(response,2,0,"ar");
-  assertEquals("TRANSLATION_LANGUAGE",result.warningCode);assertEquals("translation",result.warningStage);
+  assertEquals("TRANSLATION_LANGUAGE",result.warningCode);assertEquals("translation_review",result.warningStage);assertTrue(ColabDiagnostics.stageKnown("translation_review"));assertTrue(ColabDiagnostics.safe("STAGE_TRANSLATION_REVIEW"));assertFalse(ColabSpeech.stage("translation_review").equals(ColabSpeech.stage("unknown")));
   assertTrue(ColabDiagnostics.safe(result.warningCode));assertTrue(result.originalOnly);
   assertTrue(result.warning.contains("احتُفظ بالنص الأصلي"));
  }

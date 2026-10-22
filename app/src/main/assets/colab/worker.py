@@ -80,7 +80,7 @@ def status(folder, stage, progress, completed=None):
 
 STAGES = {'bootstrap', 'install', 'gpu_check', 'asr_download', 'asr_load', 'asr', 'asr_validate',
           'translation_check', 'translation_tokenizer', 'translation_download',
-          'translation_load', 'translation', 'done'}
+          'translation_load', 'translation', 'translation_review', 'done'}
 
 
 def error_code(error):
@@ -308,17 +308,19 @@ def generate_translation(torch, tokenizer, model, messages, ids, target=None, gl
                 {'role': 'user', 'content': correction}]
 
 
-def reviewed_translation(content, ids, generate):
+def reviewed_translation(content, ids, generate, phase=lambda stage: None):
     """Two bounded passes. Only a validated review may reach a checkpoint/result.
 
     This is a model review, not a proof of semantic correctness. Never modify ASR.
     """
     messages = [{'role': 'system', 'content': TRANSLATION_INSTRUCTION},
         {'role': 'user', 'content': json.dumps(content, ensure_ascii=False)}]
+    phase('translation')
     draft, _ = generate(messages, ids)
     review = dict(content, draft=[{'id': i, 'text': draft[i]} for i in ids])
     messages = [{'role': 'system', 'content': TRANSLATION_INSTRUCTION + ' ' + REVIEW_INSTRUCTION},
         {'role': 'user', 'content': json.dumps(review, ensure_ascii=False)}]
+    phase('translation_review')
     texts, names = generate(messages, ids)
     # Do not let invented glossary entries contaminate subsequent batches.
     source = '\n'.join(item['text'] for item in content['lines'])
@@ -461,7 +463,7 @@ def supervise(folder, command, env, limits=None, total=1920, poll=1):
     limits = limits or {'install': 750, 'bootstrap': 120, 'gpu_check': 120,
         'asr_download': 600, 'asr_load': 240, 'asr': 300,
         'translation_check': 120, 'translation_tokenizer': 180,
-        'translation_download': 600, 'translation_load': 240, 'translation': 240}
+        'translation_download': 600, 'translation_load': 240, 'translation': 240, 'translation_review': 240}
     started = changed = time.monotonic()
     signature = None
     child = subprocess.Popen(command, env=env, start_new_session=True)
@@ -573,7 +575,8 @@ def run(folder):
             def generate(messages, requested):
                 return generate_translation(torch, tokenizer, model, messages, requested, target=target,
                     glossary=[item['target'] for item in content['glossary']])
-            return reviewed_translation(content, ids, generate)
+            return reviewed_translation(content, ids, generate,
+                lambda stage: status(folder, stage, 70 + int(25 * ids[0] / len(cues)), completed=ids[0]))
         translated = translate_batches(cues, language, target, hints, translate,
             lambda count: status(folder, 'translation', 70 + int(25 * count / len(cues)), completed=count),
             lambda: release_gpu(torch), checkpoint=folder / 'translation-checkpoint.json')

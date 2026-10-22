@@ -415,7 +415,9 @@ class SourceReviewTest(unittest.TestCase):
             self.assertEqual(received['followingContext'],content['followingContext'])
             self.assertEqual(received['draft'],[{'id':4,'text':'غادر أليكس.'}])
             return {4:'لم يغادر أليكس.'},[{'source':'Alex','target':'أليكس'},{'source':'Invented','target':'مخترع'}]
-        result=w.reviewed_translation(content,[4],generate)
+        phases=[]
+        result=w.reviewed_translation(content,[4],generate,phases.append)
+        self.assertEqual(phases,['translation','translation_review'])
         self.assertEqual(result,({4:'لم يغادر أليكس.'},[{'source':'Alex','target':'أليكس'}]))
         self.assertEqual(json.dumps(content,sort_keys=True),original)
         self.assertEqual(len(calls),2)
