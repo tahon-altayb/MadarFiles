@@ -62,7 +62,7 @@ public class ColabKernelTest {
   AtomicInteger messages=new AtomicInteger();server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener(){@Override public void onMessage(WebSocket socket,String message){try{messages.incrementAndGet();socket.send(reply(message,"ok").toString());}catch(Exception e){socket.cancel();}}}));server.enqueue(new MockResponse().setBody("{}"));
   try(ColabKernel.Session session=new ColabKernel.Session(client,refresh->request(),new AtomicBoolean(),event->{},fast())){
    RecordedRequest upgrade=server.takeRequest(2,TimeUnit.SECONDS);assertNotNull(upgrade);assertEquals("madarfiles",upgrade.getHeader("X-Colab-Client-Agent"));assertEquals(0,messages.get());
-   try(Response response=client.newCall(new Request.Builder().url(server.url("/api/contents/madar_fixture/audio.wav")).put(RequestBody.create("fixture",MediaType.get("text/plain"))).build()).execute()){assertEquals(200,response.code());}
+   try(Response response=client.newCall(new Request.Builder().url(server.url("/api/contents/madar_fixture/audio.wav").newBuilder().host("127.0.0.1").build()).put(RequestBody.create("fixture",MediaType.get("text/plain"))).build()).execute()){assertEquals(200,response.code());}
    assertEquals(0,messages.get());session.execute("ready",()->false);assertEquals(1,messages.get());
    try{session.execute("duplicate",()->false);fail();}catch(java.io.IOException e){assertTrue(e.getMessage().contains("EXECUTION_ALREADY_SENT"));}
   }
