@@ -10,6 +10,7 @@ import re
 import shutil
 import json
 import math
+from numbers import Real
 import os
 from pathlib import Path
 import subprocess
@@ -49,7 +50,7 @@ def status(folder, stage, progress, completed=None):
     write_json(folder / 'progress.json', data)
 
 
-STAGES = {'bootstrap', 'install', 'gpu_check', 'asr_download', 'asr_load', 'asr',
+STAGES = {'bootstrap', 'install', 'gpu_check', 'asr_download', 'asr_load', 'asr', 'asr_validate',
           'translation_check', 'translation_tokenizer', 'translation_download',
           'translation_load', 'translation', 'done'}
 
@@ -321,18 +322,31 @@ def translation_payload(raw, expected_ids):
     return translated, names
 
 
+def native_timestamp(value):
+    # Whisper alignment returns NumPy scalar numbers. Convert at the model boundary,
+    # before strict JSON/checkpoint validation; never alter their numeric values.
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TranslationError('ASR_TIME_TYPE')
+    value = float(value)
+    if not math.isfinite(value):raise TranslationError('ASR_TIME_NONFINITE')
+    return value
+
+
 def split_segment(segment, language):
+    def cue(start, end, text):
+        return {'start': native_timestamp(start), 'end': native_timestamp(end),
+            'text': text.strip(), 'language': language}
     words = list(segment.words or [])
     if not words:
-        return [{'start': segment.start, 'end': segment.end, 'text': segment.text.strip(), 'language': language}]
+        return [cue(segment.start, segment.end, segment.text)]
     out, group = [], []
     for word in words:
         if group and (word.end - group[0].start > 7 or len(''.join(w.word for w in group)) > 90):
-            out.append({'start': group[0].start, 'end': group[-1].end, 'text': ''.join(w.word for w in group).strip(), 'language': language})
+            out.append(cue(group[0].start, group[-1].end, ''.join(w.word for w in group)))
             group = []
         group.append(word)
     if group:
-        out.append({'start': group[0].start, 'end': group[-1].end, 'text': ''.join(w.word for w in group).strip(), 'language': language})
+        out.append(cue(group[0].start, group[-1].end, ''.join(w.word for w in group)))
     return [line for line in out if line['text'] and line['end'] > line['start']]
 
 
@@ -344,18 +358,24 @@ def whisper_options(source, hints):
         condition_on_previous_text=True, hallucination_silence_threshold=2)
 
 
-def valid_cues(cues, duration):
-    if not isinstance(cues, list) or len(cues) > 2000:return False
+def cue_error(cues, duration):
+    if not isinstance(cues, list):return 'ASR_CUE_SCHEMA'
+    if len(cues) > 2000:return 'ASR_LINE_LIMIT'
     previous = -1
     for cue in cues:
-        if not isinstance(cue, dict):return False
+        if not isinstance(cue, dict):return 'ASR_CUE_SCHEMA'
         start, end, text = cue.get('start'), cue.get('end'), cue.get('text')
-        if (type(start) not in (int, float) or type(end) not in (int, float)
-                or not math.isfinite(start) or not math.isfinite(end)
-                or not 0 <= start < end <= duration + .1 or start < previous
-                or not isinstance(text, str) or not 0 < len(text.strip()) <= 1500):return False
+        if type(start) not in (int, float) or type(end) not in (int, float):return 'ASR_TIME_TYPE'
+        if not math.isfinite(start) or not math.isfinite(end):return 'ASR_TIME_NONFINITE'
+        if not 0 <= start < end <= duration + .1:return 'ASR_TIME_BOUNDS'
+        if start < previous:return 'ASR_TIME_ORDER'
+        if not isinstance(text, str) or not 0 < len(text.strip()) <= 1500:return 'ASR_TEXT_INVALID'
         previous = start
-    return True
+    return ''
+
+
+def valid_cues(cues, duration):
+    return not cue_error(cues, duration)
 
 
 def supervise(folder, command, env, limits=None, total=1920, poll=1):
@@ -442,7 +462,9 @@ def run(folder):
             status(folder, 'asr', 40 + int(23 * min(1, segment.end / max(duration, 1))))
         del recognizer, segments
         release_gpu(torch)
-        if not valid_cues(cues, duration):raise ValueError('invalid_cues')
+        status(folder, 'asr_validate', 63)
+        issue = cue_error(cues, duration)
+        if issue:raise TranslationError(issue)
         write_json(folder / 'asr-checkpoint.json', {'fingerprint': fingerprint, 'cues': cues, 'language': language})
     # Save the complete original before loading translation. Its loss is never hidden by a translation error.
     result = {'original': cues, 'translated': cues, 'language': language, 'target': 'original', 'warning': ''}

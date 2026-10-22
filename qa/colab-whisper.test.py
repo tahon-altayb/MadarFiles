@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import struct
 import tempfile
+import json
+from types import SimpleNamespace, MethodType
+import numpy as np
 import wave
 
 os.environ['HF_HUB_DISABLE_XET'] = '1'
@@ -34,3 +37,21 @@ with tempfile.TemporaryDirectory() as temporary:
     list(segments)
     assert info.language == 'ja'
 print('PASS: real faster-whisper/CT2 download, model load, inference, word timestamps and production VAD options on CPU (tiny test fixture only)')
+
+# Reproduce the real installed Whisper word-alignment path without extra model downloads.
+# Its NumPy start/end scalars must pass the complete production cue/JSON boundary.
+alignment_result=SimpleNamespace(text_token_probs=[.9,.9],alignments=[(0,0),(1,20),(2,40)])
+backend=SimpleNamespace(tokens_per_second=50,frames_per_second=100,
+    model=SimpleNamespace(align=lambda *args,**kwargs:[alignment_result]))
+backend.find_alignment=MethodType(WhisperModel.find_alignment,backend)
+tokenizer=SimpleNamespace(eot=3,sot_sequence=[],
+    split_to_word_tokens=lambda tokens:(['hello','world','<eot>'],[[1],[2],[3]]))
+aligned=[[{'seek':0,'start':0.,'end':1.,'tokens':[1,2]}]]
+WhisperModel.add_word_timestamps(backend,aligned,tokenizer,None,100,'','',0)
+words=[SimpleNamespace(**word) for word in aligned[0][0]['words']]
+assert any(isinstance(word.start,np.floating) or isinstance(word.end,np.floating) for word in words)
+cues=worker.split_segment(SimpleNamespace(words=words),'en')
+assert worker.valid_cues(cues,1.),worker.cue_error(cues,1.)
+assert all(type(cue['start']) is float and type(cue['end']) is float for cue in cues)
+assert json.loads(json.dumps(cues,allow_nan=False))==cues
+print('PASS: actual installed Whisper alignment NumPy timestamps survive production cue validation and JSON serialization without changing values')

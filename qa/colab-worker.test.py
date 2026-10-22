@@ -334,4 +334,27 @@ if __name__ == '__main__':
                 result=json.loads((job/'result.json').read_text())
                 self.assertEqual(result['target'],'ar' if expected==2 else 'original')
 
+class TimestampBoundaryTest(unittest.TestCase):
+    def test_model_numeric_scalars_are_converted_without_changing_value_or_text(self):
+        class AlignmentTime(float):pass
+        words=[SimpleNamespace(start=AlignmentTime(.12),end=AlignmentTime(.4),word='シン'),
+            SimpleNamespace(start=AlignmentTime(.4),end=AlignmentTime(.82),word='！')]
+        cues=w.split_segment(SimpleNamespace(words=words),'ja')
+        self.assertEqual(cues,[{'start':.12,'end':.82,'text':'シン！','language':'ja'}])
+        self.assertIs(type(cues[0]['start']),float);self.assertIs(type(cues[0]['end']),float)
+        self.assertTrue(w.valid_cues(cues,1.))
+        self.assertEqual(json.loads(json.dumps(cues,allow_nan=False)),cues)
+        fallback=w.split_segment(SimpleNamespace(words=None,start=AlignmentTime(.1),end=AlignmentTime(.9),text='test'),'en')
+        self.assertIs(type(fallback[0]['start']),float);self.assertIs(type(fallback[0]['end']),float)
+        self.assertTrue(w.valid_cues(fallback,1.))
+
+    def test_invalid_timing_is_specific_and_never_repaired_or_invented(self):
+        for value,code in [(True,'ASR_TIME_TYPE'),('0.5','ASR_TIME_TYPE'),
+                (float('nan'),'ASR_TIME_NONFINITE'),(float('inf'),'ASR_TIME_NONFINITE')]:
+            with self.assertRaises(w.TranslationError) as caught:w.native_timestamp(value)
+            self.assertEqual(w.error_code(caught.exception),code)
+        self.assertEqual(w.cue_error([{'start':0.,'end':2.,'text':'x'}],1.),'ASR_TIME_BOUNDS')
+        self.assertEqual(w.cue_error([{'start':.5,'end':.9,'text':'x'},{'start':.1,'end':.3,'text':'y'}],1.),'ASR_TIME_ORDER')
+        self.assertEqual(w.cue_error([{'start':0.,'end':.8,'text':''}],1.),'ASR_TEXT_INVALID')
+
 if __name__=='__main__':unittest.main()

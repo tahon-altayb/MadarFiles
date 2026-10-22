@@ -20,6 +20,16 @@ public class ColabDiagnosticsTest {
    ColabSpeech.Result intentional=ColabSpeech.parse(response.put("warning",""),2,0,"original");intentional.warning="cleanup warning";ColabSpeech.recordOutcome(diagnostic,intentional);assertTrue(ColabDiagnostics.last(context).endsWith(" · DONE"));
   }finally{context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();}
  }
+ @Test public void asrValidationAndSpecificTimingFailuresRemainVisible()throws Exception{
+  assertTrue(ColabDiagnostics.stageKnown("asr_validate"));
+  assertFalse(ColabSpeech.stage("asr_validate").equals(ColabSpeech.stage("unknown")));
+  for(String code:new String[]{"ASR_CUE_SCHEMA","ASR_LINE_LIMIT","ASR_TIME_TYPE","ASR_TIME_NONFINITE","ASR_TIME_BOUNDS","ASR_TIME_ORDER","ASR_TEXT_INVALID"}){
+   assertEquals(code,ColabSpeech.workerCode(code));assertTrue(ColabDiagnostics.safe(code));
+  }
+  ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(0);
+  watch.update(new JSONObject().put("stage","asr_validate").put("progress",63).put("heartbeat",1),100);
+  assertEquals("asr_validate",watch.stage);
+ }
  @Test public void workerHeartbeatDistinguishesSlowWorkFromDeadWorker()throws Exception{
   ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(0);
   JSONObject state=new JSONObject().put("stage","asr_download").put("progress",30).put("heartbeat",1);
