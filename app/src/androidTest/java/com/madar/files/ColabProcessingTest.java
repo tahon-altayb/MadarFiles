@@ -78,4 +78,10 @@ public class ColabProcessingTest {
   try{InstrumentationRegistry.getInstrumentation().runOnMainSync(()->{assertFalse(activity.isFinishing());assertFalse(ColabCredentials.ready());});}finally{InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);}
  }
 
+ @Test public void interruptedTranslationCanRecoverOnlyAValidatedCompleteOriginal()throws Exception{
+  JSONObject cue=new JSONObject().put("start",0).put("end",1).put("text","シン");JSONObject data=new JSONObject().put("original",new JSONArray().put(cue)).put("translated",new JSONArray().put(new JSONObject(cue.toString()))).put("target","original").put("language","ja");
+  ColabSpeech.Result result=ColabSpeech.originalFallback(data,2,0,"ar");assertEquals("original",result.target);assertEquals("シン",result.original.getJSONObject(0).getString("text"));assertTrue(result.warning.contains("اللغة الأصلية"));
+  data.put("target","ar");try{ColabSpeech.originalFallback(data,2,0,"ar");fail();}catch(java.io.IOException expected){}
+ }
+
 }

@@ -13,8 +13,10 @@ final class ColabRuntime implements AutoCloseable {
  interface CloudTransport {JSONObject call(String method,String path,JSONObject body,AtomicBoolean cancel)throws Exception;}
  final Context context;final ColabCredentials.Grant grant;final AtomicBoolean cancel;private final CloudTransport transport;
  final OkHttpClient http=new OkHttpClient.Builder().connectTimeout(20,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS).writeTimeout(90,TimeUnit.SECONDS).callTimeout(100,TimeUnit.SECONDS).retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build();
- private String runtime="",proxyToken="";private HttpUrl base;private long refreshAt;private volatile WebSocket socket;
- static final class HttpFailure extends IOException {final int status;HttpFailure(int n){super("تعذر اتصال Colab (HTTP "+n+")");status=n;}}
+ private String runtime="",proxyToken="";private HttpUrl base;private long refreshAt;
+ static final class NetworkFailure extends IOException {final String code;NetworkFailure(IOException e){super("Colab · "+(e instanceof javax.net.ssl.SSLException?"IO_TLS":e instanceof java.net.UnknownHostException?"IO_DNS":e instanceof java.net.SocketTimeoutException?"IO_TIMEOUT":"IO_NETWORK"));code=getMessage().substring(8);}}
+ static final class ProtocolFailure extends IOException {ProtocolFailure(String message){super(message);}}
+ static final class HttpFailure extends IOException {final int status;HttpFailure(int n){super("Colab · HTTP_"+n);status=n;}}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop){this(c,g,stop,null);}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t){context=c;grant=g;cancel=stop;transport=t;}
  JSONObject cloud(String method,String path,JSONObject data,AtomicBoolean stop)throws Exception{
@@ -29,12 +31,12 @@ final class ColabRuntime implements AutoCloseable {
   try(Response response=call.execute()){
    ColabProbe.check(stop);if(!response.isSuccessful())throw new HttpFailure(response.code());if(response.body()==null)return new JSONObject();
    try(InputStream in=response.body().byteStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
-    byte[] bytes=new byte[8192];int n;while((n=in.read(bytes))!=-1){ColabProbe.check(stop);if(out.size()+n>maximum)throw new IOException("استجابة Colab أكبر من الحد");out.write(bytes,0,n);}
+    byte[] bytes=new byte[8192];int n;while((n=in.read(bytes))!=-1){ColabProbe.check(stop);if(out.size()+n>maximum)throw new ProtocolFailure("Colab · RESPONSE_TOO_LARGE");out.write(bytes,0,n);}
     String text=out.toString("UTF-8");return text.trim().isEmpty()?new JSONObject():parseJson(text);
    }
-  }catch(IOException e){ColabProbe.check(stop);throw e instanceof HttpFailure?e:new IOException("انقطع اتصال Colab؛ تحقق من الشبكة وأعد التجربة");}finally{watcher.interrupt();}
+  }catch(IOException e){ColabProbe.check(stop);throw e instanceof HttpFailure||e instanceof ProtocolFailure?e:new NetworkFailure(e);}finally{watcher.interrupt();}
  }
- static JSONObject parseJson(String value)throws IOException{try{return new JSONObject(value);}catch(JSONException e){throw new IOException("استجابة Colab غير مكتملة؛ أعد التجربة");}}
+ static JSONObject parseJson(String value)throws IOException{try{return new JSONObject(value);}catch(JSONException e){throw new ProtocolFailure("Colab · RESPONSE_INVALID_JSON");}}
  static List<JSONObject> candidates(JSONObject response)throws Exception{
   List<JSONObject> out=new ArrayList<>();JSONArray list=response.optJSONArray("runtimeSpecs");if(list==null)return out;
   for(String accelerator:new String[]{"L4","T4","A100"})for(int i=0;i<Math.min(100,list.length());i++){
@@ -60,22 +62,31 @@ final class ColabRuntime implements AutoCloseable {
   }
  }
  void refresh()throws Exception{
-  JSONObject value=cloud("GET","v1beta/"+runtime,null,cancel);if(!runtime.equals(value.optString("name")))throw new IOException("جلسة Colab غير متطابقة");JSONObject info=value.getJSONObject("connectionInfo");base=runtimeUrl(info.getString("url"));proxyToken=info.getString("token");if(proxyToken.isEmpty()||proxyToken.length()>16384||proxyToken.matches("(?s).*\\s.*"))throw new IOException("تصريح جلسة Colab غير صالح");long remaining;try{remaining=java.time.Instant.parse(info.getString("expireTime")).toEpochMilli()-System.currentTimeMillis();}catch(Exception e){throw new IOException("وقت صلاحية جلسة Colab غير صالح");}if(remaining<=0)throw new IOException("تصريح جلسة Colab منتهي؛ أعد الاتصال وتحقق من ساعة الجهاز");refreshAt=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(Math.max(1000,Math.min(240000,remaining-30000)));
+  JSONObject value=cloud("GET","v1beta/"+runtime,null,cancel);if(!runtime.equals(value.optString("name")))throw new IOException("Colab · RUNTIME_ID_MISMATCH");JSONObject info=value.getJSONObject("connectionInfo");base=runtimeUrl(info.getString("url"));proxyToken=info.getString("token");if(proxyToken.isEmpty()||proxyToken.length()>16384||proxyToken.matches("(?s).*\\s.*"))throw new IOException("Colab · RUNTIME_TOKEN_INVALID");long remaining;try{remaining=java.time.Instant.parse(info.getString("expireTime")).toEpochMilli()-System.currentTimeMillis();}catch(Exception e){throw new IOException("Colab · RUNTIME_EXPIRY_INVALID");}if(remaining<=0)throw new IOException("Colab · RUNTIME_TOKEN_EXPIRED");refreshAt=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(Math.max(1000,Math.min(240000,remaining-30000)));
  }
  static HttpUrl runtimeUrl(String value)throws IOException{
-  HttpUrl url=HttpUrl.parse(value);if(url==null||!url.isHttps()||!url.username().isEmpty()||!url.password().isEmpty()||url.query()!=null||url.fragment()!=null||url.port()!=443)throw new IOException("عنوان جلسة Colab غير صالح");// Trust is established by the authenticated, fixed-origin runtimes.get response
+  HttpUrl url=HttpUrl.parse(value);if(url==null||!url.isHttps()||!url.username().isEmpty()||!url.password().isEmpty()||url.query()!=null||url.fragment()!=null||url.port()!=443)throw new IOException("Colab · RUNTIME_URL_INVALID");// Trust is established by the authenticated, fixed-origin runtimes.get response
   // and the matching runtime name in refresh(), not by an undocumented DNS suffix.
   // Never call this with an address from an Intent, WebView, or user field.
-  String host=url.host();if(!host.contains(".")||host.contains(":")||host.matches("[0-9.]+")||host.endsWith(".localhost")||host.endsWith(".local")||host.endsWith(".internal")||host.endsWith(".invalid")||host.endsWith("."))throw new IOException("عنوان جلسة Colab ليس عنوان اتصال عامًا صالحًا");return url.newBuilder().encodedPath(url.encodedPath().endsWith("/")?url.encodedPath():url.encodedPath()+"/").build();
+  String host=url.host();if(!host.contains(".")||host.contains(":")||host.matches("[0-9.]+")||host.endsWith(".localhost")||host.endsWith(".local")||host.endsWith(".internal")||host.endsWith(".invalid")||host.endsWith("."))throw new IOException("Colab · RUNTIME_URL_INVALID");return url.newBuilder().encodedPath(url.encodedPath().endsWith("/")?url.encodedPath():url.encodedPath()+"/").build();
  }
  Request.Builder runtimeRequest(String path)throws Exception{
-  if(base==null||System.nanoTime()>refreshAt)refresh();if(!path.matches("api/(kernels|kernelspecs|kernels/[a-zA-Z0-9-]+/channels\\?session_id=[a-zA-Z0-9-]+|contents/madar_[a-zA-Z0-9_./-]+(\\?format=text)?|contents)"))throw new IOException("مسار جلسة غير صالح");return new Request.Builder().url(base.resolve(path)).header("X-Colab-Runtime-Proxy-Token",proxyToken);
+  if(base==null||System.nanoTime()>refreshAt)refresh();if(!path.matches("api/(kernels|kernelspecs|kernels/[a-zA-Z0-9-]+|kernels/[a-zA-Z0-9-]+/channels\\?session_id=[a-zA-Z0-9-]+|contents/madar_[a-zA-Z0-9_./-]+(\\?format=text)?|contents)"))throw new IOException("مسار جلسة غير صالح");return new Request.Builder().url(base.resolve(path)).header("X-Colab-Runtime-Proxy-Token",proxyToken).header("X-Colab-Client-Agent","madarfiles");
  }
- JSONObject jupyter(String method,String path,JSONObject data,int maximum)throws Exception{return request(runtimeRequest(path),method,data,cancel,maximum);}
+ JSONObject jupyter(String method,String path,JSONObject data,int maximum)throws Exception{
+  // Replay only reads and PUT of the exact same owned content. Never replay kernel/runtime creation.
+  for(int attempt=0;;attempt++)try{return request(runtimeRequest(path),method,data,cancel,maximum);}catch(IOException e){
+   if(attempt>0||!(method.equals("GET")||method.equals("PUT")))throw e;
+   if(e instanceof HttpFailure){int status=((HttpFailure)e).status;if(status==401||status==403)refresh();else if(status!=429&&status!=500&&status!=502&&status!=503&&status!=504)throw e;}
+   else if(!(e instanceof NetworkFailure))throw e;
+   long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(1);while(System.nanoTime()<end){ColabProbe.check(cancel);Thread.sleep(50);}
+  }
+ }
  void put(String path,String content,String format)throws Exception{jupyter("PUT","api/contents/"+path,new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}
  String getText(String path,int max)throws Exception{return jupyter("GET","api/contents/"+path+"?format=text",null,max).getString("content");}
- void execute(String kernel,String code,ColabKernel.Poll poll)throws Exception{
-  ColabKernel.run(http,runtimeRequest("api/kernels/"+kernel+"/channels?session_id="+UUID.randomUUID()).build(),code,cancel,poll);
+ ColabKernel.Session openKernel(String kernel,ColabKernel.Events events)throws Exception{
+  return ColabKernel.open(http,force->{if(force){refresh();JSONObject state=jupyter("GET","api/kernels/"+kernel,null,65536);if(state.optString("execution_state").equals("dead"))throw new IOException("Colab · KERNEL_DEAD");}
+   return runtimeRequest("api/kernels/"+kernel+"/channels?session_id="+UUID.randomUUID()).build();},cancel,events);
  }
  static Boolean executionReply(String id,String text)throws JSONException{
   JSONObject m=new JSONObject(text);if(m.optJSONObject("parent_header")==null||!id.equals(m.getJSONObject("parent_header").optString("msg_id"))||!m.getJSONObject("header").optString("msg_type").equals("execute_reply"))return null;
@@ -92,6 +103,6 @@ final class ColabRuntime implements AutoCloseable {
   if(!operation.isEmpty()){long end=System.nanoTime()+TimeUnit.MINUTES.toNanos(5);JSONObject state;do{state=cloud("GET","v1/"+operation,null,new AtomicBoolean());if(state.optBoolean("done"))break;if(System.nanoTime()>end)throw new IOException("جلسة مدار السابقة ما زالت قيد الإنشاء؛ أعد فحص الاتصال لاحقًا");Thread.sleep(2000);}while(true);}
   cloud("DELETE","v1beta/"+name+"?allowMissing=true",null,new AtomicBoolean());journal().edit().clear().commit();
  }
- boolean cleanup(){if(socket!=null)socket.cancel();try{cleanupPrevious();return true;}catch(Exception ignored){return false;}}
+ boolean cleanup(){try{cleanupPrevious();return true;}catch(Exception ignored){return false;}}
  @Override public void close(){http.dispatcher().cancelAll();http.connectionPool().evictAll();http.dispatcher().executorService().shutdown();}
 }

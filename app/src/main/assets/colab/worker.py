@@ -2,24 +2,34 @@
 Only runs inside the user's short-lived GPU assignment; no public server.
 """
 import gc
+import ctypes
+import importlib.metadata
+import re
+import shutil
 import json
 import math
 import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 import wave
 
 
+_io_lock = threading.RLock()
+
+
 def write_json(path, data):
-    path = Path(path)
-    temporary = path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
-    temporary.replace(path)
+    with _io_lock:
+        path = Path(path)
+        temporary = path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+        temporary.replace(path)
 
 
 def status(folder, stage, progress):
-    write_json(folder / 'progress.json', {'stage': stage, 'progress': progress})
+    write_json(folder / 'progress.json', {'stage': stage, 'progress': progress, 'heartbeat': time.monotonic_ns()})
 
 
 STAGES = {'bootstrap', 'install', 'gpu_check', 'asr_download', 'asr_load', 'asr',
@@ -37,8 +47,9 @@ def error_code(error):
         if http in (401, 403, 404, 429, 500, 502, 503, 504):
             return 'MODEL_HTTP_' + str(http)
         if 'out of memory' in text or name == 'OutOfMemoryError':return 'GPU_MEMORY'
-        if any(x in text for x in ('cudnn', 'cublas', 'libcuda', 'cuda driver', 'cuda runtime', 'cuda failed')):return 'GPU_LIBRARIES'
+        if any(x in text for x in ('cudnn', 'cublas', 'libcuda', 'cuda driver', 'cuda runtime', 'cuda failed', 'cuda error')):return 'GPU_LIBRARIES'
         if 'gpu_missing' in text:return 'GPU_MISSING'
+        if 'gpu_unsupported' in text:return 'GPU_UNSUPPORTED'
         if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)) or 'timeout' in name.lower():return 'NETWORK_TIMEOUT'
         if 'connection' in name.lower() or 'network' in name.lower():return 'MODEL_NETWORK'
         if isinstance(error, TypeError) and 'metadata_errors' in text:return 'AUDIO_DEPENDENCY'
@@ -57,7 +68,19 @@ def failure(folder, code):
     if stage == 'failed':return  # Keep the child's more precise diagnostic.
     if stage not in STAGES:stage = 'bootstrap'
     write_json(folder / 'progress.json', {'stage':'failed', 'last_stage':stage,
-        'progress':previous.get('progress',27), 'error':code})
+        'progress':previous.get('progress',27), 'error':code, 'heartbeat':time.monotonic_ns()})
+
+
+def heartbeat(folder, stop, interval=5):
+    while not stop.wait(interval):
+        with _io_lock:
+            try:
+                path = Path(folder) / 'progress.json'
+                state = json.loads(path.read_text('utf-8'))
+                if state.get('stage') in ('done', 'failed'):return
+                state['heartbeat'] = time.monotonic_ns()
+                write_json(path, state)
+            except (OSError, ValueError):pass
 
 
 def prepare_dependencies(folder):
@@ -69,6 +92,34 @@ def prepare_dependencies(folder):
         'accelerate==1.6.0', 'bitsandbytes==0.45.5', 'huggingface-hub==0.36.0',
         'nvidia-cublas-cu12>=12,<13', 'nvidia-cudnn-cu12>=9,<10'],
         check=True, timeout=720, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    environment(folder)
+
+
+def environment(folder, torch=None):
+    data = {}
+    for name in ('torch','ctranslate2','av','transformers','accelerate','bitsandbytes','huggingface-hub'):
+        try:
+            version = importlib.metadata.version(name).split('+')[0]
+            if re.fullmatch(r'[0-9]{1,3}(\.[0-9]{1,3}){1,3}', version):data[name] = version
+        except importlib.metadata.PackageNotFoundError:pass
+    data['disk_free_mb'] = shutil.disk_usage(folder).free // (1024*1024)
+    if torch is not None:
+        cuda = str(torch.version.cuda)
+        if re.fullmatch(r'[0-9]{1,3}(\.[0-9]{1,3}){1,3}',cuda):data['cuda'] = cuda
+    write_json(Path(folder) / 'environment.json', data)
+
+
+def gpu_preflight(torch):
+    # Validate the actual device and CT2 libraries before downloading multi-GB weights.
+    for library in ('libcublas.so.12','libcudnn.so.9','libcudnn_ops.so.9'):
+        ctypes.CDLL(library)
+    import ctranslate2
+    if 'float16' not in ctranslate2.get_supported_compute_types('cuda'):
+        raise RuntimeError('gpu_unsupported')
+    tensor = torch.empty(1, device='cuda')
+    torch.cuda.synchronize()
+    del tensor
+    torch.cuda.empty_cache()
 
 
 def translation_payload(raw, expected_ids):
@@ -132,6 +183,8 @@ def run(folder):
     import torch
     if not torch.cuda.is_available():
         raise RuntimeError('gpu_missing')
+    gpu_preflight(torch)
+    environment(folder, torch)
     with wave.open(str(folder / 'input.wav'), 'wb') as output:
         output.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
         for index in range(count):
@@ -221,6 +274,9 @@ def run(folder):
 
 
 def main(folder, prepare=False):
+    stop = threading.Event()
+    pulse = threading.Thread(target=heartbeat, args=(folder,stop), daemon=True)
+    pulse.start()
     try:
         prepare_dependencies(folder) if prepare else run(folder)
     except Exception as error:
@@ -228,6 +284,9 @@ def main(folder, prepare=False):
         failure(folder, code)
         # Never write raw exception messages, tracebacks, credentials or paths to a report.
         raise RuntimeError('Madar worker failed; inspect the last stage') from None
+    finally:
+        stop.set()
+        pulse.join(timeout=2)
 
 
 if __name__ == '__main__':

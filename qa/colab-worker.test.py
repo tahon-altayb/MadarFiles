@@ -47,7 +47,7 @@ class WorkerTest(unittest.TestCase):
             folder=Path(directory)
             (folder/'request.json').write_text(json.dumps({'language':'ja','target':'ar','chunks':1,'names':[]}))
             with wave.open(str(folder/'chunk_0.wav'),'wb') as f:f.setparams((1,2,16000,0,'NONE','not compressed'));f.writeframes(bytes(32000))
-            with patch.dict(sys.modules,modules),patch.object(w.subprocess,'run'):
+            with patch.dict(sys.modules,modules),patch.object(w.subprocess,'run'),patch.object(w,'gpu_preflight'),patch.object(w,'environment'):
                 w.run(folder)
             result=json.loads((folder/'result.json').read_text())
             self.assertEqual(result['original'],result['translated'])
@@ -91,9 +91,11 @@ assert os.environ['HF_HUB_DOWNLOAD_TIMEOUT']=='60'
                 w.status(folder,stage,34)
                 w.failure(folder,w.error_code(error))
                 state=json.loads((folder/'progress.json').read_text())
+                self.assertGreater(state.pop('heartbeat'),0)
                 self.assertEqual(state,{'stage':'failed','last_stage':stage,'progress':34,'error':expected})
                 w.failure(folder,'PROCESS_EXIT')
-                self.assertEqual(state,json.loads((folder/'progress.json').read_text()))
+                again=json.loads((folder/'progress.json').read_text());again.pop('heartbeat')
+                self.assertEqual(state,again)
                 self.assertNotIn('secret',(folder/'progress.json').read_text().lower())
 
     def test_native_abort_is_reported_with_last_stage(self):
@@ -106,5 +108,43 @@ assert os.environ['HF_HUB_DOWNLOAD_TIMEOUT']=='60'
         error=RuntimeError('https://private.invalid/?token=PRIVATE')
         error.response=SimpleNamespace(status_code=403)
         self.assertEqual(w.error_code(error),'MODEL_HTTP_403')
+
+class HealthTest(unittest.TestCase):
+    def test_heartbeat_updates_while_stage_is_slow_and_keeps_valid_json(self):
+        import threading
+        import time
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);w.status(folder,'install',28)
+            before=json.loads((folder/'progress.json').read_text())['heartbeat']
+            stop=threading.Event();pulse=threading.Thread(target=w.heartbeat,args=(folder,stop,.01));pulse.start()
+            try:
+                deadline=time.monotonic()+1
+                while time.monotonic()<deadline:
+                    value=json.loads((folder/'progress.json').read_text())
+                    if value['heartbeat']>before:break
+                    time.sleep(.005)
+                self.assertGreater(value['heartbeat'],before)
+                self.assertEqual(value['stage'],'install')
+            finally:stop.set();pulse.join(1)
+            self.assertFalse(pulse.is_alive())
+
+    def test_missing_gpu_library_fails_before_any_model_download(self):
+        torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True))
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory);(folder/'request.json').write_text(json.dumps({'language':'ja','target':'ar','chunks':1,'names':[]}))
+            with patch.dict(sys.modules,{'torch':torch}),patch.object(w.ctypes,'CDLL',side_effect=OSError('libcudnn.so.9 missing PRIVATE')):
+                with self.assertRaises(RuntimeError):w.main(folder)
+            report=json.loads((folder/'progress.json').read_text())
+            self.assertEqual(report['error'],'GPU_LIBRARIES');self.assertEqual(report['last_stage'],'gpu_check')
+            self.assertNotIn('PRIVATE',(folder/'progress.json').read_text())
+            self.assertFalse((folder/'input.wav').exists())
+
+    def test_environment_exports_only_numeric_versions_and_space(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)
+            with patch.object(w.importlib.metadata,'version',return_value='PRIVATE_TOKEN https://secret.invalid'):
+                w.environment(folder)
+            data=json.loads((folder/'environment.json').read_text())
+            self.assertEqual(set(data),{'disk_free_mb'});self.assertGreater(data['disk_free_mb'],0)
 
 if __name__=='__main__':unittest.main()

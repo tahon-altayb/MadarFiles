@@ -10,42 +10,65 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class ColabSpeech {
  static final class Result {JSONArray original,translated;String language,target,warning="";}
  static String stage(String key){switch(key){case "bootstrap":return "تهيئة عامل المعالجة داخل مجلد المقطع";case "install":return "تجهيز مكتبات المعالجة على Colab";case "gpu_check":return "فحص جاهزية GPU";case "asr_download":return "تنزيل نموذج Whisper large-v3";case "asr_load":return "تحميل Whisper large-v3 على GPU";case "asr":return "تفريغ الكلام مع توقيت الكلمات";case "translation_load":return "تحميل نموذج ترجمة Qwen3 · قد يستغرق دقائق";case "translation":return "ترجمة الحوار بالسياق وتثبيت الأسماء";case "done":return "اكتملت معالجة Colab؛ استرجاع النتيجة";case "failed":return "تعذر تشغيل النموذج؛ أرسل آخر مرحلة ظهرت";default:return "انتظار بدء نموذج Colab";}}
- static String workerCode(String value){switch(value){case "AUDIO_DEPENDENCY":case "INSTALL_FAILED":case "INSTALL_TIMEOUT":case "GPU_MISSING":case "GPU_MEMORY":case "GPU_LIBRARIES":case "NETWORK_TIMEOUT":case "MODEL_NETWORK":case "MODULE_MISSING":case "MODULE_IMPORT":case "DISK_FULL":case "MODEL_EXECUTION":case "NATIVE_ABORT":case "PROCESS_EXIT":case "MODEL_HTTP_401":case "MODEL_HTTP_403":case "MODEL_HTTP_404":case "MODEL_HTTP_429":case "MODEL_HTTP_500":case "MODEL_HTTP_502":case "MODEL_HTTP_503":case "MODEL_HTTP_504":return value;default:return "WORKER_FAILED";}}
+ static String workerCode(String value){switch(value){case "AUDIO_DEPENDENCY":case "INSTALL_FAILED":case "INSTALL_TIMEOUT":case "GPU_UNSUPPORTED":case "GPU_MISSING":case "GPU_MEMORY":case "GPU_LIBRARIES":case "NETWORK_TIMEOUT":case "MODEL_NETWORK":case "MODULE_MISSING":case "MODULE_IMPORT":case "DISK_FULL":case "MODEL_EXECUTION":case "NATIVE_ABORT":case "PROCESS_EXIT":case "MODEL_HTTP_401":case "MODEL_HTTP_403":case "MODEL_HTTP_404":case "MODEL_HTTP_429":case "MODEL_HTTP_500":case "MODEL_HTTP_502":case "MODEL_HTTP_503":case "MODEL_HTTP_504":return value;default:return "WORKER_FAILED";}}
  static String failedStage(JSONObject state,String fallback){String key=state.optString("last_stage",fallback);return key.equals("failed")?fallback:key;}
  static Result run(Context context,File input,String language,String target,String hints,long limitUs,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  ColabDiagnostics diagnostic=new ColabDiagnostics(context);
+  try{Result result=runInternal(context,input,language,target,hints,limitUs,grant,cancel,progress,diagnostic);diagnostic.record("DONE");return result;}
+  catch(java.util.concurrent.CancellationException e){diagnostic.record("CANCELLED");throw e;}
+  catch(org.json.JSONException e){diagnostic.record("RESPONSE_SCHEMA");diagnostic.record("FAILED");throw new IOException("Colab · RESPONSE_SCHEMA");}
+  catch(Exception e){diagnostic.failed(e);throw e;}
+  catch(OutOfMemoryError e){diagnostic.record("LOCAL_MEMORY");diagnostic.record("FAILED");throw e;}
+  catch(UnsatisfiedLinkError e){diagnostic.record("LOCAL_NATIVE");diagnostic.record("FAILED");throw e;}
+ }
+ private static Result runInternal(Context context,File input,String language,String target,String hints,long limitUs,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress,ColabDiagnostics diagnostic)throws Exception{
   if(grant==null)throw new IOException("أعد تسجيل الدخول إلى Colab من شاشة التفريغ");
   if(!language.matches("auto|ar|en|ja|fr|de|es|zh")||!target.matches("original|ar|en|ja"))throw new IOException("لغة غير مدعومة");
-  SubtitleNames names=new SubtitleNames(hints);AudioPipeline.Decoded decoded=AudioPipeline.decode(context,input,limitUs,cancel,progress);
-  try(ColabRuntime runtime=new ColabRuntime(context,grant,cancel);RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r")){
+  diagnostic.record("AUDIO_DECODE");SubtitleNames names=new SubtitleNames(hints);AudioPipeline.Decoded decoded=AudioPipeline.decode(context,input,limitUs,cancel,progress);
+  diagnostic.record("AUDIO_READY");try(ColabRuntime runtime=new ColabRuntime(context,grant,cancel);RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r")){
    long frames=decoded.pcm.length()/4,total=Math.round(frames*16000.0/decoded.sampleRate);if(total<=0||total>600L*16000)throw new IOException("تجربة Colab متاحة حتى 10 دقائق؛ ابدأ بعينة 30 ثانية");
    Result result=null;boolean cleaned;
    try{
-    runtime.create(progress);String folder="madar_"+UUID.randomUUID().toString().replace("-","");
+    diagnostic.record("RUNTIME_CREATE");runtime.create(progress);String folder="madar_"+UUID.randomUUID().toString().replace("-","");
     // Runtime startup is asynchronous. Only retry a harmless GET before uploading data.
     long ready=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(3);
-    while(true){ColabProbe.check(cancel);try{runtime.jupyter("GET","api/kernelspecs",null,1024*1024);break;}catch(IOException e){if(System.nanoTime()>ready)throw new IOException("لم يجهز خادم المعالجة في Colab؛ أعد التجربة");Thread.sleep(2000);}}
+    while(true){ColabProbe.check(cancel);try{runtime.jupyter("GET","api/kernelspecs",null,1024*1024);break;}catch(IOException e){if(!(e instanceof ColabRuntime.NetworkFailure)&&(!(e instanceof ColabRuntime.HttpFailure)||(((ColabRuntime.HttpFailure)e).status<500&&((ColabRuntime.HttpFailure)e).status!=404&&((ColabRuntime.HttpFailure)e).status!=429)))throw e;if(System.nanoTime()>ready)throw new IOException("Colab · JUPYTER_START_TIMEOUT");Thread.sleep(2000);}}
     runtime.jupyter("PUT","api/contents/"+folder,new JSONObject().put("type","directory"),1024*1024);
+    diagnostic.record("JUPYTER_READY");diagnostic.record("KERNEL_CREATE");
+    JSONObject kernel=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",folder),1024*1024);String kernelId=kernel.getString("id");if(!kernelId.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرّف جلسة غير صالح");
+    progress.update(15,"فحص قناة التنفيذ قبل رفع الصوت؛ بدء النواة قد يستغرق دقيقة");
+    try(ColabKernel.Session channel=runtime.openKernel(kernelId,code->{diagnostic.record(code);if(code.startsWith("WS_ATTEMPT_"))progress.update(15,"فتح قناة Colab قبل الرفع · محاولة "+code.substring(11)+" / 2");})){
+    diagnostic.record("UPLOAD_AUDIO");
     SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);int chunks=0;
     for(long at=0;at<total;at+=30*16000){ColabProbe.check(cancel);progress.update(17+(int)(9*at/total),"رفع الصوت فقط إلى جلسة Colab · "+(at/16000)+" / "+(total/16000)+" ثانية");byte[] wav=OnlineSpeech.wav(resampler.read(in,frames,at,(int)Math.min(30*16000,total-at)));runtime.put(folder+"/chunk_"+(chunks++)+".wav",Base64.encodeToString(wav,Base64.NO_WRAP),"base64");}
     JSONArray glossary=new JSONArray();for(Map.Entry<String,String> e:names.entries.entrySet())glossary.put(new JSONObject().put("source",e.getKey()).put("target",e.getValue()));
     runtime.put(folder+"/request.json",new JSONObject().put("language",language).put("target",target).put("names",glossary).put("chunks",chunks).toString(),"text");
     String script;try(InputStream asset=context.getAssets().open("colab/worker.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);script=bytes.toString("UTF-8");}runtime.put(folder+"/worker.py",script,"text");
-    JSONObject kernel=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",folder),1024*1024);String kernelId=kernel.getString("id");if(!kernelId.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرّف جلسة غير صالح");
+    diagnostic.record("UPLOAD_COMPLETE");
     String bootstrap;try(InputStream asset=context.getAssets().open("colab/bootstrap.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);bootstrap=bytes.toString("UTF-8");}
-    progress.update(27,"بدء قناة تنفيذ Colab وتهيئة العامل");final String[] lastStage={"bootstrap"};
-    try{runtime.execute(kernelId,"JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap,()->{
+    progress.update(27,"بدء قناة تنفيذ Colab وتهيئة العامل");final String[] lastStage={"bootstrap"};final int[] environmentAttempts={0};ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(android.os.SystemClock.elapsedRealtime());
+    try{channel.execute("JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap,()->{
      JSONObject state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536));String key=state.optString("stage");
-     if(key.equals("failed")){lastStage[0]=failedStage(state,lastStage[0]);throw new IOException("Colab · "+workerCode(state.optString("error")));}
-     lastStage[0]=key;
-     progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),stage(key));return key.equals("done");
-    });}catch(java.util.concurrent.CancellationException e){throw e;}catch(Exception e){String detail=e instanceof IOException?e.getMessage():"Colab · EXECUTION_FAILED";throw new IOException(detail+" · المرحلة: "+stage(lastStage[0]));}
-    result=parse(ColabRuntime.parseJson(runtime.getText(folder+"/result.json",4*1024*1024)),total/16000.0,decoded.offsetUs/1000000.0,target);
+     if(!key.equals("bootstrap")&&!key.equals("install")&&environmentAttempts[0]<3){environmentAttempts[0]++;try{diagnostic.environment(ColabRuntime.parseJson(runtime.getText(folder+"/environment.json",65536)));environmentAttempts[0]=3;}catch(IOException ignored){}}
+     if(key.equals("failed")){lastStage[0]=failedStage(state,lastStage[0]);diagnostic.record("STAGE_"+lastStage[0].toUpperCase(java.util.Locale.ROOT));throw new IOException("Colab · "+workerCode(state.optString("error")));}
+     watch.update(state,android.os.SystemClock.elapsedRealtime());lastStage[0]=key;diagnostic.record("STAGE_"+key.toUpperCase(java.util.Locale.ROOT));
+     progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),stage(key)+" · "+Math.max(0,(android.os.SystemClock.elapsedRealtime()-watch.stageAt)/1000)+" ثانية");return key.equals("done");
+    });}catch(java.util.concurrent.CancellationException e){throw e;}catch(Exception e){
+     if(lastStage[0].equals("translation_load")||lastStage[0].equals("translation")){try{result=originalFallback(ColabRuntime.parseJson(runtime.getText(folder+"/result.json",4*1024*1024)),total/16000.0,decoded.offsetUs/1000000.0,target);diagnostic.issue(e);diagnostic.record("ORIGINAL_RECOVERED");}catch(java.util.concurrent.CancellationException stopped){throw stopped;}catch(Exception ignored){}}
+     if(result==null){String detail=e instanceof IOException?e.getMessage():"Colab · EXECUTION_FAILED";throw new IOException(detail+" · المرحلة: "+stage(lastStage[0]));}
+    }
+    diagnostic.record("FETCH_RESULT");if(result==null)result=parse(ColabRuntime.parseJson(runtime.getText(folder+"/result.json",4*1024*1024)),total/16000.0,decoded.offsetUs/1000000.0,target);
+    }
    }finally{
-    progress.update(98,"إنهاء جلسة مدار في Colab وإيقاف استهلاك مواردها…");cleaned=runtime.cleanup();
+    progress.update(98,"إنهاء جلسة مدار في Colab وإيقاف استهلاك مواردها…");cleaned=runtime.cleanup();diagnostic.record(cleaned?"CLEANUP_OK":"CLEANUP_PENDING");
    }
    if(!cleaned)result.warning+=(result.warning.isEmpty()?"":"\n")+"تعذر تأكيد إنهاء جلسة Colab. افتح اتصال Colab لإيقاف جلسة مدار السابقة؛ قد يستمر استهلاك الوحدات حتى إنهائها.";
    return result;
   }finally{decoded.pcm.delete();}
+ }
+ static Result originalFallback(JSONObject data,double duration,double offset,String target)throws Exception{
+  if(!data.optString("target").equals("original"))throw new IOException("النتيجة الأصلية غير متاحة");Result result=parse(data,duration,offset,target);
+  result.warning="تعذرت متابعة الترجمة؛ استُرجع النص الأصلي المحفوظ كاملًا. النتيجة المعروضة باللغة الأصلية.";return result;
  }
  static Result parse(JSONObject data,double duration,double offset,String requestedTarget)throws Exception{
   JSONArray original=data.getJSONArray("original"),translated=data.getJSONArray("translated");if(original.length()>2000||translated.length()!=original.length())throw new IOException("عدد أسطر Colab غير متطابق");

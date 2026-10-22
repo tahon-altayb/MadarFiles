@@ -1,0 +1,30 @@
+package com.madar.files;
+
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import android.content.Context;
+import org.json.JSONObject;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import static org.junit.Assert.*;
+
+@RunWith(AndroidJUnit4.class)
+public class ColabDiagnosticsTest {
+ @Test public void workerHeartbeatDistinguishesSlowWorkFromDeadWorker()throws Exception{
+  ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(0);
+  JSONObject state=new JSONObject().put("stage","asr_download").put("progress",30).put("heartbeat",1);
+  watch.update(state,100);watch.update(state.put("heartbeat",2),100000);
+  try{watch.update(state,220001);fail();}catch(java.io.IOException e){assertTrue(e.getMessage().contains("WORKER_HEARTBEAT_TIMEOUT"));}
+ }
+ @Test public void aliveButStuckModelLoadHasBoundedStageTime()throws Exception{
+  ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(0);
+  JSONObject state=new JSONObject().put("stage","asr_load").put("progress",34).put("heartbeat",1);watch.update(state,0);
+  try{watch.update(state.put("heartbeat",2),300001);fail();}catch(java.io.IOException e){assertTrue(e.getMessage().contains("STAGE_TIMEOUT"));}
+ }
+ @Test public void persistentDiagnosticRejectsPrivateStringsAndRetainsOnlyFixedCodes()throws Exception{
+  Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();
+  try{ColabDiagnostics report=new ColabDiagnostics(context);report.record("PRIVATE_TOKEN");report.record("STAGE_ASR_LOAD");report.environment(new JSONObject().put("torch","2.9.0+PRIVATE").put("av","18.0.0").put("cuda","12.8").put("token","PRIVATE_TOKEN"));report.failed(new java.io.IOException("https://private.invalid/?secret=PRIVATE_TOKEN Colab · WS_HTTP_403"));
+   String saved=ColabDiagnostics.last(context);assertTrue(saved.contains("WS_HTTP_403"));assertTrue(saved.contains("STAGE_ASR_LOAD"));assertTrue(saved.contains("av: 18.0.0"));assertFalse(saved.contains("PRIVATE"));assertFalse(saved.contains("private.invalid"));assertFalse(saved.contains("https://"));
+  }finally{context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();}
+ }
+}
