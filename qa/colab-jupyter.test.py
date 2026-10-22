@@ -45,7 +45,14 @@ def main():
                     time.sleep(.2)
             folder = 'madar_' + uuid.uuid4().hex
             api('PUT', 'api/contents/' + folder, {'type':'directory'})
-            stub = "from pathlib import Path\nimport json,sys\np=Path(sys.argv[1])\nif '--prepare' in sys.argv:sys.exit(0)\nassert json.loads((p/'request.json').read_text())['fixture']==73\n(p/'result.json').write_text(json.dumps({'fixture':73}))\n(p/'progress.json').write_text(json.dumps({'stage':'done','progress':97}))\n"
+            worker_source = Path('app/src/main/assets/colab/worker.py').read_text()
+            stub = worker_source.split("\nif __name__ == '__main__':", 1)[0] + """
+if __name__ == '__main__':
+    p=Path(sys.argv[1])
+    if '--prepare' in sys.argv:sys.exit(0)
+    assert json.loads((p/'request.json').read_text())['fixture']==73
+    (p/'result.json').write_text(json.dumps({'fixture':73}))
+"""
             kernel = api('POST', 'api/kernels', {'name':'python3','path':folder})['id']
             connection = websocket.create_connection(base.replace('http:', 'ws:')+'api/kernels/'+kernel+'/channels?session_id='+uuid.uuid4().hex,
                 header=['Authorization: token '+token], timeout=20)

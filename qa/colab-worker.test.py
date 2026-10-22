@@ -48,9 +48,11 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue(all(0 < x['end']-x['start'] <= 7 for x in lines))
 
     def test_original_is_retained_when_translation_model_fails(self):
+        recognitions=[]
         class Recognizer:
             def __init__(self,*args,**kw):pass
             def transcribe(self,*args,**kw):
+                recognitions.append(1)
                 self.test_options=kw
                 return iter([SimpleNamespace(start=0,end=.8,text='シン！',words=None)]),SimpleNamespace(language='ja')
         class BrokenTokenizer:
@@ -67,6 +69,13 @@ class WorkerTest(unittest.TestCase):
             with wave.open(str(folder/'chunk_0.wav'),'wb') as f:f.setparams((1,2,16000,0,'NONE','not compressed'));f.writeframes(bytes(32000))
             with patch.dict(sys.modules,modules),patch.object(w.subprocess,'run'),patch.object(w,'gpu_preflight'),patch.object(w,'quantization_preflight'),patch.object(w,'environment'):
                 w.run(folder)
+                w.run(folder)
+                self.assertEqual(len(recognitions),1)
+                # Reusing a directory for different audio must invalidate its ASR checkpoint.
+                with wave.open(str(folder/'chunk_0.wav'),'wb') as f:
+                    f.setparams((1,2,16000,0,'NONE','not compressed'));f.writeframes(bytes([1,0])*16000)
+                w.run(folder)
+                self.assertEqual(len(recognitions),2)
             result=json.loads((folder/'result.json').read_text())
             self.assertEqual(result['original'],result['translated'])
             self.assertEqual(result['original'][0]['text'],'シン！')
@@ -86,17 +95,19 @@ class FailureTest(unittest.TestCase):
                 root=Path(directory);job=root/'madar_fixture73';job.mkdir()
                 packages=root/'late_packages'
                 (job/'request.json').write_text('{}')
-                fake = """import os,sys,json
+                helper = str(Path('app/src/main/assets/colab/worker.py').resolve())
+                fake = "import runpy\nglobals().update({k:v for k,v in runpy.run_path("+repr(helper)+").items() if k in ('supervise','failure','status','write_json')})\n" + """import os,sys,json
 from pathlib import Path
-job=Path.cwd()
-libs=Path(__file__).resolve().parent.parent/'late_packages'/'nvidia'/'cudnn'/'lib'
-if '--prepare' in sys.argv:
-    libs.mkdir(parents=True)
-    sys.exit(0)
-assert str(libs) in os.environ['LD_LIBRARY_PATH'].split(':')
-assert os.environ['HF_HUB_DISABLE_XET']=='1'
-assert os.environ['HF_HUB_DOWNLOAD_TIMEOUT']=='60'
-(job/'result.json').write_text('{}')
+if __name__ == '__main__':
+    job=Path.cwd()
+    libs=Path(__file__).resolve().parent.parent/'late_packages'/'nvidia'/'cudnn'/'lib'
+    if '--prepare' in sys.argv:
+        libs.mkdir(parents=True)
+        sys.exit(0)
+    assert str(libs) in os.environ['LD_LIBRARY_PATH'].split(':')
+    assert os.environ['HF_HUB_DISABLE_XET']=='1'
+    assert os.environ['HF_HUB_DOWNLOAD_TIMEOUT']=='60'
+    (job/'result.json').write_text('{}')
 """
                 (job/'worker.py').write_text(fake)
                 code="import site,runpy;site.getsitepackages=lambda:["+repr(str(packages))+"];runpy.run_path("+repr(str(bootstrap))+",init_globals={'JOB_FOLDER':'madar_fixture73'})"
@@ -234,5 +245,93 @@ class RecoveryTest(unittest.TestCase):
         with self.assertRaises(w.TranslationError) as caught:
             w.translate_batches(cues[:1],'ja','ar',[],lambda *args:(_ for _ in ()).throw(w.TranslationError('TRANSLATION_FORMAT')),lambda n:None,lambda:None)
         self.assertEqual(caught.exception.code,'TRANSLATION_FORMAT')
+
+class DurableRecoveryTest(unittest.TestCase):
+    def test_completed_batches_survive_process_failure_and_resume_with_context(self):
+        cues=[{'start':i,'end':i+.5,'text':str(i)} for i in range(15)]
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint=Path(directory)/'checkpoint.json'
+            def first(content,ids):
+                if ids[0]>=12:raise w.TranslationError('NATIVE_ABORT')
+                return {i:'سطر '+str(i) for i in ids},[{'source':'Shin','target':'شين'}]
+            with self.assertRaises(w.TranslationError):
+                w.translate_batches(cues,'ja','ar',[],first,lambda n:None,lambda:None,checkpoint)
+            self.assertEqual(len(json.loads(checkpoint.read_text())['translated']),12)
+            seen=[]
+            def second(content,ids):
+                seen.extend(ids)
+                self.assertEqual(content['previousDialogue'][-1]['translation'],'سطر 11')
+                self.assertIn({'source':'Shin','target':'شين'},content['glossary'])
+                return {i:'سطر '+str(i) for i in ids},[]
+            result=w.translate_batches(cues,'ja','ar',[],second,lambda n:None,lambda:None,checkpoint)
+            self.assertEqual(seen,[12,13,14]);self.assertEqual(len(result),15)
+            self.assertEqual([c['text'] for c in result],['سطر '+str(i) for i in range(15)])
+
+    def test_checkpoint_is_rejected_for_changed_target_input_or_corrupt_timing(self):
+        cues=[{'start':0,'end':.5,'text':'hello'}]
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint=Path(directory)/'checkpoint.json'
+            for change in ('target','text','timing','truncated'):
+                w.translate_batches(cues,'en','ar',[],lambda content,ids:({0:'مرحبا'},[]),lambda n:None,lambda:None,checkpoint)
+                target='ja' if change=='target' else 'ar'
+                changed=[dict(cues[0],text='new')] if change=='text' else cues
+                if change=='timing':
+                    data=json.loads(checkpoint.read_text());data['translated'][0]['end']=999
+                    checkpoint.write_text(json.dumps(data))
+                if change=='truncated':checkpoint.write_text('{')
+                seen=[]
+                result=w.translate_batches(changed,'en',target,[],lambda content,ids:(seen.extend(ids) or {0:'fresh'},[]),lambda n:None,lambda:None,checkpoint)
+                self.assertEqual(seen,[0]);self.assertEqual(result[0]['text'],'fresh')
+
+    def test_supervisor_reaps_hung_child_even_with_live_heartbeat(self):
+        import subprocess,time
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)
+            program="import time,json,os;from pathlib import Path;f=Path("+repr(directory)+");(f/'pid').write_text(str(os.getpid()))\nwhile True:\n (f/'progress.json').write_text(json.dumps({'stage':'translation_load','progress':68,'heartbeat':time.monotonic_ns()}));time.sleep(.01)"
+            begin=time.monotonic()
+            result=w.supervise(folder,[sys.executable,'-c',program],dict(__import__('os').environ),
+                limits={'bootstrap':1,'translation_load':.08},total=2,poll=.02)
+            self.assertEqual(result,'STAGE_TIMEOUT');self.assertLess(time.monotonic()-begin,2)
+            pid=int((folder/'pid').read_text())
+            with self.assertRaises(ProcessLookupError):__import__('os').kill(pid,0)
+
+    def test_asr_cache_rejects_invalid_times_and_empty_or_nonfinite_lines(self):
+        self.assertTrue(w.valid_cues([{'start':0,'end':1,'text':'hello'}],1))
+        for cue in [{'start':0,'end':2,'text':'x'},{'start':False,'end':1,'text':'x'},
+                {'start':0,'end':float('nan'),'text':'x'},{'start':0,'end':1,'text':''}]:
+            self.assertFalse(w.valid_cues([cue],1))
+
+class BootstrapRecoveryTest(unittest.TestCase):
+    def test_fresh_process_retry_is_bounded_and_only_final_attempt_completes(self):
+        import subprocess
+        helper=str(Path('app/src/main/assets/colab/worker.py').resolve())
+        bootstrap=str(Path('app/src/main/assets/colab/bootstrap.py').resolve())
+        for code,expected in [('GPU_MEMORY',2),('MODEL_HTTP_401',1),('NATIVE_ABORT',2)]:
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);job=root/'madar_recovery123';job.mkdir()
+                (job/'request.json').write_text('{}')
+                fake="import runpy\nglobals().update({k:v for k,v in runpy.run_path("+repr(helper)+").items() if k in ('supervise','failure','status','write_json')})\n"
+                fake+="""import os,sys,json,signal
+from pathlib import Path
+if __name__ == '__main__':
+    if '--prepare' in sys.argv:sys.exit(0)
+    folder=Path('.')
+    attempts=int(Path('attempts').read_text())+1 if Path('attempts').exists() else 1
+    Path('attempts').write_text(str(attempts))
+    assert os.environ['MADAR_SUPERVISED']=='1'
+    if attempts>1:assert json.loads(Path('progress.json').read_text())['stage']!='done'
+    status(folder,'translation_load',68)
+    result={'target':'original','warning':'translation_failed','warning_code':CODE,'original':[],'translated':[]}
+    if attempts>1:result.update(target='ar',warning='',warning_code='')
+    write_json(Path('result.json'),result)
+    if attempts==1 and CODE=='NATIVE_ABORT':os.kill(os.getpid(),signal.SIGKILL)
+""".replace('CODE',repr(code))
+                (job/'worker.py').write_text(fake)
+                command="import runpy;runpy.run_path("+repr(bootstrap)+",init_globals={'JOB_FOLDER':'madar_recovery123'})"
+                subprocess.run([sys.executable,'-c',command],cwd=root,check=True,timeout=15)
+                self.assertEqual(int((job/'attempts').read_text()),expected)
+                self.assertEqual(json.loads((job/'progress.json').read_text())['stage'],'done')
+                result=json.loads((job/'result.json').read_text())
+                self.assertEqual(result['target'],'ar' if expected==2 else 'original')
 
 if __name__=='__main__':unittest.main()

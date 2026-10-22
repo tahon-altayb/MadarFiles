@@ -2,6 +2,8 @@
 Only runs inside the user's short-lived GPU assignment; no public server.
 """
 import gc
+import hashlib
+import signal
 import ctypes
 import importlib.metadata
 import re
@@ -39,8 +41,10 @@ def write_json(path, data):
         temporary.replace(path)
 
 
-def status(folder, stage, progress):
+def status(folder, stage, progress, completed=None):
     data = {'stage': stage, 'progress': progress, 'heartbeat': time.monotonic_ns()}
+    if completed is not None:data['completed'] = completed
+    if os.environ.get('MADAR_RECOVERY_ATTEMPT') == '1':data['retry'] = 1
     if _environment:data['environment'] = dict(_environment)
     write_json(folder / 'progress.json', data)
 
@@ -243,9 +247,28 @@ def generate_translation(torch, tokenizer, model, messages, ids):
                 {'role': 'user', 'content': 'Return valid JSON with all requested ids exactly once, nonempty translations, and no commentary.'}]
 
 
-def translate_batches(cues, language, target, hints, translate, progress, recover):
+def translate_batches(cues, language, target, hints, translate, progress, recover, checkpoint=None):
     established = {item['source']: item['target'] for item in hints}
     translated, start, size = [], 0, 12
+    fingerprint = hashlib.sha256(json.dumps([cues, language, target, hints],
+        ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+    if checkpoint is not None:
+        try:
+            saved = json.loads(Path(checkpoint).read_text('utf-8'))
+            lines = saved['translated']
+            if saved['fingerprint'] != fingerprint or not isinstance(lines, list) or len(lines) > len(cues):
+                raise ValueError('checkpoint')
+            for index, line in enumerate(lines):
+                if (set(line) != set(cues[index]) or any(line[k] != cues[index][k] for k in cues[index] if k != 'text')
+                        or not isinstance(line['text'], str) or not 0 < len(line['text'].strip()) <= 1500):
+                    raise ValueError('checkpoint')
+            names = saved['names']
+            if not isinstance(names, dict) or len(names) > 60 or any(not isinstance(k, str) or not isinstance(v, str)
+                    or not 0 < len(k) <= 80 or not 0 < len(v) <= 80 for k, v in names.items()):
+                raise ValueError('checkpoint')
+            translated, start = lines, len(lines)
+            established.update(names)
+        except (OSError, ValueError, KeyError, TypeError):pass
     while start < len(cues):
         batch = cues[start:start + size]
         ids = list(range(start, start + len(batch)))
@@ -267,6 +290,8 @@ def translate_batches(cues, language, target, hints, translate, progress, recove
                 established[item['source']] = item['target']
         translated.extend(dict(cues[i], text=texts[i]) for i in ids)
         start += len(batch)
+        if checkpoint is not None:
+            write_json(checkpoint, {'fingerprint': fingerprint, 'translated': translated, 'names': established})
         progress(start)
     return translated
 
@@ -319,6 +344,52 @@ def whisper_options(source, hints):
         condition_on_previous_text=True, hallucination_silence_threshold=2)
 
 
+def valid_cues(cues, duration):
+    if not isinstance(cues, list) or len(cues) > 2000:return False
+    previous = -1
+    for cue in cues:
+        if not isinstance(cue, dict):return False
+        start, end, text = cue.get('start'), cue.get('end'), cue.get('text')
+        if (type(start) not in (int, float) or type(end) not in (int, float)
+                or not math.isfinite(start) or not math.isfinite(end)
+                or not 0 <= start < end <= duration + .1 or start < previous
+                or not isinstance(text, str) or not 0 < len(text.strip()) <= 1500):return False
+        previous = start
+    return True
+
+
+def supervise(folder, command, env, limits=None, total=1920, poll=1):
+    """Independent of the child's heartbeat: a live but stuck CUDA call is bounded."""
+    limits = limits or {'install': 750, 'bootstrap': 120, 'gpu_check': 120,
+        'asr_download': 600, 'asr_load': 240, 'asr': 300,
+        'translation_check': 120, 'translation_tokenizer': 180,
+        'translation_download': 600, 'translation_load': 240, 'translation': 240}
+    started = changed = time.monotonic()
+    signature = None
+    child = subprocess.Popen(command, env=env, start_new_session=True)
+    try:
+        while child.poll() is None:
+            now = time.monotonic()
+            try:state = json.loads((Path(folder) / 'progress.json').read_text('utf-8'))
+            except (OSError, ValueError):state = {}
+            next_signature = (state.get('stage', 'bootstrap'), state.get('progress'), state.get('completed'))
+            if next_signature != signature:signature, changed = next_signature, now
+            if now - started > total or now - changed > limits.get(signature[0], 120):
+                return 'STAGE_TIMEOUT'
+            time.sleep(poll)
+        return '' if child.returncode == 0 else ('NATIVE_ABORT' if child.returncode < 0 else 'PROCESS_EXIT')
+    finally:
+        # Reap the process and its descendants before a retry, including pip/download helpers.
+        if child.poll() is None:
+            try:os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:pass
+            try:child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:pass
+                child.wait(timeout=5)
+
+
 def run(folder):
     folder = Path(folder).resolve()
     request = json.loads((folder / 'request.json').read_text('utf-8'))
@@ -343,31 +414,43 @@ def run(folder):
                 output.writeframes(chunk.readframes(chunk.getnframes()))
     with wave.open(str(folder / 'input.wav'), 'rb') as sound:
         duration = sound.getnframes() / sound.getframerate()
-    status(folder, 'asr_download', 30)
-    from faster_whisper import WhisperModel
-    from faster_whisper.utils import download_model
-    model_path = download_model('large-v3')
-    status(folder, 'asr_load', 34)
-    recognizer = WhisperModel(model_path, device='cuda', compute_type='float16', local_files_only=True)
-    status(folder, 'asr', 39)
+    identity = hashlib.sha256(json.dumps(request, sort_keys=True).encode('utf-8'))
+    with (folder / 'input.wav').open('rb') as sound:
+        for block in iter(lambda: sound.read(1024 * 1024), b''):identity.update(block)
+    fingerprint = identity.hexdigest()
     hints = request.get('names', [])
-    segments, info = recognizer.transcribe(str(folder / 'input.wav'), **whisper_options(source, hints))
-    cues = []
-    for segment in segments:
-        cues.extend(split_segment(segment, info.language))
-        status(folder, 'asr', 40 + int(23 * min(1, segment.end / max(duration, 1))))
-    del recognizer
-    gc.collect()
-    torch.cuda.empty_cache()
-    if len(cues) > 2000:
-        raise ValueError('too_many_lines')
+    cached = None
+    try:
+        candidate = json.loads((folder / 'asr-checkpoint.json').read_text('utf-8'))
+        if candidate['fingerprint'] == fingerprint and valid_cues(candidate['cues'], duration) and re.fullmatch(r'[a-z]{2,3}', candidate['language']):
+            cached = candidate
+    except (OSError, ValueError, KeyError, TypeError):pass
+    if cached is not None:
+        cues, language = cached['cues'], cached['language']
+    else:
+        status(folder, 'asr_download', 30)
+        from faster_whisper import WhisperModel
+        from faster_whisper.utils import download_model
+        model_path = retry_download(lambda: download_model('large-v3'))
+        status(folder, 'asr_load', 34)
+        recognizer = WhisperModel(model_path, device='cuda', compute_type='float16', local_files_only=True)
+        status(folder, 'asr', 39)
+        segments, info = recognizer.transcribe(str(folder / 'input.wav'), **whisper_options(source, hints))
+        cues, language = [], info.language
+        for segment in segments:
+            cues.extend(split_segment(segment, language))
+            status(folder, 'asr', 40 + int(23 * min(1, segment.end / max(duration, 1))))
+        del recognizer, segments
+        release_gpu(torch)
+        if not valid_cues(cues, duration):raise ValueError('invalid_cues')
+        write_json(folder / 'asr-checkpoint.json', {'fingerprint': fingerprint, 'cues': cues, 'language': language})
     # Save the complete original before loading translation. Its loss is never hidden by a translation error.
-    result = {'original': cues, 'translated': cues, 'language': info.language, 'target': 'original', 'warning': ''}
+    result = {'original': cues, 'translated': cues, 'language': language, 'target': 'original', 'warning': ''}
     write_json(folder / 'result.json', result)
-    if not cues or target == 'original' or target == info.language:
+    if not cues or target == 'original' or target == language:
         result['target'] = target
         write_json(folder / 'result.json', result)
-        status(folder, 'done', 97)
+        if os.environ.get('MADAR_SUPERVISED') != '1':status(folder, 'done', 97)
         return
     try:
         status(folder, 'translation_check', 64)
@@ -397,9 +480,9 @@ def run(folder):
             messages = [{'role': 'system', 'content': instruction},
                 {'role': 'user', 'content': json.dumps(content, ensure_ascii=False)}]
             return generate_translation(torch, tokenizer, model, messages, ids)
-        translated = translate_batches(cues, info.language, target, hints, translate,
-            lambda count: status(folder, 'translation', 70 + int(25 * count / len(cues))),
-            lambda: release_gpu(torch))
+        translated = translate_batches(cues, language, target, hints, translate,
+            lambda count: status(folder, 'translation', 70 + int(25 * count / len(cues)), completed=count),
+            lambda: release_gpu(torch), checkpoint=folder / 'translation-checkpoint.json')
         result.update(translated=translated, target=target)
     except Exception as error:
         result['warning'] = 'translation_failed'
@@ -407,7 +490,7 @@ def run(folder):
         state = json.loads((folder / 'progress.json').read_text('utf-8'))
         result['warning_stage'] = state['stage'] if state.get('stage') in STAGES else 'translation_load'
     write_json(folder / 'result.json', result)
-    status(folder, 'done', 97)
+    if os.environ.get('MADAR_SUPERVISED') != '1':status(folder, 'done', 97)
 
 
 def main(folder, prepare=False):
@@ -421,7 +504,8 @@ def main(folder, prepare=False):
         prepare_dependencies(folder) if prepare else run(folder)
     except Exception as error:
         code = ('INSTALL_TIMEOUT' if isinstance(error, subprocess.TimeoutExpired) else 'INSTALL_FAILED') if prepare else error_code(error)
-        failure(folder, code)
+        if os.environ.get('MADAR_SUPERVISED') != '1':failure(folder, code)
+        else:write_json(Path(folder) / 'attempt-error.json', {'error': code})
         # Never write raw exception messages, tracebacks, credentials or paths to a report.
         raise RuntimeError('Madar worker failed; inspect the last stage') from None
     finally:
