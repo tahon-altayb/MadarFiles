@@ -71,10 +71,11 @@ jobs:
             app/src/main/assets/models
           key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
       - name: Prepare speech and music test fixture
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg espeak-ng
-          curl -fL --retry 3 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ffmpeg espeak-ng
+          curl -fL --connect-timeout 20 --max-time 90 --speed-time 30 --speed-limit 1024 --retry 2 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
           ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.wav -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
           espeak-ng -v en-us -s 135 -w app/src/androidTest/assets/speech-test.wav "The quick brown fox jumps over the lazy dog. Welcome to this video. This is a test of speech recognition."
       - name: Prepare public speech reference fixtures
