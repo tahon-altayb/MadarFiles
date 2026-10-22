@@ -29,7 +29,7 @@ function renderHistory(files){$('recent').replaceChildren();if(!files.length){$(
 document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>selectKind(b.dataset.kind));$('choose').onclick=$('file').onclick=()=>native('pick',{kind:state.kind});$('previewBtn').onclick=()=>native('previewSource');$('close').onclick=()=>$('sheet').hidden=true;$('sheet').onclick=e=>{if(e.target===$('sheet'))$('sheet').hidden=true;};$('export').onclick=runExport;$('cancel').onclick=()=>native('cancel');$('resultClose').onclick=()=>$('result').hidden=true;$('save').onclick=()=>native('save',{name:state.output.name});$('share').onclick=()=>native('share',{name:state.output.name});$('view').onclick=()=>native('view',{name:state.output.name});$('historyBtn').onclick=()=>document.querySelector('.recent').scrollIntoView({behavior:'smooth'});render();native('ready');
 
 // Interactive previews and text tools, all using local data.
-function options(){const o={kind:state.kind,tool:state.tool};for(const el of $('form').querySelectorAll('input,select'))if(el.id&&el.id!=='seek')o[el.id]=el.value;if(state.crop)o.crop=state.crop;return o;}
+function options(){const o={kind:state.kind,tool:state.tool};for(const el of $('form').querySelectorAll('input,select'))if(el.id&&el.id!=='seek')o[el.id]=el.value;if(state.crop)o.crop=state.crop;if(state.tool==='subtitles'){o.onlineAudioConsent=$('onlineAudioConsent')?.checked===true;o.subtitleNames=$('subtitleNames')?.value||'';}return o;}
 function openTool(tool){
  pausePreviews();if(!state.source)return native('pick',{kind:state.kind});state.previewToken=(state.previewToken||0)+1;
  if(['ocr','text','word','music'].includes(tool)){

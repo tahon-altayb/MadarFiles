@@ -9,7 +9,10 @@ final class TranslationEngine {
   if(mode.equals("online")&&TranslationSettings.credential(c).isEmpty())throw new IOException("افتح إعداد الترجمة بالإنترنت وأضف مفتاح Gemini أولًا");
  }
  static JSONArray translate(Context c,JSONArray cues,String from,String to,String mode,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception {
+  return translate(c,cues,from,to,mode,"",cancel,progress);
+ }
+ static JSONArray translate(Context c,JSONArray cues,String from,String to,String mode,String names,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception {
   preflight(c,mode);
-  return mode.equals("online")?OnlineTranslation.translate(c,cues,from,to,cancel,progress):LocalTranslation.translate(cues,from,to,cancel,progress);
+  return mode.equals("online")?OnlineTranslation.translate(c,cues,from,to,names,cancel,progress):LocalTranslation.translate(cues,from,to,names,cancel,progress);
  }
 }

@@ -36,7 +36,7 @@ final class TranslationSettings {
  }
  static void show(Activity a){
   LinearLayout box=new LinearLayout(a);box.setOrientation(LinearLayout.VERTICAL);int pad=(int)(20*a.getResources().getDisplayMetrics().density);box.setPadding(pad,pad,pad,pad);
-  TextView note=new TextView(a);note.setText("ترجمة Gemini بالسياق. أدخل مفتاحك من Google AI Studio. يرسل هذا الوضع النص والتوقيت إلى Google عند بدء الترجمة؛ الصوت والفيديو يبقيان على الجهاز. قد تنطبق رسوم وحدود حسابك. يبقى الوضع المحلي متاحًا دون مفتاح.");box.addView(note);
+  TextView note=new TextView(a);note.setText("ترجمة Gemini بالسياق. أدخل مفتاحك من Google AI Studio. تفريغ المقاطع بالإنترنت يرسل الصوت إلى Google بعد تفعيل الموافقة في شاشة التفريغ. إعادة ترجمة النص المراجع ترسل النص فقط. قد تنطبق رسوم وحدود حسابك. يبقى الوضع المحلي متاحًا دون مفتاح.");box.addView(note);
   EditText secret=new EditText(a);secret.setHint("مفتاح Gemini جديد · اتركه فارغًا للاحتفاظ بالمحفوظ");secret.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);secret.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);box.addView(secret);
   EditText model=new EditText(a);model.setSingleLine(true);model.setText(model(a));model.setHint("اسم النموذج");box.addView(model);
   AlertDialog dialog=new AlertDialog.Builder(a).setTitle("إعداد الترجمة بالإنترنت").setView(box).setPositiveButton("حفظ",null).setNegativeButton("إلغاء",null).setNeutralButton("حذف المفتاح",(d,w)->a.getSharedPreferences("cloud_translation",0).edit().clear().apply()).create();
