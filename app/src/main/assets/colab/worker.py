@@ -541,7 +541,7 @@ def repair_stretched_cues(recognizer, audio_path, cues, language, hints, duratio
     except Exception:
         quality['alignment_incomplete'] = True
         return cues, quality
-    out = list(cues)
+    out, total_count = list(cues), len(cues)
     options = dict(whisper_options(language, hints), vad_filter=False, condition_on_previous_text=False)
     options.pop('vad_parameters', None)
     normalize = lambda text: re.sub(r'[\W_]+', '', text, flags=re.UNICODE)
@@ -571,8 +571,9 @@ def repair_stretched_cues(recognizer, audio_path, cues, language, hints, duratio
             anchored = len(anchor) >= 8 and any(sum(block.size for block in
                 difflib.SequenceMatcher(None, anchor, normalize(cue['text']), autojunk=False).get_matching_blocks())
                 >= .7 * len(anchor) for cue in candidates)
-            if candidates and anchored and len(out) - 1 + len(candidates) <= 2000:
+            if candidates and anchored and total_count - 1 + len(candidates) <= 2000:
                 out[index] = candidates
+                total_count += len(candidates) - 1
                 quality['realigned'] += 1
             else:quality['alignment_incomplete'] = True
         except Exception:quality['alignment_incomplete'] = True

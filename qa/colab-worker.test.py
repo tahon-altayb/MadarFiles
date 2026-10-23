@@ -560,5 +560,15 @@ class GapRecoveryTest(unittest.TestCase):
             def broken(*args,**kwargs):raise RuntimeError('PRIVATE')
             result,quality=w.repair_stretched_cues(SimpleNamespace(transcribe=broken),'audio',original,'en',[],24.,lambda *args:None)
             self.assertEqual(result,original);self.assertTrue(quality['alignment_incomplete'])
+
+    def test_multiple_alignment_repairs_never_exceed_result_line_limit(self):
+        original=[{'start':0.,'end':22.,'text':'clear speech','language':'en'},
+                  {'start':30.,'end':52.,'text':'clear speech','language':'en'}]
+        original += [{'start':60+i*.01,'end':60+i*.01+.005,'text':'last','language':'en'} for i in range(1997)]
+        def transcribe(*args,**kwargs):return iter([self.segment(8.,10.),self.segment(18.,20.)]),None
+        with patch.dict(sys.modules,{'faster_whisper.audio':SimpleNamespace(decode_audio=lambda path:[0]*(100*16000))}):
+            result,quality=w.repair_stretched_cues(SimpleNamespace(transcribe=transcribe),'audio',original,'en',[],100.,lambda *args:None)
+        self.assertEqual(len(result),2000);self.assertEqual(quality['realigned'],1)
+        self.assertTrue(quality['alignment_incomplete']);self.assertIn(original[1],result)
 if __name__=='__main__':unittest.main()
 
