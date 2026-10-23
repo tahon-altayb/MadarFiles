@@ -165,7 +165,7 @@ public class MainActivity extends Activity {
                 if(textOnly){if(!o.optBoolean("onlineTextConsent"))throw new IOException("وافق على إرسال النص إلى Colab أولًا");ColabSpeech.validateText(o.getJSONArray("cues"),o.getString("language"),o.getString("target"));}
                 if(!textOnly&&!o.optBoolean("onlineAudioConsent"))throw new IOException("وافق على رفع الصوت إلى Colab أولًا");
                 if(!textOnly&&!o.optBoolean("speechSample")&&info.optLong("duration")>600000)throw new IOException("تجربة Colab متاحة حتى 10 دقائق؛ ابدأ بعينة 30 ثانية");
-                if(!ColabCredentials.ready()){pendingColab=new JSONObject(o.toString());pendingColabSource=input.getAbsolutePath();working=true;startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true),7202);return;}
+                if(!ColabCredentials.ready()){pendingColab=new JSONObject(o.toString());pendingColabSource=input.getAbsolutePath();working=true;startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("textOnly",textOnly),7202);return;}
             }
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
             Intent service=new Intent(this,VideoExportService.class).putExtra("input",input.getAbsolutePath()).putExtra("options",o.toString()).putExtra("duration",info.getLong("duration")).putExtra("height",info.optInt("height",0));startForegroundService(service);
