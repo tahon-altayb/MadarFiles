@@ -120,18 +120,18 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 21 --version-name 1.4.16
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 22 --version-name 1.4.17
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.16.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.17.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
-          name: MadarFiles-1.4.15-APK
-          run-id: 39936357374
+          name: MadarFiles-1.4.16-APK
+          run-id: 39955869734
           github-token: ${{ github.token }}
           path: upgrade-baseline
       - name: Verify installed-version baseline certificate
-        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.15.apk --version-code 20 --version-name 1.4.15
+        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.16.apk --version-code 21 --version-name 1.4.16
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -153,7 +153,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
             adb shell wm density 180
-            adb install upgrade-baseline/MadarFiles-1.4.15.apk
+            adb install upgrade-baseline/MadarFiles-1.4.16.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.madar.files/.MainActivity
@@ -170,8 +170,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.4.16-APK
-          path: MadarFiles-1.4.16.apk
+          name: MadarFiles-1.4.17-APK
+          path: MadarFiles-1.4.17.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
@@ -187,3 +187,4 @@ jobs:
       - name: Remove temporary signing material
         if: always()
         run: rm -f .signing/madar-development.keystore
+

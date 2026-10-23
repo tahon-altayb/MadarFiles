@@ -13,6 +13,10 @@ assert.match(forms.find(x=>x.id==='translationMode').innerHTML,/value="local"/);
 assert.match(forms.find(x=>x.id==='translationMode').innerHTML,/value="online"/);
 const consent=forms.find(x=>x.children?.some(c=>c.id==='onlineAudioConsent'));assert.ok(consent);assert.equal(consent.children[0].checked,false);assert.equal(consent.hidden,false);
 assert.ok(forms.some(x=>x.id==='subtitleNames'&&x.maxLength===2000));
+const separation=forms.find(x=>x.id==='separateSpeechMusic');assert.ok(separation);assert.equal(separation.value,'false');
+separation.value='true';separation.onchange();assert.equal(state.separateSpeechMusic,true);
+separation.value='false';separation.onchange();assert.equal(state.separateSpeechMusic,false);
+forms.length=0;run("openTool('subtitles')");assert.equal(forms.find(x=>x.id==='separateSpeechMusic').value,'false');
 run('translationSettingsButton().onclick()');assert.equal(calls.at(-1)[0],'translationSettings');assert.equal(calls.at(-1).length,1);
 let removed=0;const panel={hidden:true,remove(){removed++;}};
 state.translationReviewPanel=panel;context.window.receive({type:'error'});assert.equal(panel.hidden,false);assert.equal(state.translationReviewPanel,null);assert.equal(removed,0);
@@ -27,3 +31,4 @@ const colabConsent=forms.find(x=>x.children?.some(c=>c.id==='onlineAudioConsent'
 colabConsent.children[0].checked=true;colabMode.value='online';colabMode.onchange();assert.equal(colabConsent.children[0].checked,false);assert.match(colabConsent.children[1].textContent,/Gemini/);
 assert.equal(run('translationModeSelect().value'),'online');run("state.translationMode='colab'");assert.equal(run('translationModeSelect().value'),'local');
 console.log('PASS: Colab speech mode has explicit fresh consent, separates providers, and does not leak into text-only retranslation');
+

@@ -13,8 +13,11 @@ final class ColabSpeech {
  static String workerCode(String value){switch(value){case "ASR_CUE_SCHEMA":case "ASR_LINE_LIMIT":case "ASR_TIME_TYPE":case "ASR_TIME_NONFINITE":case "ASR_TIME_BOUNDS":case "ASR_TIME_ORDER":case "ASR_TEXT_INVALID":case "STAGE_TIMEOUT":case "AUDIO_DEPENDENCY":case "INSTALL_FAILED":case "INSTALL_TIMEOUT":case "GPU_UNSUPPORTED":case "GPU_MISSING":case "GPU_MEMORY":case "GPU_LIBRARIES":case "NETWORK_TIMEOUT":case "MODEL_TLS":case "MODEL_NETWORK":case "MODULE_MISSING":case "MODULE_IMPORT":case "DISK_FULL":case "TRANSLATION_LANGUAGE":case "TRANSLATION_CONTEXT":case "TRANSLATION_FORMAT":case "QUANTIZATION_PREFLIGHT":case "MODEL_UNSUPPORTED":case "MODEL_ATTRIBUTE":case "MODEL_TYPE":case "MODEL_VALUE":case "MODEL_RUNTIME":case "MODEL_EXECUTION":case "NATIVE_ABORT":case "PROCESS_EXIT":case "MODEL_HTTP_401":case "MODEL_HTTP_403":case "MODEL_HTTP_404":case "MODEL_HTTP_429":case "MODEL_HTTP_500":case "MODEL_HTTP_502":case "MODEL_HTTP_503":case "MODEL_HTTP_504":return value;default:return "WORKER_FAILED";}}
  static String failedStage(JSONObject state,String fallback){String key=state.optString("last_stage",fallback);return key.equals("failed")?fallback:key;}
  static Result run(Context context,File input,String language,String target,String hints,long limitUs,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  return run(context,input,language,target,hints,limitUs,false,grant,cancel,progress);
+ }
+ static Result run(Context context,File input,String language,String target,String hints,long limitUs,boolean separateMusic,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   ColabDiagnostics diagnostic=new ColabDiagnostics(context);
-  try{Result result=runInternal(context,input,language,target,hints,limitUs,grant,cancel,progress,diagnostic,null);recordOutcome(diagnostic,result);return result;}
+  try{Result result=runInternal(context,input,language,target,hints,limitUs,grant,cancel,progress,diagnostic,null,separateMusic);recordOutcome(diagnostic,result);return result;}
   catch(java.util.concurrent.CancellationException e){diagnostic.record("CANCELLED");throw e;}
   catch(org.json.JSONException e){diagnostic.record("RESPONSE_SCHEMA");diagnostic.record("FAILED");throw new IOException("Colab · RESPONSE_SCHEMA");}
   catch(Exception e){diagnostic.failed(e);throw e;}
@@ -30,15 +33,15 @@ final class ColabSpeech {
  }
  static Result translateText(Context context,JSONArray cues,String language,String target,String hints,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   validateText(cues,language,target);ColabDiagnostics diagnostic=new ColabDiagnostics(context);
-  try{Result result=runInternal(context,null,language,target,hints,0,grant,cancel,progress,diagnostic,cues);recordOutcome(diagnostic,result);return result;}
+  try{Result result=runInternal(context,null,language,target,hints,0,grant,cancel,progress,diagnostic,cues,false);recordOutcome(diagnostic,result);return result;}
   catch(java.util.concurrent.CancellationException e){diagnostic.record("CANCELLED");throw e;}
   catch(Exception e){diagnostic.failed(e);throw e;}
  }
- private static Result runInternal(Context context,File input,String language,String target,String hints,long limitUs,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress,ColabDiagnostics diagnostic,JSONArray reviewed)throws Exception{
+ private static Result runInternal(Context context,File input,String language,String target,String hints,long limitUs,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress,ColabDiagnostics diagnostic,JSONArray reviewed,boolean separateMusic)throws Exception{
   if(grant==null)throw new IOException("أعد تسجيل الدخول إلى Colab من شاشة التفريغ");
   if(!language.matches("auto|ar|en|ja|fr|de|es|zh")||!target.matches("original|ar|en|ja"))throw new IOException("لغة غير مدعومة");
   SubtitleNames names=new SubtitleNames(hints);AudioPipeline.Decoded decoded=null;
-  if(reviewed==null){diagnostic.record("AUDIO_DECODE");decoded=AudioPipeline.decode(context,input,limitUs,cancel,progress);diagnostic.record("AUDIO_READY");}
+  if(reviewed==null){diagnostic.record("AUDIO_DECODE");if(separateMusic)diagnostic.record("AUDIO_SEPARATION");decoded=SpeechAudio.decode(context,input,limitUs,separateMusic,cancel,(p,m)->{if(m.equals(SpeechAudio.FALLBACK))diagnostic.record("AUDIO_SEPARATION_FALLBACK");progress.update(p,m);});diagnostic.record("AUDIO_READY");}
   final AudioPipeline.Decoded audio=decoded;
   try(ColabRuntime runtime=new ColabRuntime(context,grant,cancel);RandomAccessFile in=audio==null?null:new RandomAccessFile(audio.pcm,"r")){
    long frames=audio==null?0:audio.pcm.length()/4,total=audio==null?0:Math.round(frames*16000.0/audio.sampleRate);
@@ -106,7 +109,10 @@ final class ColabSpeech {
   if(data.optString("warning").equals("translation_failed")){result.originalOnly=target.equals("original");result.warningCode=workerCode(data.optString("warning_code"));String key=data.optString("warning_stage","translation_load");result.warningStage=ColabDiagnostics.stageKnown(key)&&key.startsWith("translation")?key:"translation_load";result.warning="اكتمل التفريغ وتعذرت الترجمة على Colab؛ احتُفظ بالنص الأصلي كاملًا للمراجعة. · "+result.warningCode;}
   if(data.optInt("asr_recovered",0)>0)result.warning+=(result.warning.isEmpty()?"":"\n")+"استُعيدت أسطر من فواصل التفريغ بعد إعادة فحص الصوت؛ راجع النص المستعاد والأسماء.";
   if(data.optBoolean("asr_recovery_incomplete",false))result.warning+=(result.warning.isEmpty()?"":"\n")+"تعذر إكمال فحص بعض الفواصل؛ احتُفظ بالتفريغ المتاح.";
+  if(data.optInt("asr_realigned",0)>0)result.warning+=(result.warning.isEmpty()?"":"\n")+"أعيد تفريغ أسطر امتد توقيتها فوق فواصل طويلة؛ راجع النص والتوقيت المصححين.";
+  if(data.optBoolean("asr_alignment_incomplete",false))result.warning+=(result.warning.isEmpty()?"":"\n")+"بعض الأسطر طويلة التوقيت لم تجتز إعادة الفحص؛ احتُفظ بالنص الأصلي دون حذفها.";
   return result;
  }
  private static String text(JSONObject cue)throws Exception{Object raw=cue.get("text");if(!(raw instanceof String)||((String)raw).trim().isEmpty()||((String)raw).length()>1500)throw new IOException("نص Colab ناقص أو غير صالح");return ((String)raw).trim();}
 }
+

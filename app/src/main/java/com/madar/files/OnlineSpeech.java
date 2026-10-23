@@ -14,11 +14,14 @@ final class OnlineSpeech {
   final JSONArray original=new JSONArray(),translated=new JSONArray();
  }
  static Result transcribe(Context context,File input,String language,String target,String hints,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception {
+  return transcribe(context,input,language,target,hints,limitUs,false,cancel,progress);
+ }
+ static Result transcribe(Context context,File input,String language,String target,String hints,long limitUs,boolean separateMusic,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception {
   TranslationEngine.preflight(context,"online");
   if(!language.matches("auto|ar|en|ja|fr|de|es|zh")||!target.matches("original|ar|en|ja"))throw new IOException("لغة غير مدعومة");
   if(hints.length()>2000)throw new IOException("اختصر سياق العمل والأسماء إلى 2000 حرف");
   String key=TranslationSettings.credential(context),model=TranslationSettings.model(context);
-  AudioPipeline.Decoded decoded=AudioPipeline.decode(context,input,limitUs,cancel,progress);
+  AudioPipeline.Decoded decoded=SpeechAudio.decode(context,input,limitUs,separateMusic,cancel,progress);
   try(RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r")){
    long frames=decoded.pcm.length()/4,total=Math.round(frames*RATE/(double)decoded.sampleRate);
    SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);Result output=new Result();JSONArray names=new JSONArray(),previous=new JSONArray();
@@ -75,3 +78,4 @@ final class OnlineSpeech {
   for(float sample:samples)b.putShort((short)Math.round(Math.max(-1,Math.min(1,Float.isFinite(sample)?sample:0))*32767));return b.array();
  }
 }
+

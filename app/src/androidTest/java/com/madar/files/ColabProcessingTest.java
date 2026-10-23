@@ -100,6 +100,9 @@ public class ColabProcessingTest {
   ColabSpeech.Result result=ColabSpeech.parse(data,3,0,"ar");
   assertEquals("ar",result.target);assertEquals("نص",result.translated.getJSONObject(0).getString("text"));assertTrue(result.warning.contains("استُعيدت"));
   data.put("asr_recovery_incomplete",true);assertTrue(ColabSpeech.parse(data,3,0,"ar").warning.contains("تعذر إكمال"));
+  data.put("asr_realigned",1);assertTrue(ColabSpeech.parse(data,3,0,"ar").warning.contains("أعيد تفريغ"));
+  data.put("asr_alignment_incomplete",true);assertTrue(ColabSpeech.parse(data,3,0,"ar").warning.contains("لم تجتز"));
  }
 
 }
+

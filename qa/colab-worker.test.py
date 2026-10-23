@@ -532,4 +532,33 @@ class GapRecoveryTest(unittest.TestCase):
             result,quality=w.recover_asr_gaps(None,'audio',original,'en',[],22.,lambda *args:None)
             self.assertEqual(result,original);self.assertTrue(quality['incomplete'])
 
+    def test_stretched_alignment_is_redecoded_before_gap_detection(self):
+        original=[{'start':0.,'end':22.,'text':'clear speech','language':'en'}]
+        calls=[]
+        def transcribe(audio,**kwargs):
+            calls.append(kwargs)
+            return iter([self.segment(18.,20.)]),SimpleNamespace(language='en')
+        with patch.dict(sys.modules,{'faster_whisper.audio':SimpleNamespace(decode_audio=lambda path:list(range(24*16000)))}):
+            result,quality=w.repair_stretched_cues(SimpleNamespace(transcribe=transcribe),'audio',original,'en',[],24.,lambda *args:None)
+            self.assertEqual(result,[{'start':18.,'end':20.,'text':'clear speech','language':'en'}])
+            self.assertEqual(w.asr_gaps(result,24.),[(0.,18.),(20.,24.)])
+            self.assertEqual(quality,{'realigned':1,'alignment_incomplete':False})
+            self.assertFalse(calls[0]['vad_filter']);self.assertNotIn('vad_parameters',calls[0])
+            self.assertEqual(original[0]['end'],22.)
+
+    def test_failed_uncertain_or_unrelated_alignment_keeps_original(self):
+        original=[{'start':0.,'end':22.,'text':'clear speech','language':'en'}]
+        good=self.segment(18.,20.);unrelated=self.segment(18.,20.)
+        unrelated.words[0].word='different ';unrelated.words[1].word='dialogue'
+        over=self.segment(23.,24.)
+        modules={'faster_whisper.audio':SimpleNamespace(decode_audio=lambda path:list(range(24*16000)))}
+        with patch.dict(sys.modules,modules):
+            for segment in (self.segment(18.,20.,.01),unrelated,over):
+                recognizer=SimpleNamespace(transcribe=lambda *args,segment=segment,**kwargs:(iter([segment]),None))
+                result,quality=w.repair_stretched_cues(recognizer,'audio',original,'en',[],24.,lambda *args:None)
+                self.assertEqual(result,original);self.assertTrue(quality['alignment_incomplete'])
+            def broken(*args,**kwargs):raise RuntimeError('PRIVATE')
+            result,quality=w.repair_stretched_cues(SimpleNamespace(transcribe=broken),'audio',original,'en',[],24.,lambda *args:None)
+            self.assertEqual(result,original);self.assertTrue(quality['alignment_incomplete'])
 if __name__=='__main__':unittest.main()
+

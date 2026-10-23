@@ -20,8 +20,11 @@ final class SpeechProcessor {
   return transcribe(c,input,language,quality,0,cancel,progress);
  }
  static JSONArray transcribe(Context c,File input,String language,String quality,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  return transcribe(c,input,language,quality,limitUs,false,cancel,progress);
+ }
+ static JSONArray transcribe(Context c,File input,String language,String quality,long limitUs,boolean separateMusic,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   if(!language.matches("auto|ar|en|ja|fr|de|es|zh"))throw new IOException("لغة غير مدعومة");NativeLibrary.ensureLoaded();AudioPipeline.Decoded decoded=null;long engine=0;
-  try{File[] models=!quality.equals("fast")?SpeechModels.get(c,quality,cancel,progress):new File[]{OfflineAssets.file(c,"tiny-encoder.int8.onnx"),OfflineAssets.file(c,"tiny-decoder.int8.onnx"),OfflineAssets.file(c,"tiny-tokens.txt")};decoded=AudioPipeline.decode(c,input,limitUs,cancel,progress);progress.update(10,"تحميل نموذج التفريغ وكاشف الكلام");File vocabulary=SpeechTokens.safeVocabulary(c,models[2]);engine=open(models[0].getPath(),models[1].getPath(),vocabulary.getPath(),language.equals("auto")?"":language);JSONArray cues=new JSONArray();long frames=decoded.pcm.length()/4;int chunk=20*16000;long total=Math.round(frames*16000.0/decoded.sampleRate);
+  try{File[] models=!quality.equals("fast")?SpeechModels.get(c,quality,cancel,progress):new File[]{OfflineAssets.file(c,"tiny-encoder.int8.onnx"),OfflineAssets.file(c,"tiny-decoder.int8.onnx"),OfflineAssets.file(c,"tiny-tokens.txt")};decoded=SpeechAudio.decode(c,input,limitUs,separateMusic,cancel,progress);progress.update(10,"تحميل نموذج التفريغ وكاشف الكلام");File vocabulary=SpeechTokens.safeVocabulary(c,models[2]);engine=open(models[0].getPath(),models[1].getPath(),vocabulary.getPath(),language.equals("auto")?"":language);JSONArray cues=new JSONArray();long frames=decoded.pcm.length()/4;int chunk=20*16000;long total=Math.round(frames*16000.0/decoded.sampleRate);
    SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);
    try(RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r");SpeechActivity activity=new SpeechActivity(c)){
     String spokenLanguage=language;
@@ -67,3 +70,4 @@ final class SpeechProcessor {
  static File srt(Context c,JSONArray cues)throws Exception{File out=FilesUtil.output(c,"srt");try(Writer w=new OutputStreamWriter(new FileOutputStream(out),java.nio.charset.StandardCharsets.UTF_8)){for(int i=0;i<cues.length();i++){JSONObject cue=cues.getJSONObject(i);double start=cue.getDouble("start"),end=cue.getDouble("end");if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||end<=start||cue.getString("text").length()>10000)throw new IOException("سطر ترجمة أو توقيت غير صالح");w.write((i+1)+"\n"+stamp(cue.getDouble("start"))+" --> "+stamp(cue.getDouble("end"))+"\n"+cue.getString("text").replace("\r","")+"\n\n");}}catch(Exception e){out.delete();throw e;}return out;}
  private static String stamp(double seconds){long ms=Math.round(seconds*1000);return String.format(Locale.US,"%02d:%02d:%02d,%03d",ms/3600000,ms/60000%60,ms/1000%60,ms%1000);}
 }
+

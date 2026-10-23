@@ -27,7 +27,7 @@ os.environ['USE_TORCH'] = '1'
 _io_lock = threading.RLock()
 _environment = {}
 _asr_quality = {}
-ASR_POLICY = 'vad-gap-recovery-v1'
+ASR_POLICY = 'vad-gap-alignment-recovery-v2'
 TRANSLATION_MODEL = 'tencent/Hy-MT2-7B'
 TRANSLATION_REVISION = '9b0eb4e8f001def3e5ff6469a0ac96fdb39ec223'
 TRANSLATION_POLICY = 'hy-mt2-context-v1'
@@ -524,6 +524,62 @@ def recover_asr_gaps(recognizer, audio_path, cues, language, hints, duration, pr
     return sorted(cues + recovered, key=lambda item: item['start']), quality
 
 
+def repair_stretched_cues(recognizer, audio_path, cues, language, hints, duration, progress):
+    """Re-decode sparse, stretched cues on the uncut timeline before looking for gaps.
+
+    VAD concatenation can spread a few words across a removed interval. A retry
+    must retain a strong text anchor, pass word-confidence checks, and fit wholly
+    inside the replaced cue. Failed/ambiguous retries leave the original intact.
+    """
+    import difflib
+    suspects = [i for i, cue in enumerate(cues) if cue['end'] - cue['start'] >= 12
+        and len(cue['text'].strip()) / (cue['end'] - cue['start']) < 2]
+    quality = {'realigned': 0, 'alignment_incomplete': False}
+    if not suspects:return cues, quality
+    from faster_whisper.audio import decode_audio
+    try:audio = decode_audio(str(audio_path))
+    except Exception:
+        quality['alignment_incomplete'] = True
+        return cues, quality
+    out = list(cues)
+    options = dict(whisper_options(language, hints), vad_filter=False, condition_on_previous_text=False)
+    options.pop('vad_parameters', None)
+    normalize = lambda text: re.sub(r'[\W_]+', '', text, flags=re.UNICODE)
+    for number, index in enumerate(suspects):
+        old = cues[index]
+        anchor = normalize(old['text'])
+        if len(anchor) < 8:
+            quality['alignment_incomplete'] = True
+            continue
+        try:
+            candidates = []
+            start = old['start']
+            while start < old['end']:
+                progress(number, len(suspects))
+                end = min(old['end'], start + 30)
+                offset, stop = max(0., start - 4), min(duration, end + 4)
+                segments, _ = recognizer.transcribe(audio[round(offset * 16000):round(stop * 16000)], **options)
+                for segment in segments:
+                    for candidate in recovered_segment_cues(segment, language, offset,
+                            (old['start'], old['end']), (start, end)):
+                        if candidate['end'] - candidate['start'] > 10:continue
+                        if not any(candidate['start'] < cue['end'] and candidate['end'] > cue['start'] for cue in candidates):
+                            candidates.append(candidate)
+                start = end
+            # At least 70% of the old line must survive in a single candidate,
+            # in order. Added dialogue alone cannot justify removing a cue.
+            anchored = len(anchor) >= 8 and any(sum(block.size for block in
+                difflib.SequenceMatcher(None, anchor, normalize(cue['text']), autojunk=False).get_matching_blocks())
+                >= .7 * len(anchor) for cue in candidates)
+            if candidates and anchored and len(out) - 1 + len(candidates) <= 2000:
+                out[index] = candidates
+                quality['realigned'] += 1
+            else:quality['alignment_incomplete'] = True
+        except Exception:quality['alignment_incomplete'] = True
+    flattened = [item for group in out for item in (group if isinstance(group, list) else [group])]
+    return sorted(flattened, key=lambda cue: cue['start']), quality
+
+
 def whisper_options(source, hints):
     return dict(language=None if source == 'auto' else source,
         beam_size=5, word_timestamps=True, vad_filter=True,
@@ -630,8 +686,11 @@ def recognize_audio(folder, request, source, torch):
             status(folder, 'asr', 40 + int(16 * min(1, segment.end / max(duration, 1))))
         issue = cue_error(cues, duration)
         if issue:raise TranslationError(issue)
+        cues, alignment_quality = repair_stretched_cues(recognizer, folder / 'input.wav', cues, language, hints, duration,
+            lambda index, count: status(folder, 'asr', 54 + int(2 * index / max(1, count)), completed=index))
         cues, _asr_quality = recover_asr_gaps(recognizer, folder / 'input.wav', cues, language, hints, duration,
             lambda index, count: status(folder, 'asr', 56 + int(6 * index / max(1, count)), completed=index))
+        _asr_quality.update(alignment_quality)
         del recognizer, segments
         release_gpu(torch)
         status(folder, 'asr_validate', 63)
@@ -667,7 +726,9 @@ def run(folder):
     # Save the complete original before loading translation. Its loss is never hidden by a translation error.
     result = {'original': cues, 'translated': cues, 'language': language, 'target': 'original', 'warning': ''}
     result.update(asr_recovered=_asr_quality.get('recovered', 0),
-        asr_recovery_incomplete=_asr_quality.get('incomplete', False))
+        asr_recovery_incomplete=_asr_quality.get('incomplete', False),
+        asr_realigned=_asr_quality.get('realigned', 0),
+        asr_alignment_incomplete=_asr_quality.get('alignment_incomplete', False))
     write_json(folder / 'result.json', result)
     if not cues or target == 'original' or target == language:
         result['target'] = target
@@ -731,3 +792,4 @@ def main(folder, prepare=False):
 
 if __name__ == '__main__':
     main(sys.argv[1], len(sys.argv) > 2 and sys.argv[2] == '--prepare')
+
