@@ -48,6 +48,20 @@ jobs:
           if hashlib.sha256(cert).hexdigest()!=expected:
               raise SystemExit('Signing key is not the original update key; build stopped')
           PYKEY
+      - name: Load optional Firebase project configuration
+        env:
+          MADAR_FIREBASE_CONFIG: ${{ secrets.MADAR_FIREBASE_CONFIG }}
+        run: |
+          python3 - <<'PYFIREBASE'
+          import os,json,pathlib
+          value=os.environ.get('MADAR_FIREBASE_CONFIG','').strip()
+          if value:
+              config=json.loads(value)
+              assert any(c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.madar.files' for c in config.get('client',[])), 'Firebase Android package mismatch'
+              pathlib.Path('app/google-services.json').write_text(value)
+          else:
+              print('Firebase not configured: personal Gemini credentials remain available; managed transport stays disabled.')
+          PYFIREBASE
       - name: Restore processing build assets
         uses: actions/cache@v4
         with:
@@ -120,18 +134,18 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 22 --version-name 1.4.17
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 23 --version-name 1.4.18
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.17.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.18.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
-          name: MadarFiles-1.4.16-APK
-          run-id: 39955869734
+          name: MadarFiles-1.4.17-APK
+          run-id: 39975762787
           github-token: ${{ github.token }}
           path: upgrade-baseline
       - name: Verify installed-version baseline certificate
-        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.16.apk --version-code 21 --version-name 1.4.16
+        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.17.apk --version-code 22 --version-name 1.4.17
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -153,7 +167,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
             adb shell wm density 180
-            adb install upgrade-baseline/MadarFiles-1.4.16.apk
+            adb install upgrade-baseline/MadarFiles-1.4.17.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.madar.files/.MainActivity
@@ -170,8 +184,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.4.17-APK
-          path: MadarFiles-1.4.17.apk
+          name: MadarFiles-1.4.18-APK
+          path: MadarFiles-1.4.18.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports

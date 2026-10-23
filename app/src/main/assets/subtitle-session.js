@@ -4,10 +4,11 @@ const subtitleCopy=cues=>cues.map(c=>({...c}));
 function rememberSubtitleSession(){
  const session=state.subtitleSession,panel=$('subtitleEditor');
  if(!session||!panel)return true;
- const cues=[...panel.querySelectorAll('.subtitleRow')].map(row=>{const inputs=row.querySelectorAll('input');return {start:Number(inputs[0].value),end:Number(inputs[1].value),text:row.querySelector('textarea').value,language:row.dataset.language||state.subtitleLanguage};});
+ const cues=[...panel.querySelectorAll('.subtitleRow')].map(row=>{const inputs=row.querySelectorAll('input');return {start:Number(inputs[0].value),end:Number(inputs[1].value),text:row.querySelector('textarea').value,language:row.dataset.language||state.subtitleLanguage,speaker:row.dataset.speaker||'unknown'};});
  if(cues.some(c=>!Number.isFinite(c.start)||!Number.isFinite(c.end)||c.start<0||c.end<=c.start)){toast('راجع توقيت الأسطر قبل الانتقال');return false;}
  session.tracks[session.active].cues=cues;
- session.names=$('reviewSubtitleNames')?.value||session.names||'';
+ if($('reviewSubtitleNames'))session.names=$('reviewSubtitleNames').value;
+ if($('reviewSubtitleContext'))session.context=$('reviewSubtitleContext').value;
  session.style={};for(const id of ['captionSize','captionPosition','captionColor','captionBackground'])if($(id))session.style[id]=$(id).value;
  return true;
 }
@@ -21,6 +22,14 @@ const sessionEditor=showSubtitleEditor;
 showSubtitleEditor=function(cues){
  sessionEditor(cues);const session=state.subtitleSession;if(!session)return;
  const panel=$('subtitleEditor'),sheet=panel.querySelector('.sheet');
+ if(session.suggestions?.length){
+  const proposals=document.createElement('details'),summary=document.createElement('summary');summary.textContent='أسماء اقترحها Gemini · راجعها قبل اعتمادها';proposals.append(summary);
+  for(const name of session.suggestions){
+   const row=document.createElement('div'),text=document.createElement('span'),accept=document.createElement('button');text.textContent=name.source+' = '+name.target;accept.type='button';accept.className='secondary';accept.textContent='اعتماد الاسم';
+   accept.onclick=()=>{const field=$('reviewSubtitleNames');if(!field)return;const lines=field.value.split(/\r?\n/).filter(x=>x.trim());if(lines.some(x=>x.split('=')[0].trim()===name.source))return toast('الاسم موجود؛ عدّل كتابته في القاموس عند الحاجة');const value=[...lines,name.source+' = '+name.target].join('\n');if(lines.length>=30||value.length>2000)return toast('اختصر قاموس الأسماء قبل الإضافة');field.value=value;session.names=value;session.suggestions=session.suggestions.filter(x=>x!==name);row.remove();};row.append(text,accept);proposals.append(row);
+  }
+  sheet.querySelector('h2').after(proposals);
+ }
  const label=document.createElement('label');label.textContent='النسخة التي تراجعها وتصدّرها';
  const tracks=document.createElement('select');tracks.id='subtitleTrack';
  for(const [key,track] of Object.entries(session.tracks)){const option=document.createElement('option');option.value=key;option.textContent=track.label;tracks.append(option);}
@@ -37,7 +46,7 @@ window.receive=function(event){
  if(event.type==='subtitles'){
   const reviewed=!!state.translationReviewPanel||event.reviewed===true;
   let session=state.subtitleSession;
-  if(!reviewed||!session){session={tracks:{original:{label:'التفريغ الأصلي',language:event.language,cues:subtitleCopy(event.originalCues||event.cues)}},active:'original',style:{}};state.subtitleSession=session;}
+  if(!reviewed||!session){session={tracks:{original:{label:'التفريغ الأصلي',language:event.language,cues:subtitleCopy(event.originalCues||event.cues)}},active:'original',style:{},names:event.subtitleNames||'',context:event.subtitleContext||'',suggestions:event.nameSuggestions||[]};state.subtitleSession=session;}
   if(event.target&&event.target!=='original'&&event.target!==event.language){
    const key='translated-'+event.target;session.tracks[key]={label:'الترجمة · '+({ar:'العربية',en:'الإنجليزية',ja:'اليابانية'}[event.target]||event.target),language:event.target,cues:subtitleCopy(event.cues).map(c=>({...c,language:event.target}))};session.active=key;
   }else if(!reviewed)session.active='original';

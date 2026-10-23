@@ -18,3 +18,6 @@ node_modules/
 app/src/androidTest/assets/speech-reference-*.wav
 
 __pycache__/
+
+# Firebase project configuration is supplied by the build owner.
+app/google-services.json

@@ -32,3 +32,11 @@ colabConsent.children[0].checked=true;colabMode.value='online';colabMode.onchang
 assert.equal(run('translationModeSelect().value'),'online');run("state.translationMode='colab'");assert.equal(run('translationModeSelect().value'),'local');
 console.log('PASS: Colab speech mode has explicit fresh consent, separates providers, and does not leak into text-only retranslation');
 
+
+forms.length=0;run("state.translationMode='online';openTool('subtitles')");
+assert.equal(forms.find(x=>x.id==='geminiReview').value,'true');
+assert.equal(forms.find(x=>x.id==='geminiReview').hidden,false);
+assert.equal(forms.find(x=>x.id==='subtitleContext').maxLength,1000);
+const updatedMode=forms.find(x=>x.id==='translationMode');updatedMode.value='local';updatedMode.onchange();
+assert.equal(forms.find(x=>x.id==='geminiReview').hidden,true);
+console.log('PASS: Gemini second listening is explicit, carries bounded work context, and hides in local mode');
