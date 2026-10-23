@@ -7,7 +7,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  const base=path.resolve('app/src/main/assets');
  await page.route('https://madar.local/**',async route=>{const f=path.join(base,new URL(route.request().url()).pathname.slice(1)||'index.html');await route.fulfill(fs.existsSync(f)?{body:fs.readFileSync(f),contentType:f.endsWith('.js')?'application/javascript':f.endsWith('.css')?'text/css':'text/html'}:{status:404,body:''});});
  await page.goto('https://madar.local/');
- await page.evaluate(()=>{receive({type:'source',kind:'video',name:'test.mp4',size:100,duration:5000,width:320,height:240});receive({type:'subtitles',language:'ja',target:'ar',subtitleContext:'Kingdom',subtitleNames:'龐煖 = هوكين',nameSuggestions:[{source:'信',target:'شين'},{source:'宝剣',target:'سيف'}],originalCues:[{start:.123,end:2.456,text:'すまねえな',language:'ja'}],cues:[{start:.123,end:2.456,text:'آسف',language:'ja'}]});});
+ await page.evaluate(()=>{receive({type:'source',kind:'video',name:'test.mp4',size:100,duration:5000,width:320,height:240});receive({type:'subtitles',language:'ja',target:'ar',subtitleContext:'Kingdom',subtitleNames:'龐煖 = هوكين',nameSuggestions:[{source:'信',target:'شين'},{source:'B'.repeat(80),target:'سيف'}],originalCues:[{start:.123,end:2.456,text:'すまねえな',language:'ja'}],cues:[{start:.123,end:2.456,text:'آسف',language:'ja'}]});});
  const switchTrack=async track=>page.locator('#subtitleTrack').selectOption(track);
  const text=()=>page.locator('#subtitleEditor .subtitleRow textarea');
  assert.equal(await page.locator('#reviewSubtitleContext').inputValue(),'Kingdom');
@@ -15,7 +15,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  await page.getByText('أسماء اقترحها Gemini · راجعها قبل اعتمادها',{exact:true}).click();
  await page.getByRole('button',{name:'اعتماد الاسم',exact:true}).first().click();
  assert.equal(await page.locator('#reviewSubtitleNames').inputValue(),'龐煖 = هوكين\n信 = شين');
- assert.equal((await page.locator('#reviewSubtitleNames').inputValue()).includes('宝剣'),false);
+ assert.equal((await page.locator('#reviewSubtitleNames').inputValue()).includes('B'.repeat(80)),false);
  assert.equal(await text().inputValue(),'آسف');await text().fill('آسف يا صديقي');
  await page.locator('#captionColor').selectOption('gold');
  await switchTrack('original');assert.equal(await text().inputValue(),'すまねえな');await text().fill('すまねえな！');

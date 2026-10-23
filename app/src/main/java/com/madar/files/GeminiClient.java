@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** One explicit Google transport per request; never silently switches billing accounts. */
 final class GeminiClient {
  private static FirebaseApp managed;
+ private static void check(AtomicBoolean cancel){if(cancel.get()||Thread.currentThread().isInterrupted())throw new CancellationException();}
  static boolean configured(Context c){FirebaseOptions o=FirebaseOptions.fromResource(c);return o!=null&&o.getProjectId()!=null&&!o.getProjectId().isEmpty();}
  static synchronized FirebaseApp managed(Context c)throws IOException {
   if(managed!=null)return managed;
@@ -29,7 +30,7 @@ final class GeminiClient {
   managed=app;return app;
  }
  static JSONObject generate(Context c,JSONObject body,AtomicBoolean cancel)throws Exception {
-  MusicSeparator.check(cancel);String model=TranslationSettings.model(c),key=TranslationSettings.credential(c);
+  check(cancel);String model=TranslationSettings.model(c),key=TranslationSettings.credential(c);
   if(!key.isEmpty())return OnlineTranslation.post(model,key,body,cancel);
   if(!model.matches("gemini-[a-zA-Z0-9.\\-]{1,80}"))throw new IOException("اسم نموذج غير صالح");
   GenerationConfig.Builder config=new GenerationConfig.Builder();JSONObject generation=body.getJSONObject("generationConfig");
@@ -41,15 +42,15 @@ final class GeminiClient {
   try{
    long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(125);
    while(true){
-    MusicSeparator.check(cancel);if(System.nanoTime()>until)throw new IOException("انتهت مهلة Gemini؛ لم تُحفظ استجابة ناقصة");
+    check(cancel);if(System.nanoTime()>until)throw new IOException("انتهت مهلة Gemini؛ لم تُحفظ استجابة ناقصة");
     try{
-     GenerateContentResponse response=future.get(150,TimeUnit.MILLISECONDS);MusicSeparator.check(cancel);
+     GenerateContentResponse response=future.get(150,TimeUnit.MILLISECONDS);check(cancel);
      if(response.getCandidates().isEmpty()||!FinishReason.STOP.equals(response.getCandidates().get(0).getFinishReason())||response.getText()==null)throw new IOException("استجابة Gemini غير مكتملة؛ لم يُعتمد الناتج الناقص");
      if(response.getText().length()>2000000)throw new IOException("استجابة الخدمة أكبر من الحد");
      return new JSONObject().put("candidates",new JSONArray().put(new JSONObject().put("finishReason","STOP").put("content",new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",response.getText()))))));
     }catch(TimeoutException pending){/* Check cancellation without blocking the worker indefinitely. */}
    }
-  }catch(ExecutionException failed){MusicSeparator.check(cancel);throw new IOException("تعذر ربط Gemini المباشر؛ تحقق من تفعيل Firebase AI Logic وApp Check وحدود المشروع");}
+  }catch(ExecutionException failed){check(cancel);throw new IOException("تعذر ربط Gemini المباشر؛ تحقق من تفعيل Firebase AI Logic وApp Check وحدود المشروع");}
   finally{future.cancel(true);}
  }
  static Content content(JSONObject input)throws Exception {

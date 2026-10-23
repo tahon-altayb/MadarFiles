@@ -25,7 +25,7 @@ showSubtitleEditor=function(cues){
  if(session.suggestions?.length){
   const proposals=document.createElement('details'),summary=document.createElement('summary');summary.textContent='أسماء اقترحها Gemini · راجعها قبل اعتمادها';proposals.append(summary);
   for(const name of session.suggestions){
-   const row=document.createElement('div'),text=document.createElement('span'),accept=document.createElement('button');text.textContent=name.source+' = '+name.target;accept.type='button';accept.className='secondary';accept.textContent='اعتماد الاسم';
+   const row=document.createElement('div'),text=document.createElement('span'),accept=document.createElement('button');row.style.overflowWrap='anywhere';text.textContent=name.source+' = '+name.target;accept.type='button';accept.className='secondary';accept.textContent='اعتماد الاسم';
    accept.onclick=()=>{const field=$('reviewSubtitleNames');if(!field)return;const lines=field.value.split(/\r?\n/).filter(x=>x.trim());if(lines.some(x=>x.split('=')[0].trim()===name.source))return toast('الاسم موجود؛ عدّل كتابته في القاموس عند الحاجة');const value=[...lines,name.source+' = '+name.target].join('\n');if(lines.length>=30||value.length>2000)return toast('اختصر قاموس الأسماء قبل الإضافة');field.value=value;session.names=value;session.suggestions=session.suggestions.filter(x=>x!==name);row.remove();};row.append(text,accept);proposals.append(row);
   }
   sheet.querySelector('h2').after(proposals);

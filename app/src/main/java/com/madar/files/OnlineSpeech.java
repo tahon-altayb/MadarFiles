@@ -27,12 +27,16 @@ final class OnlineSpeech {
   if(hints.length()>2000)throw new IOException("اختصر سياق العمل والأسماء إلى 2000 حرف");
 
   AudioPipeline.Decoded decoded=SpeechAudio.decode(context,input,limitUs,separateMusic,cancel,progress);
-  AudioPipeline.Decoded reviewAudio=null;
+  AudioPipeline.Decoded reviewAudio=null;String preparationWarning="";
   try{
-   if(review&&separateMusic)reviewAudio=SpeechAudio.decode(context,input,limitUs,false,cancel,progress);
+   if(review&&separateMusic){
+    try{reviewAudio=SpeechAudio.decode(context,input,limitUs,false,cancel,progress);}
+    catch(java.util.concurrent.CancellationException stopped){throw stopped;}
+    catch(Exception|OutOfMemoryError|UnsatisfiedLinkError failed){MusicSeparator.check(cancel);review=false;preparationWarning="تعذر تجهيز الصوت الأصلي للمراجعة الثانية؛ عُرضت نتيجة الاستماع الأول للمراجعة.";}
+   }
    try(RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r");RandomAccessFile raw=new RandomAccessFile(reviewAudio==null?decoded.pcm:reviewAudio.pcm,"r")){
    long frames=decoded.pcm.length()/4,total=Math.round(frames*RATE/(double)decoded.sampleRate);
-   SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);Result output=new Result();JSONArray names=new JSONArray(),suggestions=new JSONArray(),previous=new JSONArray();
+   SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);Result output=new Result();output.warning=preparationWarning;JSONArray names=new JSONArray(),suggestions=new JSONArray(),previous=new JSONArray();
    for(java.util.Map.Entry<String,String> name:new SubtitleNames(hints).entries.entrySet())names.put(new JSONObject().put("source",name.getKey()).put("target",name.getValue()));
    for(long core=0;core<total;core+=STEP){
     MusicSeparator.check(cancel);long first=Math.max(0,core-CONTEXT),last=Math.min(total,core+STEP+CONTEXT);
