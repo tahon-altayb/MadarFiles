@@ -16,7 +16,7 @@ class Element{
 const get=id=>{if(!elements.has(id))elements.set(id,new Element(id));return elements.get(id);};
 for(const id of ['textClose','copyText','saveTxt','saveDocx','recognizedText','textPanel','recent','historyBtn','file','fileIcon','thumb','fileTitle','fileSub','tools','meta','choose','previewBtn','toast','sheet','toolTitle','toolKicker','form','export','busy','busyTitle','busyDetail','cancel','progress','result','resultMeta','save','share','view','resultClose','close','quality'])get(id);
 const requests=[],tabs=['image','video','pdf'].map(kind=>{const e=new Element();e.dataset.kind=kind;return e;});
-const context={Image:class {constructor(){this.complete=false;}},console,setTimeout:()=>0,clearTimeout(){},Android:{request:s=>requests.push(JSON.parse(s))},document:{body:new Element(),getElementById:id=>elements.get(id)||null,querySelectorAll:()=>tabs,querySelector:()=>new Element(),createElement:()=>new Element()},window:{}};
+const context={rememberSubtitleSession:()=>true,Image:class {constructor(){this.complete=false;}},console,setTimeout:()=>0,clearTimeout(){},Android:{request:s=>requests.push(JSON.parse(s))},document:{body:new Element(),getElementById:id=>elements.get(id)||null,querySelectorAll:()=>tabs,querySelector:()=>new Element(),createElement:()=>new Element()},window:{}};
 context.window=context;
 vm.createContext(context);vm.runInContext(readFileSync('app/src/main/assets/crop.js','utf8'),context);vm.runInContext(readFileSync('app/src/main/assets/app.js','utf8'),context);
 const run=s=>vm.runInContext(s,context);

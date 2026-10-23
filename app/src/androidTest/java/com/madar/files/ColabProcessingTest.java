@@ -84,4 +84,14 @@ public class ColabProcessingTest {
   data.put("target","ar");try{ColabSpeech.originalFallback(data,2,0,"ar");fail();}catch(java.io.IOException expected){}
  }
 
+
+ @Test public void textTranslationValidatesWithoutAudioAndPreservesExactTiming()throws Exception{
+  JSONArray cues=new JSONArray().put(new JSONObject().put("start",0.123).put("end",2.456).put("text","すまねえな"));
+  assertEquals(2.456,ColabSpeech.validateText(cues,"ja","ar"),0);
+  JSONObject response=new JSONObject().put("original",cues).put("translated",new JSONArray().put(new JSONObject(cues.getJSONObject(0).toString()).put("text","آسف"))).put("language","ja").put("target","ar");
+  ColabSpeech.Result result=ColabSpeech.parse(response,2.456,0,"ar");assertEquals(.123,result.translated.getJSONObject(0).getDouble("start"),0);assertEquals(2.456,result.translated.getJSONObject(0).getDouble("end"),0);
+  cues.put(new JSONObject().put("start",0).put("end",1).put("text","bad ordering"));
+  try{ColabSpeech.validateText(cues,"ja","ar");fail("unordered cues accepted");}catch(java.io.IOException expected){}
+  try{ColabSpeech.validateText(new JSONArray(),"ja","ar");fail("empty input accepted");}catch(java.io.IOException expected){}
+ }
 }

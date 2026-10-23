@@ -46,7 +46,7 @@ public class VideoExportService extends Service {
             long duration=intent.getLongExtra("duration",0);if(duration<=0)throw new IllegalArgumentException("مدة الفيديو غير معروفة");
             if(tool.equals("trim")&&o.optString("cutMode").equals("copy")){startCopyTrim(input,o);return START_NOT_STICKY;}
             if(tool.equals("convert")&&o.optString("format").matches("mkv|mov|webm")){startContainer(input,o);return START_NOT_STICKY;}
-            if(tool.equals("subtitles")){startSpeech(input,o);return START_NOT_STICKY;}
+            if(tool.equals("subtitles")||tool.equals("translateReviewed")){startSpeech(input,o);return START_NOT_STICKY;}
             if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
             if(tool.equals("music")){startMusic(input,o);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));if(previewDraft)media.setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0).setEndPositionMs(Math.min(duration,10000)).build());
@@ -92,7 +92,10 @@ public class VideoExportService extends Service {
             String language=options.optString("language","auto"),target=options.optString("target","original"),mode=options.optString("translationMode","local"),names=options.optString("subtitleNames","");
             new SubtitleNames(names);long limit=options.optBoolean("speechSample")?30000000L:0;
             JSONArray cues,originalCues;String resultTarget=target,translationWarning="";
-            if(mode.equals("colab")){
+            if(mode.equals("colab")&&options.optString("tool").equals("translateReviewed")){
+                if(!options.optBoolean("onlineTextConsent"))throw new java.io.IOException("وافق على إرسال النص إلى Colab أولًا");
+                ColabSpeech.Result result=ColabSpeech.translateText(this,options.getJSONArray("cues"),language,target,names,ColabCredentials.take(),musicCancel,callback);originalCues=result.original;cues=result.translated;resultTarget=result.target;translationWarning=result.warning;
+            }else if(mode.equals("colab")){
                 if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");
                 ColabSpeech.Result result=ColabSpeech.run(this,input,language,target,names,limit,ColabCredentials.take(),musicCancel,callback);originalCues=result.original;cues=result.translated;resultTarget=result.target;translationWarning=result.warning;
             }else if(mode.equals("online")){
@@ -108,7 +111,7 @@ public class VideoExportService extends Service {
             }
             if(cues.length()==0)throw new java.io.IOException("لم يُعثر على كلام واضح؛ جرّب صوتًا أوضح ولغة صحيحة");
             MusicSeparator.check(musicCancel);File f=SpeechProcessor.srt(this,cues);
-            JSONObject data=FilesUtil.info(f).put("type","subtitles").put("cues",cues).put("originalCues",originalCues).put("language",SpeechProcessor.language(originalCues,language)).put("target",resultTarget).put("warning",translationWarning);
+            JSONObject data=FilesUtil.info(f).put("type","subtitles").put("cues",cues).put("originalCues",originalCues).put("language",SpeechProcessor.language(originalCues,language)).put("target",resultTarget).put("warning",translationWarning).put("reviewed",options.optString("tool").equals("translateReviewed"));
             handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});
         }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
         catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر التفريغ أو الترجمة: "+(e instanceof OutOfMemoryError?"الذاكرة لا تكفي؛ اختر النموذج المتوازن أو السريع":options.optString("translationMode").equals("colab")&&!(e instanceof java.io.IOException)?"استجابة Colab غير مكتملة؛ أرسل آخر مرحلة ظهرت للمراجعة":e.getMessage()==null?"تحقق من توفر النموذج والمساحة":e.getMessage()));});}},"madar-speech");musicWorker.start();

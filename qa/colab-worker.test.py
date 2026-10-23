@@ -62,7 +62,7 @@ class WorkerTest(unittest.TestCase):
         modules={'torch':torch,'faster_whisper':SimpleNamespace(WhisperModel=Recognizer),
           'faster_whisper.utils':SimpleNamespace(download_model=lambda name:'fixture-model'),
           'transformers':SimpleNamespace(AutoTokenizer=BrokenTokenizer,AutoModelForCausalLM=None,BitsAndBytesConfig=None),
-          'transformers.models.qwen3.modeling_qwen3':SimpleNamespace(Qwen3ForCausalLM=None)}
+          'transformers.models.hunyuan_v1_dense.modeling_hunyuan_v1_dense':SimpleNamespace(HunYuanDenseV1ForCausalLM=None)}
         with tempfile.TemporaryDirectory() as directory:
             folder=Path(directory)
             (folder/'request.json').write_text(json.dumps({'language':'ja','target':'ar','chunks':1,'names':[]}))
@@ -84,6 +84,36 @@ class WorkerTest(unittest.TestCase):
             self.assertEqual(result['warning_stage'],'translation_tokenizer')
             self.assertEqual(result['warning_code'],'MODEL_RUNTIME')
             self.assertNotIn('private server', (folder/'result.json').read_text())
+
+class TextRequestTest(unittest.TestCase):
+    def test_text_translation_never_opens_audio_or_loads_whisper_and_recovers_input(self):
+        cues=[{'start':.123,'end':2.456,'text':'すまねえな','language':'ja'}]
+        torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True))
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)
+            (folder/'request.json').write_text(json.dumps({'mode':'text','language':'ja','target':'ar','cues':cues,'names':[]}))
+            with patch.dict(sys.modules,{'torch':torch}),patch.object(w,'environment'),patch.object(w,'recognize_audio',side_effect=AssertionError('audio invoked')),patch.object(w.wave,'open',side_effect=AssertionError('audio opened')),patch.object(w,'translation_backend',side_effect=RuntimeError('out of memory')):
+                w.run(folder)
+            result=json.loads((folder/'result.json').read_text())
+            self.assertEqual(result['original'],cues)
+            self.assertEqual(result['translated'],cues)
+            self.assertEqual(result['warning_code'],'GPU_MEMORY')
+            self.assertFalse((folder/'input.wav').exists())
+
+    def test_japanese_word_is_not_cut_by_timestamp_threshold(self):
+        words=[SimpleNamespace(start=0,end=.1,word='や'),SimpleNamespace(start=9,end=9.2,word='っぱ'),SimpleNamespace(start=9.2,end=10,word='同じだ')]
+        lines=w.split_segment(SimpleNamespace(words=words),'ja')
+        self.assertEqual([x['text'] for x in lines],['やっぱ同じだ'])
+        self.assertEqual(lines[0]['start'],0)
+        self.assertEqual(lines[0]['end'],10)
+
+    def test_specialist_uses_source_context_without_draft_contamination(self):
+        captured=[]
+        content={'targetLanguageName':'Arabic','previousDialogue':[{'source':'hello','translation':'WRONG_DRAFT'}],'followingContext':['bye'],'glossary':[],'lines':[{'id':0,'text':'thank you'}]}
+        def generate(messages,ids):captured.extend(messages);return {0:'شكرا'},[{'source':'invented','target':'invented'}]
+        texts,names=w.specialized_translation(content,[0],generate)
+        self.assertEqual(texts,{0:'شكرا'});self.assertEqual(names,[])
+        self.assertEqual(captured[0]['role'],'user');self.assertNotIn('WRONG_DRAFT',captured[0]['content'])
 
 class FailureTest(unittest.TestCase):
     def setUp(self):w._environment = {}
