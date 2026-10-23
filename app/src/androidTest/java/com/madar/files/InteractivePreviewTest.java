@@ -40,6 +40,6 @@ public class InteractivePreviewTest {
    assertTrue(text.contains(track.equals("original")?"すまねえな":"آسف"));assertTrue(text.contains("00:00:00,123 --> 00:00:02,456"));
    js("$('returnSubtitles').click()");await("!$('subtitleEditor').hidden&&$('result').hidden",5000);
   }
-  js("$('subtitleTrack').value='original';$('subtitleTrack').onchange()");assertEquals("\"すまねえな\"",js("$('subtitleEditor').querySelector('textarea').value"));
+  js("$('subtitleTrack').value='original';$('subtitleTrack').onchange()");assertEquals("\"すまねえな\"",js("$('subtitleEditor').querySelector('.subtitleRow textarea').value"));
  }
 }
