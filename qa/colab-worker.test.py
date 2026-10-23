@@ -486,4 +486,50 @@ class SourceReviewTest(unittest.TestCase):
         self.assertEqual(caught.exception.code,'TRANSLATION_LANGUAGE')
         self.assertEqual([len(ids) for ids in calls],[4,2,1])
 
+
+class GapRecoveryTest(unittest.TestCase):
+    @staticmethod
+    def segment(start=6., end=7., probability=.95):
+        return SimpleNamespace(start=start, end=end, text='clear speech',
+            avg_logprob=-.2, no_speech_prob=.1, compression_ratio=1.,
+            words=[SimpleNamespace(start=start,end=(start+end)/2,word='clear ',probability=probability),
+                   SimpleNamespace(start=(start+end)/2,end=end,word='speech',probability=.95)])
+
+    def test_uncovered_time_uses_union_and_retains_long_tail(self):
+        cues=[{'start':0,'end':2},{'start':1,'end':5},{'start':12,'end':13}]
+        self.assertEqual(w.asr_gaps(cues,20),[(5.,12.),(13.,20)])
+        self.assertEqual(w.asr_gaps([],3),[])
+
+    def test_recovery_does_not_clip_or_duplicate_context_and_rejects_uncertain_words(self):
+        good=self.segment()
+        self.assertEqual(w.recovered_segment_cues(good,'en',2,(8,10),(8,10)),
+            [{'start':8.,'end':9.,'text':'clear speech','language':'en'}])
+        self.assertEqual(w.recovered_segment_cues(good,'en',2,(8.1,10),(8.1,10)),[])
+        self.assertEqual(w.recovered_segment_cues(good,'en',2,(8,10),(9,10)),[])
+        self.assertEqual(w.recovered_segment_cues(self.segment(probability=.01),'en',2,(8,10),(8,10)),[])
+        good.avg_logprob=float('nan')
+        self.assertEqual(w.recovered_segment_cues(good,'en',2,(8,10),(8,10)),[])
+
+    def test_gap_probe_bypasses_vad_preserves_original_and_reports_auxiliary_failure(self):
+        original=[{'start':0.,'end':2.,'text':'first','language':'en'},
+                  {'start':20.,'end':22.,'text':'last','language':'en'}]
+        options=[]
+        def transcribe(audio,**kwargs):
+            options.append(kwargs)
+            return iter([self.segment()]),SimpleNamespace(language='en')
+        modules={'faster_whisper.audio':SimpleNamespace(decode_audio=lambda path:list(range(22*16000)))}
+        with patch.dict(sys.modules,modules):
+            result,quality=w.recover_asr_gaps(SimpleNamespace(transcribe=transcribe),'audio',original,'en',[],22.,lambda *args:None)
+            self.assertEqual([c['text'] for c in result],['first','clear speech','last'])
+            self.assertTrue(all(c in result for c in original))
+            self.assertEqual(quality,{'recovered':1,'checked':1,'incomplete':False})
+            self.assertFalse(options[0]['vad_filter']);self.assertFalse(options[0]['condition_on_previous_text'])
+            self.assertNotIn('vad_parameters',options[0])
+            def broken(*args,**kwargs):raise RuntimeError('PRIVATE')
+            result,quality=w.recover_asr_gaps(SimpleNamespace(transcribe=broken),'audio',original,'en',[],22.,lambda *args:None)
+            self.assertEqual(result,original);self.assertTrue(quality['incomplete'])
+        with patch.dict(sys.modules,{'faster_whisper.audio':SimpleNamespace(decode_audio=lambda path:(_ for _ in ()).throw(OSError('PRIVATE')))}):
+            result,quality=w.recover_asr_gaps(None,'audio',original,'en',[],22.,lambda *args:None)
+            self.assertEqual(result,original);self.assertTrue(quality['incomplete'])
+
 if __name__=='__main__':unittest.main()

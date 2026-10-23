@@ -94,4 +94,12 @@ public class ColabProcessingTest {
   try{ColabSpeech.validateText(cues,"ja","ar");fail("unordered cues accepted");}catch(java.io.IOException expected){}
   try{ColabSpeech.validateText(new JSONArray(),"ja","ar");fail("empty input accepted");}catch(java.io.IOException expected){}
  }
+ @Test public void gapRecoveryWarningsPreserveTranslatedResult()throws Exception{
+  JSONObject cue=new JSONObject().put("start",1).put("end",2).put("text","source");
+  JSONObject data=new JSONObject().put("original",new JSONArray().put(cue)).put("translated",new JSONArray().put(new JSONObject(cue.toString()).put("text","نص"))).put("language","en").put("target","ar").put("asr_recovered",2);
+  ColabSpeech.Result result=ColabSpeech.parse(data,3,0,"ar");
+  assertEquals("ar",result.target);assertEquals("نص",result.translated.getJSONObject(0).getString("text"));assertTrue(result.warning.contains("استُعيدت"));
+  data.put("asr_recovery_incomplete",true);assertTrue(ColabSpeech.parse(data,3,0,"ar").warning.contains("تعذر إكمال"));
+ }
+
 }

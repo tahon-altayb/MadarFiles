@@ -26,6 +26,8 @@ os.environ['USE_TORCH'] = '1'
 
 _io_lock = threading.RLock()
 _environment = {}
+_asr_quality = {}
+ASR_POLICY = 'vad-gap-recovery-v1'
 TRANSLATION_MODEL = 'tencent/Hy-MT2-7B'
 TRANSLATION_REVISION = '9b0eb4e8f001def3e5ff6469a0ac96fdb39ec223'
 TRANSLATION_POLICY = 'hy-mt2-context-v1'
@@ -452,6 +454,76 @@ def split_segment(segment, language):
     return [line for line in out if line['text'] and line['end'] > line['start']]
 
 
+def asr_gaps(cues, duration, minimum=4.0):
+    """Probe uncovered time, never infer that VAD silence means no dialogue."""
+    gaps, covered = [], 0.0
+    for cue in sorted(cues, key=lambda item: item['start']):
+        start, end = float(cue['start']), float(cue['end'])
+        if start - covered >= minimum:gaps.append((covered, start))
+        covered = max(covered, end)
+    if duration - covered >= minimum:gaps.append((covered, duration))
+    return gaps
+
+
+def recovered_segment_cues(segment, language, offset, gap, core):
+    """Conservative acceptance; probabilities are a review aid, not proof of meaning."""
+    metrics = [getattr(segment, name, float('nan')) for name in
+        ('avg_logprob', 'no_speech_prob', 'compression_ratio')]
+    if not all(isinstance(v, Real) and math.isfinite(v) for v in metrics):return []
+    if metrics[0] < -1 or metrics[1] > .6 or metrics[2] > 2.4:return []
+    words = list(segment.words or [])
+    probabilities = [getattr(word, 'probability', float('nan')) for word in words if word.word.strip()]
+    if not probabilities or not all(isinstance(v, Real) and math.isfinite(v) and 0 <= v <= 1 for v in probabilities):return []
+    if min(probabilities) < .1 or sum(probabilities) / len(probabilities) < .75:return []
+    out = []
+    for cue in split_segment(segment, language):
+        cue = dict(cue, start=cue['start'] + offset, end=cue['end'] + offset)
+        midpoint = (cue['start'] + cue['end']) / 2
+        # Context supplies meaning only. Never clip or extend a timestamp to make a cue fit.
+        if gap[0] <= cue['start'] < cue['end'] <= gap[1] and core[0] <= midpoint < core[1]:
+            out.append(cue)
+    return out
+
+
+def recover_asr_gaps(recognizer, audio_path, cues, language, hints, duration, progress):
+    gaps = asr_gaps(cues, duration)
+    quality = {'recovered': 0, 'checked': 0, 'incomplete': False}
+    if not gaps:return cues, quality
+    from faster_whisper.audio import decode_audio
+    try:audio = decode_audio(str(audio_path))
+    except Exception:
+        quality['incomplete'] = True
+        return cues, quality
+    windows = []
+    for gap in gaps:
+        start = gap[0]
+        while start < gap[1]:
+            end = min(gap[1], start + 30)
+            windows.append((gap, (start, end)))
+            start = end
+    recovered = []
+    options = dict(whisper_options(language, hints), vad_filter=False, condition_on_previous_text=False)
+    options.pop('vad_parameters', None)
+    try:
+        for index, (gap, core) in enumerate(windows):
+            progress(index, len(windows))
+            offset = max(0., core[0] - 4.)
+            end = min(duration, core[1] + 4.)
+            segments, _ = recognizer.transcribe(audio[round(offset * 16000):round(end * 16000)], **options)
+            for segment in segments:
+                for candidate in recovered_segment_cues(segment, language, offset, gap, core):
+                    if not any(candidate['start'] < old['end'] and candidate['end'] > old['start']
+                               for old in recovered):
+                        if len(cues) + len(recovered) < 2000:recovered.append(candidate)
+                        else:quality['incomplete'] = True
+            quality['checked'] += 1
+    except Exception:
+        # An auxiliary probe must not destroy an already successful original transcript.
+        quality['incomplete'] = True
+    quality['recovered'] = len(recovered)
+    return sorted(cues + recovered, key=lambda item: item['start']), quality
+
+
 def whisper_options(source, hints):
     return dict(language=None if source == 'auto' else source,
         beam_size=5, word_timestamps=True, vad_filter=True,
@@ -513,6 +585,7 @@ def supervise(folder, command, env, limits=None, total=1920, poll=1):
 
 
 def recognize_audio(folder, request, source, torch):
+    global _asr_quality
     count = request['chunks']
     if type(count) is not int or not 1 <= count <= 20:
         raise ValueError('chunks')
@@ -527,7 +600,7 @@ def recognize_audio(folder, request, source, torch):
                 output.writeframes(chunk.readframes(chunk.getnframes()))
     with wave.open(str(folder / 'input.wav'), 'rb') as sound:
         duration = sound.getnframes() / sound.getframerate()
-    identity = hashlib.sha256(json.dumps(request, sort_keys=True).encode('utf-8'))
+    identity = hashlib.sha256(json.dumps([ASR_POLICY, request], sort_keys=True).encode('utf-8'))
     with (folder / 'input.wav').open('rb') as sound:
         for block in iter(lambda: sound.read(1024 * 1024), b''):identity.update(block)
     fingerprint = identity.hexdigest()
@@ -540,6 +613,8 @@ def recognize_audio(folder, request, source, torch):
     except (OSError, ValueError, KeyError, TypeError):pass
     if cached is not None:
         cues, language = cached['cues'], cached['language']
+        quality = cached.get('quality', {})
+        _asr_quality = quality if isinstance(quality, dict) else {}
     else:
         status(folder, 'asr_download', 30)
         from faster_whisper import WhisperModel
@@ -552,17 +627,23 @@ def recognize_audio(folder, request, source, torch):
         cues, language = [], info.language
         for segment in segments:
             cues.extend(split_segment(segment, language))
-            status(folder, 'asr', 40 + int(23 * min(1, segment.end / max(duration, 1))))
+            status(folder, 'asr', 40 + int(16 * min(1, segment.end / max(duration, 1))))
+        issue = cue_error(cues, duration)
+        if issue:raise TranslationError(issue)
+        cues, _asr_quality = recover_asr_gaps(recognizer, folder / 'input.wav', cues, language, hints, duration,
+            lambda index, count: status(folder, 'asr', 56 + int(6 * index / max(1, count)), completed=index))
         del recognizer, segments
         release_gpu(torch)
         status(folder, 'asr_validate', 63)
         issue = cue_error(cues, duration)
         if issue:raise TranslationError(issue)
-        write_json(folder / 'asr-checkpoint.json', {'fingerprint': fingerprint, 'cues': cues, 'language': language})
+        write_json(folder / 'asr-checkpoint.json', {'fingerprint': fingerprint, 'cues': cues, 'language': language, 'quality': _asr_quality})
     return cues, language
 
 
 def run(folder):
+    global _asr_quality
+    _asr_quality = {}
     folder = Path(folder).resolve()
     request = json.loads((folder / 'request.json').read_text('utf-8'))
     source, target = request['language'], request['target']
@@ -585,6 +666,8 @@ def run(folder):
         cues, language = recognize_audio(folder, request, source, torch)
     # Save the complete original before loading translation. Its loss is never hidden by a translation error.
     result = {'original': cues, 'translated': cues, 'language': language, 'target': 'original', 'warning': ''}
+    result.update(asr_recovered=_asr_quality.get('recovered', 0),
+        asr_recovery_incomplete=_asr_quality.get('incomplete', False))
     write_json(folder / 'result.json', result)
     if not cues or target == 'original' or target == language:
         result['target'] = target

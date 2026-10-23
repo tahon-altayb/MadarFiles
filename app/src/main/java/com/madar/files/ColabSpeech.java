@@ -104,6 +104,8 @@ final class ColabSpeech {
    String source=text(cue),text=target.equals("original")?source:text(translation);JSONObject c=new JSONObject().put("start",offset+start).put("end",offset+Math.min(duration,end)).put("text",source).put("language",language);result.original.put(c);result.translated.put(new JSONObject(c.toString()).put("text",text));
   }
   if(data.optString("warning").equals("translation_failed")){result.originalOnly=target.equals("original");result.warningCode=workerCode(data.optString("warning_code"));String key=data.optString("warning_stage","translation_load");result.warningStage=ColabDiagnostics.stageKnown(key)&&key.startsWith("translation")?key:"translation_load";result.warning="اكتمل التفريغ وتعذرت الترجمة على Colab؛ احتُفظ بالنص الأصلي كاملًا للمراجعة. · "+result.warningCode;}
+  if(data.optInt("asr_recovered",0)>0)result.warning+=(result.warning.isEmpty()?"":"\n")+"استُعيدت أسطر من فواصل التفريغ بعد إعادة فحص الصوت؛ راجع النص المستعاد والأسماء.";
+  if(data.optBoolean("asr_recovery_incomplete",false))result.warning+=(result.warning.isEmpty()?"":"\n")+"تعذر إكمال فحص بعض الفواصل؛ احتُفظ بالتفريغ المتاح.";
   return result;
  }
  private static String text(JSONObject cue)throws Exception{Object raw=cue.get("text");if(!(raw instanceof String)||((String)raw).trim().isEmpty()||((String)raw).length()>1500)throw new IOException("نص Colab ناقص أو غير صالح");return ((String)raw).trim();}
