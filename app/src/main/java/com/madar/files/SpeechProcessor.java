@@ -5,7 +5,11 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.*;
 final class SpeechProcessor {
- static{System.loadLibrary("madar_audio");}
+ // Text-only helpers must not initialize the offline speech runtime.
+ private static final class NativeLibrary {
+  static {System.loadLibrary("madar_audio");}
+  static void ensureLoaded(){}
+ }
  private static native long open(String encoder,String decoder,String tokens,String language);
  private static native String[] recognize(long handle,float[] audio);
  private static native void close(long handle);
@@ -16,7 +20,7 @@ final class SpeechProcessor {
   return transcribe(c,input,language,quality,0,cancel,progress);
  }
  static JSONArray transcribe(Context c,File input,String language,String quality,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
-  if(!language.matches("auto|ar|en|ja|fr|de|es|zh"))throw new IOException("لغة غير مدعومة");AudioPipeline.Decoded decoded=null;long engine=0;
+  if(!language.matches("auto|ar|en|ja|fr|de|es|zh"))throw new IOException("لغة غير مدعومة");NativeLibrary.ensureLoaded();AudioPipeline.Decoded decoded=null;long engine=0;
   try{File[] models=!quality.equals("fast")?SpeechModels.get(c,quality,cancel,progress):new File[]{OfflineAssets.file(c,"tiny-encoder.int8.onnx"),OfflineAssets.file(c,"tiny-decoder.int8.onnx"),OfflineAssets.file(c,"tiny-tokens.txt")};decoded=AudioPipeline.decode(c,input,limitUs,cancel,progress);progress.update(10,"تحميل نموذج التفريغ وكاشف الكلام");File vocabulary=SpeechTokens.safeVocabulary(c,models[2]);engine=open(models[0].getPath(),models[1].getPath(),vocabulary.getPath(),language.equals("auto")?"":language);JSONArray cues=new JSONArray();long frames=decoded.pcm.length()/4;int chunk=20*16000;long total=Math.round(frames*16000.0/decoded.sampleRate);
    SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);
    try(RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r");SpeechActivity activity=new SpeechActivity(c)){
