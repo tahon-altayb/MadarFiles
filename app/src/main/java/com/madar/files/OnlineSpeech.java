@@ -93,7 +93,7 @@ final class OnlineSpeech {
    // Every overlapped phrase belongs to exactly one core by midpoint. Keep the complete phrase.
    double middle=offset+(start+end)/2;if(middle<coreStart||middle>=coreEnd)continue;
    JSONObject original=new JSONObject().put("start",mediaOffset+offset+start).put("end",mediaOffset+offset+Math.min(duration,end)).put("text",source).put("language",language);
-   String speaker=segment.optString("speaker","unknown");if(speaker.length()>80)throw new IOException("معرف متحدث أطول من الحد");original.put("speaker",speaker);
+   String speaker=segment.optString("speaker","unknown");if(speaker.length()>80)throw new IOException("معرف متحدث أطول من الحد");original.put("speaker",speaker.equals("unknown")?speaker:"audio-"+offset+"-"+speaker);
    out.original.put(original);out.translated.put(new JSONObject(original.toString()).put("text",target.equals("original")?source:text));
   }
   return out;

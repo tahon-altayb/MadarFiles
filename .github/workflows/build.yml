@@ -62,6 +62,8 @@ jobs:
           else:
               print('Firebase not configured: personal Gemini credentials remain available; managed transport stays disabled.')
           PYFIREBASE
+      - name: Compile Gemini integration before expensive model checks
+        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac
       - name: Restore processing build assets
         uses: actions/cache@v4
         with:
