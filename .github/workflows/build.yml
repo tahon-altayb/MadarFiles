@@ -48,19 +48,25 @@ jobs:
           if hashlib.sha256(cert).hexdigest()!=expected:
               raise SystemExit('Signing key is not the original update key; build stopped')
           PYKEY
-      - name: Load optional Firebase project configuration
+      - name: Load required Firebase project configuration
         env:
           MADAR_FIREBASE_CONFIG: ${{ secrets.MADAR_FIREBASE_CONFIG }}
         run: |
           python3 - <<'PYFIREBASE'
           import os,json,pathlib
           value=os.environ.get('MADAR_FIREBASE_CONFIG','').strip()
-          if value:
-              config=json.loads(value)
-              assert any(c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.madar.files' for c in config.get('client',[])), 'Firebase Android package mismatch'
-              pathlib.Path('app/google-services.json').write_text(value)
-          else:
-              print('Firebase not configured: personal Gemini credentials remain available; managed transport stays disabled.')
+          if not value:
+              raise SystemExit('MADAR_FIREBASE_CONFIG is required for this managed Gemini release')
+          config=json.loads(value)
+          assert config.get('project_info',{}).get('project_id')=='madar-2ab2e', 'Firebase project mismatch'
+          clients=[c for c in config.get('client',[]) if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.madar.files']
+          assert len(clients)==1, 'Firebase Android package mismatch'
+          assert clients[0].get('api_key',[{}])[0].get('current_key'), 'Firebase client key missing'
+          assert clients[0].get('client_info',{}).get('mobilesdk_app_id'), 'Firebase app ID missing'
+          dest=pathlib.Path('app/google-services.json')
+          dest.write_text(value)
+          dest.chmod(0o600)
+          print('Verified Firebase project and Android client configuration; values withheld.')
           PYFIREBASE
       - name: Compile Gemini integration before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac
@@ -136,9 +142,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 23 --version-name 1.4.18
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 24 --version-name 1.4.19 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.18.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.19.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -186,8 +192,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.4.18-APK
-          path: MadarFiles-1.4.18.apk
+          name: MadarFiles-1.4.19-APK
+          path: MadarFiles-1.4.19.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
@@ -202,5 +208,5 @@ jobs:
             app/src/main/assets/models/checksums.json
       - name: Remove temporary signing material
         if: always()
-        run: rm -f .signing/madar-development.keystore
+        run: rm -f .signing/madar-development.keystore app/google-services.json
 
