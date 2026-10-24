@@ -51,7 +51,7 @@ final class TextProcessor {
   StringBuilder body=new StringBuilder();String[] pages=text.split("\\f",-1);
   for(int page=0;page<pages.length;page++){
    if(page>0)body.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
-   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"right\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr>");java.util.regex.Matcher latin=java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9 \\t.,:/%+\\-]*").matcher(line);int at=0;while(latin.find()){if(latin.start()>at)wordRun(body,line.substring(at,latin.start()),rtl);wordRun(body,latin.group(),false);at=latin.end();}if(at<line.length())wordRun(body,line.substring(at),rtl);if(line.isEmpty())wordRun(body,"",rtl);body.append("</w:p>");}
+   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"left\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr>");java.util.regex.Matcher latin=java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9 \\t.,:/%+\\-]*").matcher(line);int at=0;while(latin.find()){if(latin.start()>at)wordRun(body,line.substring(at,latin.start()),rtl);wordRun(body,latin.group(),false);at=latin.end();}if(at<line.length())wordRun(body,line.substring(at),rtl);if(line.isEmpty())wordRun(body,"",rtl);body.append("</w:p>");}
 
   }
   try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(output))){
