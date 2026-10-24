@@ -44,7 +44,7 @@ final class ArabicOcr implements AutoCloseable {
   // the middle of a large highlighted heading or treats vowel marks as words.
   for(Rect box:printedRows(original)){
    boolean overlaps=false;for(Line line:lines)if(sameRow(line.box,box)){overlaps=true;break;}if(!overlaps)continue;
-   Bitmap crop=Bitmap.createBitmap(original,box.left,box.top,box.width(),box.height());try{Line candidate=recognize(crop,box);if(candidate.confidence>=.5f&&!candidate.text.isBlank()){
+   Bitmap crop=Bitmap.createBitmap(original,box.left,box.top,box.width(),box.height());try{Line candidate=recognize(crop,box);if(candidate.confidence>=.5f&&!candidate.text.trim().isEmpty()){
     List<Line> row=new ArrayList<>();for(Line old:lines)if(sameRow(old.box,box)||box.contains(old.box)&&old.box.height()<box.height()*.55)row.add(old);
     int count=0;double score=0;for(Line old:row){count+=old.text.length();score+=old.confidence*old.text.length();}
     // Confidence alone must not let a short fragment erase a complete line.
