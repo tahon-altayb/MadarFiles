@@ -13,16 +13,19 @@
  function apply(plan){
   if(plan.tool==='ask'){line(plan.message);return;}
   if(state.busy||!selected||state.source!==selected)return line('اختر الملف ثم أرسل الطلب من جديد.');
-  if(!(catalog[state.kind]||[]).some(t=>t[0]===plan.tool))return line('الأداة المقترحة غير متاحة لهذا الملف.');
+  const videoAlias=state.kind==='video'&&['trim','sound'].includes(plan.tool);
+  if(!(catalog[state.kind]||[]).some(t=>t[0]===(videoAlias?'editor':plan.tool)))return line('الأداة المقترحة غير متاحة لهذا الملف.');
   panel.hidden=true;openTool(plan.tool);
   if(['player','imageBatch','mergePdf','imagesPdf'].includes(plan.tool)){line('فُتحت الأداة. أكمل اختيار الملفات عند طلبها.');return;}
   const blocked=new Set(['onlineAudioConsent','onlineTextConsent','geminiPlanApproved','pdfPassword','pdfPasswordConfirm']);
-  const changes=[];for(const f of plan.fields||[]){const el=$(f.name);if(blocked.has(f.name)||!el||!$('form').contains(el)||!['INPUT','SELECT'].includes(el.tagName)){line('احتاج إعدادًا غير متاح؛ راجع الأداة المفتوحة.');return;}const value=String(f.value);if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===value)){line('القيمة المقترحة غير مدعومة؛ اخترها من الأداة.');return;}if(['number','range'].includes(el.type)&&(!Number.isFinite(Number(value))||el.min!==''&&Number(value)<Number(el.min)||el.max!==''&&Number(value)>Number(el.max))){line('القيمة خارج حدود الأداة؛ راجع الإعدادات.');return;}changes.push([el,value]);}
+  const changes=[];for(const f of plan.fields||[]){const id=videoAlias&&plan.tool==='trim'?({start:'rangeStart',end:'rangeEnd'}[f.name]||f.name):f.name==='volume'?'gain':f.name;const el=$(id);if(blocked.has(f.name)||!el||!$('form').contains(el)||!['INPUT','SELECT'].includes(el.tagName)){line('احتاج إعدادًا غير متاح؛ راجع الأداة المفتوحة.');return;}const value=String(f.value);if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===value)){line('القيمة المقترحة غير مدعومة؛ اخترها من الأداة.');return;}if(['number','range'].includes(el.type)&&(!Number.isFinite(Number(value))||el.min!==''&&Number(value)<Number(el.min)||el.max!==''&&Number(value)>Number(el.max))){line('القيمة خارج حدود الأداة؛ راجع الإعدادات.');return;}changes.push([el,value]);}
   for(const [el,value] of changes){el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
   line('جهّزت أداة '+(titles[plan.tool]||plan.tool)+'.');
   const names=new Set((plan.fields||[]).map(f=>f.name));
+  const trimReady=videoAlias&&plan.tool==='trim'&&names.has('start')&&names.has('end');
+  if(trimReady){const start=Number($('rangeStart').value),end=Number($('rangeEnd').value);if(end<=start)return line('نهاية القص يجب أن تأتي بعد بدايته.');editSave();state.segments=[[start,end]];state.selectedClip=0;state.playClip=null;drawSegments();}
   const online=$('translationMode')?.value!=='local'&&plan.tool==='subtitles'||$('musicMode')?.value==='colab'&&plan.tool==='music';
-  const interactive=['crop','editor','sound','pages','protectPdf','preview'].includes(plan.tool)||plan.tool==='trim'&&(!names.has('start')||!names.has('end'))||plan.tool==='resize'&&!names.has(state.kind==='image'?'width':'height');
+  const interactive=state.tool==='editor'&&!trimReady||['crop','sound','pages','protectPdf','preview'].includes(plan.tool)||plan.tool==='trim'&&(!names.has('start')||!names.has('end'))||plan.tool==='resize'&&!names.has(state.kind==='image'?'width':'height');
   if(online||interactive){line(online?'الأداة جاهزة؛ راجع الخدمة وفعّل موافقة إرسال البيانات فيها.':'الأداة جاهزة؛ أكمل الحدود أو الإعدادات المطلوبة.');return;}
   const invalid=[...$('form').querySelectorAll('input,select')].some(el=>!el.checkValidity());if(invalid)return line('راجع القيم المطلوبة في الأداة.');runExport();
  }
