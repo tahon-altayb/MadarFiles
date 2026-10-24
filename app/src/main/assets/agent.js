@@ -11,7 +11,7 @@
  $('agentRemoveModel').onclick=()=>native('agentRemoveModel');
  $('agentLearn').onchange=()=>native('agentLearning',{enabled:$('agentLearn').checked});
  $('agentForget').onclick=()=>{native('agentForget');line('مُسحت تفضيلات المساعد المحفوظة.');};
- $('agentForm').onsubmit=e=>{e.preventDefault();if(pending||state.busy)return;if(!ready)return line('نزّل نموذج المساعد أولًا.');const text=input.value.trim();if(!text)return;line(text,'user');input.value='';selected=state.source;token++;busy(true);native('agentPlan',{token,text,conversation:conversation.slice(0,-1)});};
+ $('agentForm').onsubmit=e=>{e.preventDefault();if(pending||state.busy)return;if(!ready)return line('نزّل نموذج المساعد أولًا.');const text=input.value.trim();if(!text)return;line(text,'user');input.value='';selected=state.source;token++;busy(true);native('agentPlan',{token,text,conversation:conversation.slice(0,-1),currentTool:state.tool||'',editedDuration:state.tool==='editor'?editDuration():0});};
  function apply(plan){
   if(plan.tool==='ask'||plan.tool==='chat'){line(plan.message);return;}
   if(plan.tool==='history'){panel.hidden=true;document.querySelector('.recent').scrollIntoView({behavior:'smooth'});native('history');line('هذه نتائج مدار الأخيرة؛ يمكنك فتحها أو حذفها.');return;}
@@ -19,7 +19,7 @@
   if(state.busy||!selected||state.source!==selected)return line('اختر الملف ثم أرسل الطلب من جديد.');
   const videoAlias=state.kind==='video'&&['trim','sound'].includes(plan.tool);
   if(!(catalog[state.kind]||[]).some(t=>t[0]===(videoAlias?'editor':plan.tool)))return line('الأداة المقترحة غير متاحة لهذا الملف.');
-  panel.hidden=true;openTool(plan.tool);
+  panel.hidden=true;const reuseEditor=videoAlias&&state.tool==='editor'&&!$('sheet').hidden;if(!reuseEditor)openTool(plan.tool);
   if(['player','imageBatch','mergePdf','imagesPdf'].includes(plan.tool)){line('فُتحت الأداة. أكمل اختيار الملفات عند طلبها.');return;}
   const blocked=new Set(['onlineAudioConsent','onlineTextConsent','geminiPlanApproved','onlineDocumentConsent','documentPlanApproved','pdfPassword','pdfPasswordConfirm']);
   const changes=[];for(const f of plan.fields||[]){const id=videoAlias&&plan.tool==='trim'?({start:'rangeStart',end:'rangeEnd'}[f.name]||f.name):f.name==='volume'?'gain':f.name;const el=$(id);if(blocked.has(f.name)||!el||!$('form').contains(el)||!['INPUT','SELECT'].includes(el.tagName)){line('احتاج إعدادًا غير متاح؛ راجع الأداة المفتوحة.');return;}const value=String(f.value);if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===value)){line('القيمة المقترحة غير مدعومة؛ اخترها من الأداة.');return;}if(['number','range'].includes(el.type)&&(!Number.isFinite(Number(value))||el.min!==''&&Number(value)<Number(el.min)||el.max!==''&&Number(value)>Number(el.max))){line('القيمة خارج حدود الأداة؛ راجع الإعدادات.');return;}changes.push([el,value]);}
