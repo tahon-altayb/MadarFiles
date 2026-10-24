@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class LocalAgentRuntimeTest {
- @Test(timeout=600000) public void realAndroidModelSelectsToolsAndExplicitFormat()throws Exception{
+ @Test(timeout=600000) public void nativeAssistantCombinesInferenceWithExplicitDocumentIntent()throws Exception{
   Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();LocalAgent agent=new LocalAgent();AtomicBoolean cancel=new AtomicBoolean();
   try{agent.install(c,cancel,(p,m)->{});assertEquals(LocalAgent.MODEL_SHA,LocalAgent.digest(LocalAgent.model(c)));
    JSONObject convert=agent.plan(c,"ابي احول هالصورة لصيغة png",new JSONObject().put("kind","image").put("width",800).put("height",600),cancel);assertEquals("convert",convert.getString("tool"));boolean png=false;JSONArray fields=convert.getJSONArray("fields");for(int i=0;i<fields.length();i++)if(fields.getJSONObject(i).getString("name").equals("format"))png=fields.getJSONObject(i).getString("value").equals("png");assertTrue("Explicit PNG format must survive inference",png);
