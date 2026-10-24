@@ -1,4 +1,14 @@
 plugins { id 'com.android.application' }
+// Optional project configuration; never a Gemini API credential.
+def firebaseConfig = file('google-services.json')
+def firebaseClient = null
+def firebaseProject = null
+if (firebaseConfig.isFile()) {
+    def config = new groovy.json.JsonSlurper().parse(firebaseConfig)
+    firebaseClient = config.client.find { it.client_info.android_client_info.package_name == 'com.madar.files' }
+    if (!firebaseClient) throw new GradleException('Firebase config has no com.madar.files Android client')
+    firebaseProject = config.project_info
+}
 def validationBuild = providers.gradleProperty('validationBuild').orNull == 'true'
 android {
     namespace 'com.madar.files'
@@ -12,9 +22,15 @@ android {
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         if (!validationBuild) { externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_shared' } } }
         targetSdk 35
-        versionCode 6
-        versionName '1.4.1'
+        versionCode 27
+        versionName '1.4.22'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        if (firebaseClient != null && !validationBuild) {
+            resValue 'string', 'google_app_id', firebaseClient.client_info.mobilesdk_app_id
+            resValue 'string', 'google_api_key', firebaseClient.api_key[0].current_key
+            resValue 'string', 'project_id', firebaseProject.project_id
+            resValue 'string', 'gcm_defaultSenderId', firebaseProject.project_number
+        }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     packaging { jniLibs { pickFirsts += ["**/libc++_shared.so"] } }
@@ -29,6 +45,12 @@ android {
     lint { abortOnError true }
 }
 dependencies {
+    implementation 'com.google.ai.edge.litertlm:litertlm-android:0.18.1'
+    implementation platform('com.google.firebase:firebase-bom:35.0.2')
+    implementation 'com.google.firebase:firebase-ai'
+    implementation 'com.google.firebase:firebase-appcheck-playintegrity'
+    implementation 'com.google.guava:guava:31.0.1-android'
+    implementation 'org.reactivestreams:reactive-streams:1.0.4'
     implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
     implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
     implementation 'androidx.core:core:1.15.0'
@@ -36,9 +58,13 @@ dependencies {
     implementation 'androidx.media3:media3-effect:1.5.1'
     implementation 'androidx.media3:media3-exoplayer:1.5.1'
     implementation 'androidx.media3:media3-ui:1.5.1'
+    implementation 'com.google.android.gms:play-services-auth:22.0.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.google.mlkit:translate:17.0.3'
     implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta6'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
+

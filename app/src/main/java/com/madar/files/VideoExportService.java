@@ -9,6 +9,7 @@ import androidx.media3.common.*;
 import androidx.media3.effect.Presentation;
 import androidx.media3.transformer.*;
 import org.json.JSONObject;
+import org.json.JSONArray;
 import java.io.File;
 import java.util.*;
 
@@ -45,7 +46,7 @@ public class VideoExportService extends Service {
             long duration=intent.getLongExtra("duration",0);if(duration<=0)throw new IllegalArgumentException("مدة الفيديو غير معروفة");
             if(tool.equals("trim")&&o.optString("cutMode").equals("copy")){startCopyTrim(input,o);return START_NOT_STICKY;}
             if(tool.equals("convert")&&o.optString("format").matches("mkv|mov|webm")){startContainer(input,o);return START_NOT_STICKY;}
-            if(tool.equals("subtitles")){startSpeech(input,o);return START_NOT_STICKY;}
+            if(tool.equals("subtitles")||tool.equals("translateReviewed")){startSpeech(input,o);return START_NOT_STICKY;}
             if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
             if(tool.equals("music")){startMusic(input,o);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));if(previewDraft)media.setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0).setEndPositionMs(Math.min(duration,10000)).build());
@@ -86,8 +87,36 @@ public class VideoExportService extends Service {
     }
     private void startSpeech(File input,JSONObject options)throws Exception{
         cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:Speech");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);
-        MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
-        musicWorker=new Thread(()->{try{String language=options.optString("language","en"),target=options.optString("target","original");org.json.JSONArray cues=SpeechProcessor.transcribe(this,input,language,options.optString("speechQuality","maximum"),options.optBoolean("speechSample")?30000000L:0,musicCancel,(p,m)->callback.update(target.equals("original")?p:p*65/100,m));if(cues.length()==0)throw new java.io.IOException("لم يُعثر على كلام واضح؛ جرّب صوتًا أوضح ولغة صحيحة");org.json.JSONArray originalCues=new org.json.JSONArray(cues.toString());if(!target.equals("original"))cues=LocalTranslation.translate(cues,language,target,musicCancel,(p,m)->callback.update(65+p*33/100,m));MusicSeparator.check(musicCancel);File f=SpeechProcessor.srt(this,cues);JSONObject data=FilesUtil.info(f).put("type","subtitles").put("cues",cues).put("originalCues",originalCues).put("language",language).put("target",target);handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});}catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر التفريغ أو الترجمة: "+(e instanceof OutOfMemoryError?"الذاكرة لا تكفي؛ اختر النموذج المتوازن أو السريع":e.getMessage()==null?"تحقق من توفر نموذج اللغة والمساحة":e.getMessage()));});}},"madar-speech");musicWorker.start();
+        final String[] audioWarning={""};
+        MusicSeparator.Progress callback=(percent,message)->{if(message.equals(SpeechAudio.FALLBACK))audioWarning[0]=message;handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});};
+        musicWorker=new Thread(()->{try{
+            String language=options.optString("language","auto"),target=options.optString("target","original"),mode=options.optString("translationMode","local"),names=options.optString("subtitleNames","");
+            new SubtitleNames(names);long limit=options.optBoolean("speechSample")?30000000L:0;
+            JSONArray suggestions=new JSONArray();JSONArray cues,originalCues;String resultTarget=target,translationWarning="";
+            if(mode.equals("colab")&&options.optString("tool").equals("translateReviewed")){
+                if(!options.optBoolean("onlineTextConsent"))throw new java.io.IOException("وافق على إرسال النص إلى Colab أولًا");
+                ColabSpeech.Result result=ColabSpeech.translateText(this,options.getJSONArray("cues"),language,target,names,ColabCredentials.take(),musicCancel,callback);originalCues=result.original;cues=result.translated;resultTarget=result.target;translationWarning=result.warning;
+            }else if(mode.equals("colab")){
+                if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");
+                ColabSpeech.Result result=ColabSpeech.run(this,input,language,target,names,limit,options.optString("separateSpeechMusic","false").equals("true"),ColabCredentials.take(),musicCancel,callback);originalCues=result.original;cues=result.translated;resultTarget=result.target;translationWarning=result.warning;
+            }else if(mode.equals("online")){
+                if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("فعّل إرسال الصوت لخدمة Gemini في شاشة التفريغ أولًا");
+                OnlineSpeech.Result result=OnlineSpeech.transcribe(this,input,language,target,names,options.optString("subtitleContext",""),limit,options.optString("separateSpeechMusic","false").equals("true"),!options.optString("geminiReview","false").equals("false"),musicCancel,callback);
+                originalCues=result.original;cues=result.translated;suggestions=result.suggestions;translationWarning=result.warning;
+            }else{
+                TranslationEngine.preflight(this,mode);
+                cues=SpeechProcessor.transcribe(this,input,language,options.optString("speechQuality","maximum"),limit,options.optString("separateSpeechMusic","false").equals("true"),musicCancel,(p,m)->callback.update(target.equals("original")?p:p*65/100,m));
+                originalCues=new JSONArray(cues.toString());
+                if(!target.equals("original")){try{cues=TranslationEngine.translate(this,cues,language,target,mode,names,musicCancel,(p,m)->callback.update(65+p*33/100,m));}
+                catch(java.util.concurrent.CancellationException e){throw e;}catch(Exception e){cues=originalCues;resultTarget="original";translationWarning="تعذرت الترجمة؛ حُفظ التفريغ الأصلي ويمكن إعادة ترجمته. "+(e.getMessage()==null?"راجع الإعدادات":e.getMessage());}}
+            }
+            if(!audioWarning[0].isEmpty())translationWarning+=(translationWarning.isEmpty()?"":"\n")+audioWarning[0];
+            if(cues.length()==0)throw new java.io.IOException("لم يُعثر على كلام واضح؛ جرّب تعطيل فصل الموسيقى واختر لغة المقطع الصحيحة");
+            MusicSeparator.check(musicCancel);File f=SpeechProcessor.srt(this,cues);
+            JSONObject data=FilesUtil.info(f).put("type","subtitles").put("cues",cues).put("originalCues",originalCues).put("language",SpeechProcessor.language(originalCues,language)).put("target",resultTarget).put("warning",translationWarning).put("nameSuggestions",suggestions).put("subtitleNames",names).put("subtitleContext",options.optString("subtitleContext","")).put("reviewed",options.optString("tool").equals("translateReviewed"));
+            handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});
+        }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
+        catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر التفريغ أو الترجمة: "+(e instanceof OutOfMemoryError?"الذاكرة لا تكفي؛ اختر النموذج المتوازن أو السريع":options.optString("translationMode").equals("colab")&&!(e instanceof java.io.IOException)?"استجابة Colab غير مكتملة؛ أرسل آخر مرحلة ظهرت للمراجعة":e.getMessage()==null?"تحقق من توفر النموذج والمساحة":e.getMessage()));});}},"madar-speech");musicWorker.start();
     }
     private void startSound(File input,JSONObject options)throws Exception{
         cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:AudioEdit");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);
@@ -102,8 +131,8 @@ public class VideoExportService extends Service {
         MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
         musicWorker=new Thread(()->{
             AudioPipeline.Decoded decoded=null;File clean=null;
-            try{decoded=AudioPipeline.decode(this,input,limitUs,musicCancel,callback);clean=MusicSeparator.separate(this,decoded,musicCancel,callback);MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,decoded.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
-                if(!partial.renameTo(output))throw new java.io.IOException("تعذر حفظ النتيجة");JSONObject result=FilesUtil.info(output).put("type","result");handler.post(()->{if(!terminal){publish(result);musicWorker=null;finish("done",null);}});
+            try{decoded=AudioPipeline.decode(this,input,limitUs,musicCancel,callback);String warning="";if(options.optString("musicMode").equals("colab")){if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");ColabMusic.Result cloud=ColabMusic.run(this,decoded,ColabCredentials.take(),musicCancel,callback);clean=cloud.pcm;warning=cloud.warning;}else clean=MusicSeparator.separate(this,decoded,musicCancel,callback);MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,decoded.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
+                if(!partial.renameTo(output))throw new java.io.IOException("تعذر حفظ النتيجة");JSONObject result=FilesUtil.info(output).put("type","result").put("warning",warning);handler.post(()->{if(!terminal){publish(result);musicWorker=null;finish("done",null);}});
             }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
             catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر فصل الموسيقى. "+(e.getMessage()==null?"جرّب عينة أقصر وتأكد من المساحة المتاحة.":e.getMessage()));});}
             finally{if(decoded!=null)decoded.pcm.delete();if(clean!=null)clean.delete();}
@@ -119,3 +148,4 @@ public class VideoExportService extends Service {
     @Override public void onDestroy(){if(active&&!terminal)finish("error","توقفت معالجة الفيديو");super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 }
+

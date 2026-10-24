@@ -1,0 +1,22 @@
+package com.madar.files;
+import org.json.*;
+import java.io.IOException;
+import java.util.*;
+final class AgentTools {
+ static final String FIELDS="format quality width height start end first last angle ratio targetKb compression ocrLanguage language target translationMode musicMode musicOutput separateSpeechMusic geminiReview cutBackground cutModel pdfTextMode bitrate color padding radius flip brightness contrast saturation speed volume fadeIn fadeOut scope documentMode";
+ static List<String> tools(String kind){String names;switch(kind){case "image":names="convert crop compress resize background rotate ocr imageBatch targetImage removebg adjust flip";break;case "video":names="convert trim compress resize mute audio music subtitles editor sound player";break;case "audio":names="subtitles convert trim sound music player";break;case "pdf":names="convert extract preview text word mergePdf imagesPdf protectPdf compressPdf layoutWord pages";break;default:names="";}List<String> out=new ArrayList<>(Arrays.asList(names.split(" ")));out.remove("");out.addAll(Arrays.asList("ask","chat","history","deleteRecent"));return out;}
+ /** Clear document commands should not depend on a small model guessing a tool name. */
+ static JSONObject explicitDocument(String user,String kind)throws Exception{
+  if(!kind.equals("pdf"))return null;
+  String text=java.text.Normalizer.normalize(user,java.text.Normalizer.Form.NFKC).toLowerCase(Locale.ROOT).replaceAll("[\\u064b-\\u065f\\u0670]","").replaceAll("[أإآ]","ا").trim();
+  if(text.matches("(?s).*[\\p{N}].*")||text.matches("(?s).*(كيف|لماذا|ليش|وش|ماهو|ماهي|هل|اشرح|شرح|تعريف|معنى|طريقة|طريقه|اعرف|فائده|الفرق|بدون|بعدين|بعدها|ثم|ترجم|ترجمه|translate|rotate|احذف|امسح|ادمج|merge|delete|قص|split|png|jpg|جيميناي|gemini|colab|كولاب).*"))return null;
+  if(java.util.regex.Pattern.compile("(?:^|\\s)(?:لا|لات|مو|ليس|not|dont|don't)(?:\\s|$)|(?:^|\\s)لا\\s*(?:تحول|تغير|تسوي)|ما\\s*(?:ابي|ابغ|اريد)").matcher(text).find())return null;
+  if(!java.util.regex.Pattern.compile("(?<![\\p{L}])(?:للو?ورد|لو?ورد|وورد|word|docx)(?![\\p{L}])").matcher(text).find())return null;
+  boolean action=java.util.regex.Pattern.compile("حول|تحويل|خلي|ابغ|ابي|اريد|سوي|جهز|اجعل|انشئ|صدر|convert|make|export").matcher(text).find()||text.matches("^(?:وورد|word|docx)(?:\\s.*)?$");if(!action)return null;
+  String tool=java.util.regex.Pattern.compile("نص فقط|النص فقط|نص عادي|plain text|text only").matcher(text).find()?"word":"layoutWord";
+  return new JSONObject().put("tool",tool).put("fields",new JSONArray()).put("message","");
+ }
+ static JSONObject schema(String kind)throws JSONException {return new JSONObject().put("type","object").put("properties",new JSONObject().put("tool",new JSONObject().put("type","string").put("enum",new JSONArray(tools(kind)))).put("fields",new JSONObject().put("type","array").put("items",new JSONObject().put("type","object").put("properties",new JSONObject().put("name",new JSONObject().put("type","string").put("enum",new JSONArray(Arrays.asList(FIELDS.split(" "))))).put("value",new JSONObject().put("type","string"))).put("required",new JSONArray(Arrays.asList("name","value"))).put("additionalProperties",false))).put("message",new JSONObject().put("type","string"))).put("required",new JSONArray(Arrays.asList("tool","fields","message"))).put("additionalProperties",false);}
+ static JSONObject validate(JSONObject plan,String kind)throws Exception {if(!tools(kind).contains(plan.getString("tool")))throw new IOException("اقترح المساعد أداة غير متاحة لهذا الملف");String message=plan.getString("message");if(message.length()>1000)throw new IOException("رد المساعد أطول من الحد");JSONArray fields=plan.getJSONArray("fields");if(fields.length()>12)throw new IOException("إعدادات المساعد كثيرة؛ اطلب عملية واحدة");Set<String> seen=new HashSet<>();for(int i=0;i<fields.length();i++){JSONObject f=fields.getJSONObject(i);String name=f.getString("name"),value=f.getString("value");if(!Arrays.asList(FIELDS.split(" ")).contains(name)||!seen.add(name)||value.length()>100||value.matches("(?s).*[\\p{Cntrl}].*"))throw new IOException("إعداد مقترح غير صالح");}if(Arrays.asList("ask","chat","history").contains(plan.getString("tool"))&&fields.length()!=0)throw new IOException("هذا الرد لا يحتاج إعدادات");
+ if(plan.getString("tool").equals("deleteRecent")){for(int i=0;i<fields.length();i++){JSONObject field=fields.getJSONObject(i);if(!field.getString("name").equals("scope")||!Arrays.asList("latest","all").contains(field.getString("value")))throw new IOException("نطاق حذف غير صالح");}}return plan;}
+}
