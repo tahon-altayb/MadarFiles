@@ -12,7 +12,7 @@ public class AssistantConversationTest {
  @Test public void explicitDocumentCommandsHaveStableRoutesAndQuestionsNeverExecute()throws Exception{
   for(String request:new String[]{"حول الملف إلى وورد مع تنسيقه","ابي docx يحافظ على الجداول","convert this PDF to Word","صدر وورد قابل للتحرير","وورد بنفس التخطيط"})assertEquals(request,"layoutWord",AgentTools.explicitDocument(request,"pdf").getString("tool"));
   assertEquals("word",AgentTools.explicitDocument("حول النص فقط إلى وورد","pdf").getString("tool"));
-  for(String request:new String[]{"لا تحول الملف لوورد","لاتحول الملف لوورد","كيف احول الملف لوورد؟","هل تحويل الملف لوورد يحذف النص؟","ترجم الملف ثم حوله لوورد","حوله وورد من الصفحة 2","حوله وورد بجيميناي","حوّل الورد إلى صورة"})assertNull(request,AgentTools.explicitDocument(request,"pdf"));
+  for(String request:new String[]{"اشرح لي تحويل الملف لوورد","ابي اعرف طريقة تحويل الملف لوورد","لا تحول الملف لوورد","لاتحول الملف لوورد","كيف احول الملف لوورد؟","هل تحويل الملف لوورد يحذف النص؟","ترجم الملف ثم حوله لوورد","حوله وورد من الصفحة 2","حوله وورد بجيميناي","حوّل الورد إلى صورة"})assertNull(request,AgentTools.explicitDocument(request,"pdf"));
   assertNull(AgentTools.explicitDocument("حوله وورد","image"));
  }
 }

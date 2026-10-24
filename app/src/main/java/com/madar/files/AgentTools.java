@@ -9,7 +9,7 @@ final class AgentTools {
  static JSONObject explicitDocument(String user,String kind)throws Exception{
   if(!kind.equals("pdf"))return null;
   String text=java.text.Normalizer.normalize(user,java.text.Normalizer.Form.NFKC).toLowerCase(Locale.ROOT).replaceAll("[\\u064b-\\u065f\\u0670]","").replaceAll("[أإآ]","ا").trim();
-  if(text.matches("(?s).*[\\p{N}].*")||text.matches("(?s).*(كيف|لماذا|ليش|وش|ماهو|ماهي|هل|بدون|بعدين|بعدها|ثم|ترجم|ترجمه|translate|rotate|احذف|امسح|ادمج|merge|delete|قص|split|png|jpg|جيميناي|gemini|colab|كولاب).*"))return null;
+  if(text.matches("(?s).*[\\p{N}].*")||text.matches("(?s).*(كيف|لماذا|ليش|وش|ماهو|ماهي|هل|اشرح|شرح|تعريف|معنى|طريقة|طريقه|اعرف|فائده|الفرق|بدون|بعدين|بعدها|ثم|ترجم|ترجمه|translate|rotate|احذف|امسح|ادمج|merge|delete|قص|split|png|jpg|جيميناي|gemini|colab|كولاب).*"))return null;
   if(java.util.regex.Pattern.compile("(?:^|\\s)(?:لا|لات|مو|ليس|not|dont|don't)(?:\\s|$)|(?:^|\\s)لا\\s*(?:تحول|تغير|تسوي)|ما\\s*(?:ابي|ابغ|اريد)").matcher(text).find())return null;
   if(!java.util.regex.Pattern.compile("(?<![\\p{L}])(?:للو?ورد|لو?ورد|وورد|word|docx)(?![\\p{L}])").matcher(text).find())return null;
   boolean action=java.util.regex.Pattern.compile("حول|تحويل|خلي|ابغ|ابي|اريد|سوي|جهز|اجعل|انشئ|صدر|convert|make|export").matcher(text).find()||text.matches("^(?:وورد|word|docx)(?:\\s.*)?$");if(!action)return null;
