@@ -157,15 +157,23 @@ public class MainActivity extends Activity {
     private void export(JSONObject o)throws Exception{
         if(isBusy())return;mediaProxy.stopPreparing();File input=source;JSONObject info=sourceInfo;if(input==null||info==null)throw new IOException("اختر الملف أولًا");
         String kind=info.getString("kind");if(!kind.equals(o.getString("kind")))throw new IOException("نوع الملف لا يطابق الأداة");
+        if(o.optString("tool").equals("subtitles")&&o.optString("translationMode").equals("online")&&!o.optBoolean("geminiPlanApproved")){
+            long millis=o.optBoolean("speechSample")?Math.min(30000,info.optLong("duration",30000)):info.optLong("duration");
+            if(millis<=0)throw new IOException("تعذر تحديد مدة المقطع لحساب الطلبات");
+            int requests=GeminiPlan.requests(Math.max(1,millis*16),!o.optString("geminiReview","false").equals("false"));
+            new android.app.AlertDialog.Builder(this).setTitle("عدد طلبات Gemini").setMessage("هذه المعالجة تحتاج حتى "+requests+" طلبًا قبل احتساب الأجزاء المحفوظة. التفريغ والترجمة يرجعان معًا.\nقد تختلف الخطة عند اختلاف مدة الصوت الفعلية. المراجعة الثانية تضاعف الطلبات عند تفعيلها.\nعند توقف الخدمة، أعد التشغيل بنفس الخيارات لاستعادة الأجزاء المكتملة.")
+              .setPositiveButton("بدء",(d,w)->{try{o.put("geminiPlanApproved",true);export(o);}catch(Exception e){error(message(e));}}).setNegativeButton("رجوع",(d,w)->event("cancelled",null,null)).setOnCancelListener(d->event("cancelled",null,null)).show();return;
+        }
         if(kind.equals("video")||kind.equals("audio")){
             if((o.optString("tool").equals("audio")||o.optString("tool").equals("music"))&&!info.optBoolean("hasAudio"))throw new IOException("الفيديو لا يحتوي على صوت");
-            if(o.optString("tool").equals("music")&&!o.optBoolean("sample",false)&&(info.optLong("duration",0)<=0||info.optLong("duration",0)>60000))throw new IOException("الفصل المحلي متاح حتى دقيقة واحدة. للمقاطع الأطول استخدم Colab يدويًا؛ الربط السحابي غير متاح بعد.");
-            if((o.optString("tool").equals("subtitles")||o.optString("tool").equals("translateReviewed"))&&o.optString("translationMode").equals("colab")){
+            boolean cloudMusic=o.optString("tool").equals("music")&&o.optString("musicMode").equals("colab");
+            if(o.optString("tool").equals("music")&&!cloudMusic&&!o.optBoolean("sample",false)&&(info.optLong("duration",0)<=0||info.optLong("duration",0)>60000))throw new IOException("الفصل المحلي متاح حتى دقيقة؛ اختر الفصل السحابي للمقاطع الأطول.");
+            if(cloudMusic||(o.optString("tool").equals("subtitles")||o.optString("tool").equals("translateReviewed"))&&o.optString("translationMode").equals("colab")){
                 boolean textOnly=o.optString("tool").equals("translateReviewed");
                 if(textOnly){if(!o.optBoolean("onlineTextConsent"))throw new IOException("وافق على إرسال النص إلى Colab أولًا");ColabSpeech.validateText(o.getJSONArray("cues"),o.getString("language"),o.getString("target"));}
                 if(!textOnly&&!o.optBoolean("onlineAudioConsent"))throw new IOException("وافق على رفع الصوت إلى Colab أولًا");
-                if(!textOnly&&!o.optBoolean("speechSample")&&info.optLong("duration")>600000)throw new IOException("تجربة Colab متاحة حتى 10 دقائق؛ ابدأ بعينة 30 ثانية");
-                if(!ColabCredentials.ready()){pendingColab=new JSONObject(o.toString());pendingColabSource=input.getAbsolutePath();working=true;startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("textOnly",textOnly),7202);return;}
+                if(!textOnly&&!o.optBoolean("speechSample")&&!o.optBoolean("sample")&&info.optLong("duration")>600000)throw new IOException("معالجة Colab متاحة حتى 10 دقائق؛ ابدأ بعينة قصيرة");
+                if(!ColabCredentials.ready()){pendingColab=new JSONObject(o.toString());pendingColabSource=input.getAbsolutePath();working=true;startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("textOnly",textOnly).putExtra("musicOnly",cloudMusic),7202);return;}
             }
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
             Intent service=new Intent(this,VideoExportService.class).putExtra("input",input.getAbsolutePath()).putExtra("options",o.toString()).putExtra("duration",info.getLong("duration")).putExtra("height",info.optInt("height",0));startForegroundService(service);

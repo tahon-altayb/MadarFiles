@@ -101,7 +101,7 @@ public class VideoExportService extends Service {
                 ColabSpeech.Result result=ColabSpeech.run(this,input,language,target,names,limit,options.optString("separateSpeechMusic","false").equals("true"),ColabCredentials.take(),musicCancel,callback);originalCues=result.original;cues=result.translated;resultTarget=result.target;translationWarning=result.warning;
             }else if(mode.equals("online")){
                 if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("فعّل إرسال الصوت لخدمة Gemini في شاشة التفريغ أولًا");
-                OnlineSpeech.Result result=OnlineSpeech.transcribe(this,input,language,target,names,options.optString("subtitleContext",""),limit,options.optString("separateSpeechMusic","false").equals("true"),!options.optString("geminiReview","true").equals("false"),musicCancel,callback);
+                OnlineSpeech.Result result=OnlineSpeech.transcribe(this,input,language,target,names,options.optString("subtitleContext",""),limit,options.optString("separateSpeechMusic","false").equals("true"),!options.optString("geminiReview","false").equals("false"),musicCancel,callback);
                 originalCues=result.original;cues=result.translated;suggestions=result.suggestions;translationWarning=result.warning;
             }else{
                 TranslationEngine.preflight(this,mode);
@@ -131,8 +131,8 @@ public class VideoExportService extends Service {
         MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
         musicWorker=new Thread(()->{
             AudioPipeline.Decoded decoded=null;File clean=null;
-            try{decoded=AudioPipeline.decode(this,input,limitUs,musicCancel,callback);clean=MusicSeparator.separate(this,decoded,musicCancel,callback);MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,decoded.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
-                if(!partial.renameTo(output))throw new java.io.IOException("تعذر حفظ النتيجة");JSONObject result=FilesUtil.info(output).put("type","result");handler.post(()->{if(!terminal){publish(result);musicWorker=null;finish("done",null);}});
+            try{decoded=AudioPipeline.decode(this,input,limitUs,musicCancel,callback);String warning="";if(options.optString("musicMode").equals("colab")){if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");ColabMusic.Result cloud=ColabMusic.run(this,decoded,ColabCredentials.take(),musicCancel,callback);clean=cloud.pcm;warning=cloud.warning;}else clean=MusicSeparator.separate(this,decoded,musicCancel,callback);MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,decoded.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
+                if(!partial.renameTo(output))throw new java.io.IOException("تعذر حفظ النتيجة");JSONObject result=FilesUtil.info(output).put("type","result").put("warning",warning);handler.post(()->{if(!terminal){publish(result);musicWorker=null;finish("done",null);}});
             }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
             catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر فصل الموسيقى. "+(e.getMessage()==null?"جرّب عينة أقصر وتأكد من المساحة المتاحة.":e.getMessage()));});}
             finally{if(decoded!=null)decoded.pcm.delete();if(clean!=null)clean.delete();}

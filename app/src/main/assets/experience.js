@@ -92,7 +92,7 @@ openTool=function(tool){modeOpenTool(tool);if(tool==='subtitles'){
  const label=document.createElement('label');label.textContent='طريقة التفريغ والترجمة';const mode=translationModeSelect(true);mode.id='translationMode';
  const consentLabel=document.createElement('label');const consent=document.createElement('input');consent.type='checkbox';consent.id='onlineAudioConsent';consent.checked=false;const consentText=document.createTextNode(' أوافق على إرسال صوت هذا المقطع إلى Gemini للتفريغ والترجمة؛ قد تنطبق رسوم حسابي.');consentLabel.append(consent,consentText);
  const workContext=document.createElement('input');workContext.id='subtitleContext';workContext.maxLength=1000;workContext.placeholder='اسم العمل وسياق المشهد · اختياري';workContext.setAttribute('aria-label','سياق العمل والمشهد');
- const review=document.createElement('select');review.id='geminiReview';review.innerHTML='<option value="true">Gemini · استماع ثم مراجعة صوتية ثانية</option><option value="false">Gemini · استماع واحد أسرع</option>';review.value='true';review.setAttribute('aria-label','مراجعة Gemini');
+ const review=document.createElement('select');review.id='geminiReview';review.innerHTML='<option value="true">Gemini · استماع ثم مراجعة صوتية ثانية</option><option value="false">Gemini · استماع واحد أسرع</option>';review.value='false';review.setAttribute('aria-label','مراجعة Gemini');
  const reviewNote=document.createElement('p');reviewNote.className='hint';reviewNote.textContent='المراجعة الثانية ترسل الصوت الأصلي إلى Gemini، حتى عند اختيار فصل الموسيقى، للتحقق من الكلمات والأسماء والضمائر؛ تزيد الوقت واستهلاك الخدمة، ولا تضمن خلو الترجمة من الأخطاء.';
  const namesLabel=document.createElement('label');namesLabel.textContent='قاموس أسماء اختياري · اسم أصلي = اسم مترجم في كل سطر';const names=document.createElement('textarea');names.id='subtitleNames';names.maxLength=2000;names.placeholder='シン = شين';names.dir='auto';
  const separation=document.createElement('select');separation.id='separateSpeechMusic';separation.innerHTML='<option value="true">توضيح الكلام · فصل الموسيقى أولًا</option><option value="false">التفريغ من الصوت الأصلي</option>';separation.value=state.separateSpeechMusic===true?'true':'false';separation.setAttribute('aria-label','تجهيز صوت التفريغ');separation.onchange=()=>state.separateSpeechMusic=separation.value==='true';
@@ -108,6 +108,7 @@ window.receive=function(e){
   if(e.type==='subtitles')panel.remove();else panel.hidden=false;
  }
  modeReceive(e);
+ if(e.type==='result'&&e.warning)toast(e.warning);
  if(e.type==='subtitles'){
   if(e.warning)toast(e.warning);
   const panel=$('subtitleEditor');if(panel)[...panel.querySelectorAll('.subtitleRow')].forEach((row,i)=>row.dataset.language=e.cues[i]?.language||e.language||'');
@@ -118,5 +119,10 @@ window.receive=function(e){
 function colabConnectionButton(){const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent='اتصال Colab · تجربة الربط';button.onclick=()=>native('colabConnect');return button;}
 const colabHome=$('colabConnect');if(colabHome)colabHome.onclick=()=>native('colabConnect');
 const colabOpenTool=openTool;
-openTool=function(tool){colabOpenTool(tool);if(['music','subtitles'].includes(tool))$('form').append(colabConnectionButton());};
+openTool=function(tool){colabOpenTool(tool);if(['music','subtitles'].includes(tool))$('form').append(colabConnectionButton());if(tool==='music'){
+ const mode=document.createElement('select');mode.id='musicMode';mode.setAttribute('aria-label','مكان فصل الموسيقى');mode.innerHTML='<option value="local">على الجهاز · حتى دقيقة</option><option value="colab">سحابيًا · Colab · حتى 10 دقائق</option>';
+ const label=document.createElement('label');const consent=document.createElement('input');consent.id='onlineAudioConsent';consent.type='checkbox';label.append(consent,document.createTextNode(' أوافق على رفع صوت هذا المقطع إلى جلستي في Colab؛ قد يستهلك وحدات الحساب. يحاول مدار إيقاف جلسته بعد المعالجة أو الإلغاء.'));
+ const note=document.createElement('p');note.className='hint';note.textContent='الفصل السحابي يستخدم نفس نموذج UVR-MDX-NET-Voc_FT على معالج Colab. يُرفع الصوت فقط، ثم يُركّب الناتج على الفيديو في جهازك. يحتاج اتصالًا طوال المعالجة؛ لا يستخدم حصة Gemini.';
+ const update=()=>{label.hidden=note.hidden=mode.value!=='colab';consent.checked=false;$('toolKicker').textContent=mode.value==='colab'?'الفصل في جلستك السحابية':'على جهازك · دون رفع الصوت';};mode.onchange=update;$('form').prepend(mode);$('form').append(note,label);update();
+}};
 

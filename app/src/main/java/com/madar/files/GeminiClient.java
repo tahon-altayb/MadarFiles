@@ -50,8 +50,16 @@ final class GeminiClient {
      return new JSONObject().put("candidates",new JSONArray().put(new JSONObject().put("finishReason","STOP").put("content",new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",response.getText()))))));
     }catch(TimeoutException pending){/* Check cancellation without blocking the worker indefinitely. */}
    }
-  }catch(ExecutionException failed){check(cancel);throw new IOException("تعذر ربط Gemini المباشر؛ تحقق من تفعيل Firebase AI Logic وApp Check وحدود المشروع");}
+  }catch(ExecutionException failed){check(cancel);throw failure(failed.getCause());}
   finally{future.cancel(true);}
+ }
+ static IOException failure(Throwable cause){
+  StringBuilder detail=new StringBuilder();Throwable next=cause;for(int i=0;i<8&&next!=null;i++){detail.append(next.toString()).append(' ');next=next.getCause();}String diagnostic=detail.toString().toLowerCase(java.util.Locale.ROOT);
+  if(diagnostic.contains("429")||diagnostic.contains("quota")||diagnostic.contains("resource_exhausted")||diagnostic.contains("toomanyrequests"))return new IOException("Gemini: بلغ الحساب حد الطلبات أو الحصة المتاحة. أعد التشغيل بنفس الخيارات بعد تجدد الحصة؛ تُستعاد أجزاء الاستماع المكتملة إن وجدت. لا تحتاج إعادة إعداد Firebase.");
+  if(diagnostic.contains("app check")||diagnostic.contains("appcheck")||diagnostic.contains("attestation"))return new IOException("Gemini: تعذر توثيق التطبيق عبر App Check؛ راجع تسجيل Play Integrity وتوقيع التطبيق.");
+  if(diagnostic.contains("403")||diagnostic.contains("permission_denied"))return new IOException("Gemini: رفضت الخدمة صلاحية هذا الطلب. راجع صلاحيات المشروع والخدمة.");
+  if(diagnostic.contains("timeout")||diagnostic.contains("network")||diagnostic.contains("unknownhost"))return new IOException("Gemini: تعذر الاتصال بالخدمة أو انتهت مهلتها؛ أعد التشغيل لاستعادة الأجزاء المكتملة.");
+  return new IOException("تعذر إكمال طلب Gemini. احتُفظ بالأجزاء المكتملة. رمز التشخيص: "+(cause==null?"UNKNOWN":cause.getClass().getSimpleName()));
  }
  static Content content(JSONObject input)throws Exception {
   Content.Builder out=new Content.Builder();JSONArray parts=input.getJSONArray("parts");

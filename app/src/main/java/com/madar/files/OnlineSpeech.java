@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Audio-grounded online captions. No local ASR text is treated as ground truth. */
 final class OnlineSpeech {
- static final int RATE=16000,STEP=45*RATE,CONTEXT=3*RATE;
+ static final int RATE=16000,STEP=GeminiPlan.step(),CONTEXT=3*RATE;
  static final class Result {
   final JSONArray original=new JSONArray(),translated=new JSONArray();
   JSONArray suggestions=new JSONArray();String warning="";
@@ -36,6 +36,7 @@ final class OnlineSpeech {
    }
    try(RandomAccessFile in=new RandomAccessFile(decoded.pcm,"r");RandomAccessFile raw=new RandomAccessFile(reviewAudio==null?decoded.pcm:reviewAudio.pcm,"r")){
    long frames=decoded.pcm.length()/4,total=Math.round(frames*RATE/(double)decoded.sampleRate);
+   progress.update(9,"خطة Gemini · "+GeminiPlan.requests(total,review)+" طلبًا كحد مخطط قبل استعادة الأجزاء المحفوظة");
    SpeechResampler resampler=new SpeechResampler(decoded.sampleRate);Result output=new Result();output.warning=preparationWarning;JSONArray names=new JSONArray(),suggestions=new JSONArray(),previous=new JSONArray();
    for(java.util.Map.Entry<String,String> name:new SubtitleNames(hints).entries.entrySet())names.put(new JSONObject().put("source",name.getKey()).put("target",name.getValue()));
    for(long core=0;core<total;core+=STEP){
@@ -44,15 +45,21 @@ final class OnlineSpeech {
     byte[] audio=wav(resampler.read(in,frames,first,(int)(last-first)));
     JSONObject request=request(audio,seconds,language,target,hints,names,previous,workContext,suggestions);
     progress.update(10+(int)(85*core/Math.max(1,total)),"استماع وترجمة بالسياق · "+(core/RATE)+" / "+(total/RATE)+" ثانية");
-    JSONObject response=OnlineTranslation.result(GeminiClient.generate(context,request,cancel));
+    File checkpoint=GeminiCheckpoint.file(context,request);
+    JSONObject response=GeminiCheckpoint.read(checkpoint);boolean reused=response!=null;
+    if(response==null)response=OnlineTranslation.result(GeminiClient.generate(context,request,cancel));
     Result batch=parse(response,seconds,first/(double)RATE,core/(double)RATE,Math.min(total,core+STEP)/(double)RATE,decoded.offsetUs/1000000.0,target);
+    if(!reused){try{GeminiCheckpoint.save(checkpoint,response);}catch(IOException cacheError){output.warning="تعذر حفظ تقدم بعض الأجزاء؛ لا تحذف بيانات التطبيق أثناء المعالجة.";}}
+    else progress.update(10+(int)(85*core/Math.max(1,total)),"استعادة جزء مكتمل دون طلب جديد");
     if(review){
      progress.update(10+(int)(85*core/Math.max(1,total)),"مراجعة الكلام والأسماء والضمائر بالصوت · "+(core/RATE)+" ثانية");
      try{
       JSONObject reviewInput=reviewRequest(request,response);
       if(reviewAudio!=null){byte[] rawWav=wav(new SpeechResampler(reviewAudio.sampleRate).read(raw,reviewAudio.pcm.length()/4,first,(int)(last-first)));reviewInput.getJSONArray("contents").getJSONObject(0).getJSONArray("parts").getJSONObject(1).getJSONObject("inlineData").put("data",Base64.encodeToString(rawWav,Base64.NO_WRAP));}
-      JSONObject checked=OnlineTranslation.result(GeminiClient.generate(context,reviewInput,cancel));
+      File reviewCheckpoint=GeminiCheckpoint.file(context,reviewInput);JSONObject checked=GeminiCheckpoint.read(reviewCheckpoint);boolean reusedReview=checked!=null;
+      if(checked==null)checked=OnlineTranslation.result(GeminiClient.generate(context,reviewInput,cancel));
       Result checkedBatch=parse(checked,seconds,first/(double)RATE,core/(double)RATE,Math.min(total,core+STEP)/(double)RATE,decoded.offsetUs/1000000.0,target);
+      if(!reusedReview){try{GeminiCheckpoint.save(reviewCheckpoint,checked);}catch(IOException cacheError){output.warning="تعذر حفظ تقدم المراجعة الثانية لبعض الأجزاء.";}}
       response=checked;batch=checkedBatch;
      }catch(java.util.concurrent.CancellationException stopped){throw stopped;}
      catch(Exception failed){MusicSeparator.check(cancel);output.warning="لم تكتمل المراجعة الصوتية الثانية لبعض المقاطع؛ عُرضت نتيجة الاستماع الأول للمراجعة.";}
