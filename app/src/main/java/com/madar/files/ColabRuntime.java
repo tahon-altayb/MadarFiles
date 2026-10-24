@@ -70,8 +70,27 @@ final class ColabRuntime implements AutoCloseable {
   // Never call this with an address from an Intent, WebView, or user field.
   String host=url.host();if(!host.contains(".")||host.contains(":")||host.matches("[0-9.]+")||host.endsWith(".localhost")||host.endsWith(".local")||host.endsWith(".internal")||host.endsWith(".invalid")||host.endsWith("."))throw new IOException("Colab · RUNTIME_URL_INVALID");return url.newBuilder().encodedPath(url.encodedPath().endsWith("/")?url.encodedPath():url.encodedPath()+"/").build();
  }
+ static String contentPath(String path,String format)throws IOException{
+  if(path==null||!path.matches("madar_[a-zA-Z0-9_]+(?:/[a-zA-Z0-9_-]+(?:\\.[a-zA-Z0-9_-]+)*)?"))throw new ProtocolFailure("Colab · JUPYTER_PATH_INVALID");
+  String result="api/contents/"+path;
+  if(format==null)return result;
+  if(format.equals("text"))return result+"?format=text";
+  if(format.equals("base64"))return result+"?content=1&format=base64";
+  throw new ProtocolFailure("Colab · JUPYTER_PATH_INVALID");
+ }
+ static void validateRuntimePath(String path)throws IOException{
+  if(path!=null&&path.matches("api/(kernels|kernelspecs|kernels/[a-zA-Z0-9-]+|kernels/[a-zA-Z0-9-]+/channels\\?session_id=[a-zA-Z0-9-]+|contents)"))return;
+  if(path!=null&&path.startsWith("api/contents/")){
+   String relative=path.substring("api/contents/".length());int query=relative.indexOf('?');
+   String file=query<0?relative:relative.substring(0,query),suffix=query<0?"":relative.substring(query);
+   String format=suffix.isEmpty()?null:suffix.equals("?format=text")?"text":suffix.equals("?content=1&format=base64")?"base64":"invalid";
+   if(path.equals(contentPath(file,format)))return;
+  }
+  throw new ProtocolFailure("Colab · JUPYTER_PATH_INVALID");
+ }
  Request.Builder runtimeRequest(String path)throws Exception{
-  if(base==null||System.nanoTime()>refreshAt)refresh();if(!path.matches("api/(kernels|kernelspecs|kernels/[a-zA-Z0-9-]+|kernels/[a-zA-Z0-9-]+/channels\\?session_id=[a-zA-Z0-9-]+|contents/madar_[a-zA-Z0-9_./-]+(\\?format=text)?|contents)"))throw new IOException("مسار جلسة غير صالح");return new Request.Builder().url(base.resolve(path)).header("X-Colab-Runtime-Proxy-Token",proxyToken).header("X-Colab-Client-Agent","madarfiles");
+  validateRuntimePath(path);if(base==null||System.nanoTime()>refreshAt)refresh();
+  return new Request.Builder().url(base.resolve(path)).header("X-Colab-Runtime-Proxy-Token",proxyToken).header("X-Colab-Client-Agent","madarfiles");
  }
  JSONObject jupyter(String method,String path,JSONObject data,int maximum)throws Exception{
   // Replay only reads and PUT of the exact same owned content. Never replay kernel/runtime creation.
@@ -82,8 +101,14 @@ final class ColabRuntime implements AutoCloseable {
    long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(1);while(System.nanoTime()<end){ColabProbe.check(cancel);Thread.sleep(50);}
   }
  }
- void put(String path,String content,String format)throws Exception{jupyter("PUT","api/contents/"+path,new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}
- String getText(String path,int max)throws Exception{return jupyter("GET","api/contents/"+path+"?format=text",null,max).getString("content");}
+ void put(String path,String content,String format)throws Exception{jupyter("PUT",contentPath(path,null),new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}
+ String getText(String path,int max)throws Exception{return jupyter("GET",contentPath(path,"text"),null,max).getString("content");}
+ byte[] getBinary(String path,int maximum)throws Exception{
+  JSONObject file=jupyter("GET",contentPath(path,"base64"),null,maximum);
+  if(!file.optString("format").equals("base64")||!(file.opt("content") instanceof String))throw new ProtocolFailure("Colab · MUSIC_OUTPUT_FORMAT");
+  try{return android.util.Base64.decode(file.getString("content"),android.util.Base64.DEFAULT);}
+  catch(IllegalArgumentException e){throw new ProtocolFailure("Colab · MUSIC_OUTPUT_FORMAT");}
+ }
  ColabKernel.Session openKernel(String kernel,ColabKernel.Events events)throws Exception{
   return ColabKernel.open(http,force->{if(force){refresh();JSONObject state=jupyter("GET","api/kernels/"+kernel,null,65536);if(state.optString("execution_state").equals("dead"))throw new IOException("Colab · KERNEL_DEAD");}
    return runtimeRequest("api/kernels/"+kernel+"/channels?session_id="+UUID.randomUUID()).build();},cancel,events);

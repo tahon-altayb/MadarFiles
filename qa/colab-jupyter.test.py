@@ -1,5 +1,7 @@
 """Real local Jupyter integration. No Google account, GPU, or user media is used."""
 import json
+import base64
+import hashlib
 import os
 from pathlib import Path
 import socket
@@ -75,8 +77,34 @@ if __name__ == '__main__':
             result = json.loads(api('GET','api/contents/'+folder+'/result.json?format=text')['content'])
             assert result == {'fixture':73}
             assert json.loads(api('GET','api/contents/'+folder+'/progress.json?format=text')['content'])['stage']=='done'
+            # Exercise the music bootstrap in the same kernel directory, then retrieve
+            # PCM with the exact Contents query used by Android (including a short tail).
+            music_stub = """
+import base64, hashlib, json, os, sys
+from pathlib import Path
+os.chdir(sys.argv[1])
+chunks = []
+for i, data in enumerate([bytes(range(256)) * 2756 + bytes(64), bytes(range(68))]):
+    Path(f'output_{i}.pcm').write_bytes(data)
+    chunks.append(dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
+Path('result.json').write_text(json.dumps(dict(chunks=chunks)))
+Path('progress.json').write_text(json.dumps(dict(stage='done',progress=97)))
+"""
+            api('PUT','api/contents/'+folder+'/music_worker.py',{'type':'file','format':'text','content':music_stub})
+            reply = execute('JOB_FOLDER = '+repr(folder)+'\n'+Path('app/src/main/assets/colab/music_bootstrap.py').read_text())
+            assert reply['status']=='ok', reply.get('ename')
+            assert json.loads(api('GET','api/contents/'+folder+'/progress.json?format=text')['content'])['stage']=='done'
+            manifest = json.loads(api('GET','api/contents/'+folder+'/result.json?format=text')['content'])
+            sizes = []
+            for i, part in enumerate(manifest['chunks']):
+                file = api('GET','api/contents/'+folder+f'/output_{i}.pcm?content=1&format=base64')
+                assert file['format']=='base64'
+                data = base64.b64decode(file['content'])
+                assert len(data)==part['bytes'] and hashlib.sha256(data).hexdigest()==part['sha256']
+                sizes.append(len(data))
+            assert sizes==[4 * 4 * 44100, 17 * 4], sizes
             connection.close()
-            print('PASS: real Jupyter Contents upload, prefixed URL, kernel job directory, reproduced old path failure, bootstrap execution and result retrieval')
+            print('PASS: real Jupyter Contents upload, prefixed URL, kernel job directory, reproduced old path failure, speech/music bootstrap execution and verified binary PCM result retrieval')
         finally:
             if kernel:
                 try:api('DELETE','api/kernels/'+kernel)
