@@ -34,7 +34,7 @@
   if(e.type==='agentStatus'){ready=e.ready===true;$('agentInstall').hidden=ready;$('agentStatus').textContent=ready?'جاهز · يعمل على الجهاز دون اتصال':'تنزيل النموذج مطلوب مرة واحدة';$('agentLearn').checked=e.learning===true;busy(false);}
   if(e.token!==token)return;
   if(e.type==='agentProgress')$('agentStatus').textContent=e.message;
-  if(e.type==='agentError'){busy(false);line(e.message);}
+  if(e.type==='agentError'){busy(false);line(e.message);native('agentStatus');}
   if(e.type==='agentPlan'){busy(false);try{apply(e.plan);}catch(error){line('تعذر تجهيز الأداة؛ افتحها من القائمة أو أعد صياغة الطلب.');}}
  };
  line('اختر ملفًا واكتب طلبًا مثل: «استخرج النص» أو «حوّل إلى PNG». أستخدم أدوات مدار، وتحتاج الخدمات السحابية موافقتك داخل أداتها.');

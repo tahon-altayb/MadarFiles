@@ -34,7 +34,7 @@ final class ColabMusic {
      runtime.put(folder+"/request.json",new JSONObject().put("frames",total).put("chunks",parts).toString(),"text");runtime.put(folder+"/music_worker.py",asset(c,"music_worker.py"),"text");diagnostic.record("UPLOAD_COMPLETE");
      channel.execute("JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+asset(c,"music_bootstrap.py"),()->{
       JSONObject state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536));String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));
-      if(stage.equals("failed")){String code=state.optString("error");if(!code.matches("[A-Za-z0-9_]{1,80}"))code="MUSIC_FAILED";throw new IOException("Colab · "+code);}
+      if(stage.equals("failed")){String failed=state.optString("last_stage");if(ColabDiagnostics.stageKnown(failed))diagnostic.record("STAGE_"+failed.toUpperCase(Locale.ROOT));String code=state.optString("error");if(!code.matches("[A-Za-z0-9_]{1,80}"))code="MUSIC_FAILED";throw new IOException("Colab · "+code);}
       String message;switch(stage){case "install":message="تجهيز محرك الفصل السحابي";break;case "model_download":message="تنزيل نموذج UVR والتحقق من بصمته";break;case "model_load":message="تحميل نموذج الفصل · معالج Colab";break;case "separate":message="فصل الموسيقى سحابيًا · نفس النموذج المحلي";break;case "done":message="استرجاع الصوت المفصول والتحقق من سلامته";break;default:message="انتظار محرك الفصل السحابي";}
       progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),message);return stage.equals("done");
      });

@@ -116,5 +116,9 @@ if __name__ == '__main__':
     except Exception as error:
         # Never copy arbitrary server responses into an Android error message.
         code = str(error) if isinstance(error, ValueError) and str(error).isupper() else type(error).__name__
-        write_json('progress.json', dict(stage='failed', progress=0, error=code))
+        try:
+            previous = json.loads(Path('progress.json').read_text('utf-8')).get('stage', 'install')
+        except (OSError, ValueError):
+            previous = 'install'
+        write_json('progress.json', dict(stage='failed', last_stage=previous, progress=0, error=code))
         raise

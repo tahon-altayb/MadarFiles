@@ -31,7 +31,7 @@ final class LocalAgent {
  }
  JSONObject plan(Context c,String user,JSONObject source,AtomicBoolean cancel)throws Exception {
   if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");if(!ready(c))throw new IOException("نزّل نموذج المساعد المحلي أولًا");
-  File file=model(c);if(!digest(file).equals(MODEL_SHA))throw new IOException("نموذج المساعد تالف؛ أعد تنزيله");ColabProbe.check(cancel);
+  File file=model(c);if(!digest(file).equals(MODEL_SHA)){file.delete();throw new IOException("نموذج المساعد تالف؛ أعد تنزيله");}ColabProbe.check(cancel);
   String prompt;try(InputStream in=c.getAssets().open("agent-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   String kind=source.optString("kind");JSONObject data=new JSONObject().put("source",source).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("userRequest",user);
   EngineConfig config=new EngineConfig(file.getAbsolutePath(),new Backend.CPU(),null,null,4096,0,c.getCacheDir().getAbsolutePath());
