@@ -68,6 +68,9 @@ final class GeminiClient {
  }
  static Schema schema(JSONObject input)throws Exception {
   switch(input.getString("type")){
+   // Firebase 18 exposes a JVM method named boolean, a Java keyword.
+   // Call the verified no-argument SDK factory through reflection.
+   case "BOOLEAN":return (Schema)Schema.class.getMethod("boolean").invoke(null);
    case "STRING":return Schema.str();case "NUMBER":return Schema.numDouble();case "INTEGER":return Schema.numInt();
    case "ARRAY":return Schema.array(schema(input.getJSONObject("items")));
    case "OBJECT":
