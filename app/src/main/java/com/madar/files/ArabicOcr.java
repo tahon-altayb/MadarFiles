@@ -12,6 +12,25 @@ final class ArabicOcr implements AutoCloseable {
   detector=new VisionSession(OfflineAssets.file(context,"ocr-det.onnx"));VisionSession next=null;try{next=new VisionSession(OfflineAssets.file(context,"ocr-arabic.onnx"));alphabet.add("");try(BufferedReader reader=new BufferedReader(new InputStreamReader(new FileInputStream(OfflineAssets.file(context,"ocr-arabic.txt")),StandardCharsets.UTF_8))){String line;while((line=reader.readLine())!=null)alphabet.add(line);}alphabet.add(" ");recognizer=next;}catch(Exception|Error e){detector.close();if(next!=null)next.close();throw e;}
  }
  List<Line> read(Bitmap original)throws Exception{
+  List<Line> lines=readWindow(original);int width=original.getWidth(),height=original.getHeight();
+  // A full-page 960px detector loses small print. Overlapping native-resolution
+  // windows recover it; clipped edge detections must not replace complete lines.
+  if(Math.max(width,height)>1400){
+   for(int top=0;top<height;top+=800)for(int left=0;left<width;left+=800){
+    if(Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException();
+    int w=Math.min(960,width-left),h=Math.min(960,height-top);if(w<100||h<100)continue;
+    Bitmap tile=Bitmap.createBitmap(original,left,top,w,h);
+    try{for(Line local:readWindow(tile)){
+     Rect b=local.box;if(left>0&&b.left<4||top>0&&b.top<4||left+w<width&&b.right>w-4||top+h<height&&b.bottom>h-4)continue;
+     Rect box=new Rect(b);box.offset(left,top);Line incoming=new Line(box,local.text,local.confidence);int duplicate=-1;
+     for(int i=0;i<lines.size();i++){Rect old=lines.get(i).box;int overlap=Math.max(0,Math.min(old.right,box.right)-Math.max(old.left,box.left))*Math.max(0,Math.min(old.bottom,box.bottom)-Math.max(old.top,box.top));float area=Math.max(1,Math.min(old.width()*old.height(),box.width()*box.height()));if(overlap/area>.65f&&Math.abs(old.exactCenterY()-box.exactCenterY())<Math.max(old.height(),box.height())*.45f){duplicate=i;break;}}
+     if(duplicate<0){if(lines.size()<2000)lines.add(incoming);}else{Line old=lines.get(duplicate);if(incoming.confidence>old.confidence+.015f||incoming.text.length()>old.text.length()&&incoming.confidence>=old.confidence-.02f)lines.set(duplicate,incoming);}
+    }}finally{if(tile!=original)tile.recycle();}
+   }
+  }
+  lines.sort(Comparator.comparingInt(l->l.box.top));return lines;
+ }
+ private List<Line> readWindow(Bitmap original)throws Exception{
   int width=original.getWidth(),height=original.getHeight();float scale=Math.min(1,960f/Math.max(width,height));int dw=Math.max(32,Math.round(width*scale/32)*32),dh=Math.max(32,Math.round(height*scale/32)*32);
   Bitmap small=Bitmap.createScaledBitmap(original,dw,dh,true);float[] tensor=tensor(small,dw,dh,true);if(small!=original)small.recycle();float[] probability=detector.infer(tensor,1,3,dh,dw);long[] dims=detector.dimensions();if(dims.length!=4)throw new IOException("خرج كشف النص غير صالح");int mh=(int)dims[2],mw=(int)dims[3];if(mh*mw!=probability.length)throw new IOException("أبعاد كشف النص غير صالحة");boolean[] seen=new boolean[probability.length];int[] queue=new int[probability.length];List<Line> lines=new ArrayList<>();
   for(int pixel=0;pixel<probability.length;pixel++){
@@ -32,7 +51,7 @@ final class ArabicOcr implements AutoCloseable {
   if(!visual.codePoints().anyMatch(ch->Character.UnicodeScript.of(ch)==Character.UnicodeScript.ARABIC))return visual;
   List<String> parts=new ArrayList<>();StringBuilder latin=new StringBuilder();for(int at=0;at<visual.length();){int ch=visual.codePointAt(at);at+=Character.charCount(ch);boolean ascii=ch<128&&(Character.isLetterOrDigit(ch)||" .,:/\\-+%()".indexOf(ch)>=0);if(ascii){latin.appendCodePoint(ch);continue;}if(latin.length()>0){parts.add(latin.toString());latin.setLength(0);}if(Character.getType(ch)==Character.NON_SPACING_MARK&&!parts.isEmpty()){int last=parts.size()-1;parts.set(last,parts.get(last)+new String(Character.toChars(ch)));}else parts.add(new String(Character.toChars(ch)));}if(latin.length()>0)parts.add(latin.toString());Collections.reverse(parts);StringBuilder logical=new StringBuilder();for(String p:parts)logical.append(p);return TextQuality.clean(logical.toString());
  }
- static String text(List<Line> lines){List<List<Line>> rows=new ArrayList<>();List<Line> sorted=new ArrayList<>(lines);sorted.sort(Comparator.comparingDouble(l->l.box.exactCenterY()));for(Line line:sorted){List<Line> row=rows.isEmpty()?null:rows.get(rows.size()-1);if(row==null||Math.abs(row.get(0).box.exactCenterY()-line.box.exactCenterY())>Math.max(row.get(0).box.height(),line.box.height())*.55f){row=new ArrayList<>();rows.add(row);}row.add(line);}StringBuilder text=new StringBuilder();for(List<Line> row:rows){row.sort((a,b)->Integer.compare(b.box.left,a.box.left));if(text.length()>0)text.append('\n');for(int i=0;i<row.size();i++){if(i>0)text.append('\t');text.append(row.get(i).text);}}return text.toString();}
+ static String text(List<Line> lines){List<List<Line>> rows=new ArrayList<>();List<Line> sorted=new ArrayList<>(lines);sorted.sort(Comparator.comparingDouble(l->l.box.exactCenterY()));for(Line line:sorted){List<Line> row=rows.isEmpty()?null:rows.get(rows.size()-1);if(row==null||Math.abs(row.get(0).box.exactCenterY()-line.box.exactCenterY())>Math.max(row.get(0).box.height(),line.box.height())*.55f){row=new ArrayList<>();rows.add(row);}row.add(line);}StringBuilder text=new StringBuilder();for(List<Line> row:rows){long ar=0,latin=0;for(Line l:row){ar+=l.text.codePoints().filter(ch->Character.UnicodeScript.of(ch)==Character.UnicodeScript.ARABIC).count();latin+=l.text.codePoints().filter(ch->Character.UnicodeScript.of(ch)==Character.UnicodeScript.LATIN).count();}final boolean rtl=ar>latin;row.sort((a,b)->rtl?Integer.compare(b.box.left,a.box.left):Integer.compare(a.box.left,b.box.left));if(text.length()>0)text.append('\n');for(int i=0;i<row.size();i++){if(i>0)text.append('\t');text.append(row.get(i).text);}}return text.toString();}
  private static float[] tensor(Bitmap bitmap,int width,int height,boolean detect){int[] pixels=new int[width*height];bitmap.getPixels(pixels,0,width,0,0,width,height);float[] out=new float[3*pixels.length];float[] mean={.485f,.456f,.406f},std={.229f,.224f,.225f};for(int i=0;i<pixels.length;i++){int p=pixels[i],alpha=Color.alpha(p);int[] values={Color.blue(p),Color.green(p),Color.red(p)};for(int c=0;c<3;c++){float value=(values[c]*alpha/255f+255-alpha)/255f;out[c*pixels.length+i]=detect?(value-mean[c])/std[c]:(value-.5f)*2;}}return out;}
  @Override public void close(){recognizer.close();detector.close();}
 }
