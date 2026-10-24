@@ -2,6 +2,7 @@
 // One workspace: real-duration timeline, draggable layer tracks and persistent transport.
 (()=>{
  let scale=1,pps=1,painting=false,draggingLayer=false,editorObserver=null;
+ $('editorAgentOpen').onclick=()=>$('agentOpen').click();
  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
  const clock=n=>{n=Math.max(0,n);return Math.floor(n/60)+':'+(n%60).toFixed(2).padStart(5,'0');};
  const isEditor=()=>state.tool==='editor'&&!!$('timelineContent');
