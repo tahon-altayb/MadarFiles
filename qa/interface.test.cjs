@@ -31,7 +31,7 @@ end.value='2.8';run('runExport()');assert.equal(requests.at(-1).action,'export')
 context.window.receive({type:'progress',progress:42});assert.equal(get('progress').value,42);
 context.window.receive({type:'error',message:'test failure'});assert.equal(get('busy').hidden,true);assert.equal(get('toast').textContent,'test failure');
 context.window.receive({type:'result',name:'result.mp4',size:1024,mime:'video/mp4'});assert.equal(get('result').hidden,false);get('share').onclick();assert.equal(requests.at(-1).action,'share');
-context.window.receive({type:'history',files:[{name:'<script>bad()</script>',size:300,mime:'image/png',modified:Date.now()}]});assert.equal(get('recent').children[0].children[1].children[0].textContent,'<script>bad()</script>');
+context.window.receive({type:'history',files:[{name:'<script>bad()</script>',size:300,mime:'image/png',modified:Date.now()}]});assert.equal(get('recent').children[1].children[0].children[1].children[0].textContent,'<script>bad()</script>');
 run("selectKind('pdf')");assert.equal(get('tools').children.length,5);assert.equal(get('previewBtn').hidden,true);
 console.log('PASS: bridge, radial tools, source switching, safe filenames, video trim validation, progress, failures, results and sharing');
 

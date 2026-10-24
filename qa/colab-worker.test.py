@@ -58,7 +58,7 @@ class WorkerTest(unittest.TestCase):
         class BrokenTokenizer:
             @staticmethod
             def from_pretrained(*args,**kw):raise RuntimeError('private server detail must not be written')
-        torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True,empty_cache=lambda:None))
+        torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True,empty_cache=lambda:None,mem_get_info=lambda:(8*1024**3,16*1024**3)))
         modules={'torch':torch,'faster_whisper':SimpleNamespace(WhisperModel=Recognizer),
           'faster_whisper.utils':SimpleNamespace(download_model=lambda name:'fixture-model'),
           'transformers':SimpleNamespace(AutoTokenizer=BrokenTokenizer,AutoModelForCausalLM=None,BitsAndBytesConfig=None),
@@ -239,6 +239,21 @@ class RecoveryTest(unittest.TestCase):
             self.assertEqual(w.translation_backend(torch),'FP16')
             torch.cuda.mem_get_info=lambda:(12*1024**3,16*1024**3)
             with self.assertRaises(w.TranslationError):w.translation_backend(torch)
+
+    def test_full_precision_is_preferred_and_oom_can_fall_back_to_same_model_nf4(self):
+        torch=SimpleNamespace(float16='fp16',cuda=SimpleNamespace(empty_cache=lambda:None,mem_get_info=lambda:(21*1024**3,24*1024**3)))
+        with patch.object(w,'quantization_preflight') as probe:
+            self.assertEqual(w.translation_backend(torch),'FP16')
+            probe.assert_not_called()
+        calls=[]
+        def load(path,**options):
+            calls.append(options)
+            if 'quantization_config' not in options:raise RuntimeError('CUDA out of memory')
+            return SimpleNamespace(eval=lambda:'recovered')
+        with patch.object(w,'quantization_preflight'):
+            model,precision=w.load_translation_model(torch,SimpleNamespace(from_pretrained=load),lambda **k:k,'same-pinned-weights','FP16')
+        self.assertEqual((model,precision),('recovered','NF4'))
+        self.assertEqual(len(calls),2)
 
     def test_failed_quantized_load_releases_and_retries_same_weights_without_quantizer(self):
         calls=[];model=SimpleNamespace(eval=lambda:'same-model')

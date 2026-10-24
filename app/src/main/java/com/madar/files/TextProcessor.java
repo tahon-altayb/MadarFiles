@@ -31,8 +31,8 @@ final class TextProcessor {
   try(PDDocument doc=PDDocument.load(file);ParcelFileDescriptor fd=ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
    if(first<1||last<first||last>doc.getNumberOfPages()||last-first>=50)throw new IllegalArgumentException("اختر نطاقًا صحيحًا لا يزيد عن 50 صفحة");PDFTextStripper stripper=new PDFTextStripper();stripper.setSortByPosition(true);
    for(int page=first;page<=last;page++){
-    progress.update("قراءة الصفحة "+page+" من "+last);stripper.setStartPage(page);stripper.setEndPage(page);String content=TextQuality.clean(stripper.getText(doc));
-    if(forceOcr||!TextQuality.usable(content,language)){
+    progress.update("قراءة الصفحة "+page+" من "+last);stripper.setStartPage(page);stripper.setEndPage(page);String raw=stripper.getText(doc);String content=TextQuality.clean(raw);
+    if(forceOcr||!TextQuality.usable(raw,language)){
      progress.update("إعادة قراءة الصفحة "+page+" بصريًا؛ طبقة النص مفقودة أو مشوّهة");Bitmap bitmap=PdfProcessor.render(renderer,page-1,2400);try{if(language.equals("eng")){if(tess==null)tess=engine(c,"eng");tess.setImage(bitmap);content=TextQuality.clean(tess.getUTF8Text());tess.clear();}else{if(ocr==null)ocr=new ArabicOcr(c);content=ArabicOcr.text(ocr.read(bitmap));}}finally{bitmap.recycle();}
     }
     if(page>first)text.append('\f');text.append(content);if(text.length()>1000000)throw new IOException("النص كبير جدًا؛ اختر نطاق صفحات أصغر");

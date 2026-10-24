@@ -63,7 +63,7 @@ final class GeminiClient {
  }
  static Content content(JSONObject input)throws Exception {
   Content.Builder out=new Content.Builder();JSONArray parts=input.getJSONArray("parts");
-  for(int i=0;i<parts.length();i++){JSONObject part=parts.getJSONObject(i);if(part.has("text"))out.addText(part.getString("text"));else if(part.has("inlineData")){JSONObject audio=part.getJSONObject("inlineData");if(!audio.getString("mimeType").equals("audio/wav"))throw new IOException("صيغة صوت غير مدعومة");out.addInlineData(Base64.decode(audio.getString("data"),Base64.NO_WRAP),"audio/wav");}else throw new IOException("محتوى طلب غير مدعوم");}
+  for(int i=0;i<parts.length();i++){JSONObject part=parts.getJSONObject(i);if(part.has("text"))out.addText(part.getString("text"));else if(part.has("inlineData")){JSONObject audio=part.getJSONObject("inlineData");String mime=audio.getString("mimeType");if(!Arrays.asList("audio/wav","image/jpeg","image/png").contains(mime))throw new IOException("صيغة وسائط غير مدعومة");byte[] bytes=Base64.decode(audio.getString("data"),Base64.NO_WRAP);if(bytes.length>16*1024*1024)throw new IOException("الوسائط أكبر من حد الطلب");out.addInlineData(bytes,mime);}else throw new IOException("محتوى طلب غير مدعوم");}
   return out.build();
  }
  static Schema schema(JSONObject input)throws Exception {

@@ -235,6 +235,7 @@ def fp16_fits(torch):
 
 
 def translation_backend(torch):
+    if fp16_fits(torch):return 'FP16'
     _, code = attempt_model(lambda: quantization_preflight(torch))
     release_gpu(torch)
     if not code:return 'NF4'
@@ -256,6 +257,12 @@ def load_translation_model(torch, model_class, config_class, path, precision):
         release_gpu(torch)
         if fp16_fits(torch):
             precision = 'FP16'
+            model, code = attempt_model(lambda: load(precision))
+    if code == 'GPU_MEMORY' and precision == 'FP16':
+        release_gpu(torch)
+        _, preflight = attempt_model(lambda: quantization_preflight(torch))
+        if not preflight:
+            precision = 'NF4'
             model, code = attempt_model(lambda: load(precision))
     if code:raise TranslationError(code)
     return model, precision

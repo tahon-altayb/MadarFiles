@@ -19,10 +19,10 @@ public final class ColabActivity extends Activity {
  private static final int AUTHORIZE=7201;
  private final ExecutorService worker=Executors.newSingleThreadExecutor();
  private AtomicBoolean cancel=new AtomicBoolean();private int generation;private boolean busy,awaitingResolution,destroyed;
- private boolean authorizeOnly,cleanupMode;private Button cleanup;
+ private boolean authorizeOnly,cleanupMode,automatic;private Button cleanup;
  private EditText project;private Button connect,stop,copy;private TextView status;private String report="",activeProject="";
  @Override public void onCreate(Bundle saved){
-  super.onCreate(saved);authorizeOnly=getIntent().getBooleanExtra("authorizeSpeech",false);boolean textOnly=getIntent().getBooleanExtra("textOnly",false),musicOnly=getIntent().getBooleanExtra("musicOnly",false);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+  super.onCreate(saved);authorizeOnly=getIntent().getBooleanExtra("authorizeSpeech",false);automatic=authorizeOnly&&getIntent().getBooleanExtra("autoStart",false);boolean textOnly=getIntent().getBooleanExtra("textOnly",false),musicOnly=getIntent().getBooleanExtra("musicOnly",false);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
   LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);int pad=(int)(20*getResources().getDisplayMetrics().density);box.setPadding(pad,pad,pad,pad);box.setBackgroundColor(Color.rgb(248,244,237));
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(box);setContentView(scroll);
   scroll.setOnApplyWindowInsetsListener((view,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);}else view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});scroll.requestApplyInsets();
@@ -37,11 +37,12 @@ public final class ColabActivity extends Activity {
   cleanup=new Button(this);cleanup.setText("إنهاء جلسة مدار السابقة");cleanup.setVisibility(authorizeOnly?View.GONE:View.VISIBLE);cleanup.setOnClickListener(v->{cleanupMode=true;start();});box.addView(cleanup);
   if(getSharedPreferences("colab_owned_runtime",0).contains("name"))box.addView(text("توجد جلسة مدار لم يُؤكّد إنهاؤها. اضغط إنهاء جلسة مدار السابقة؛ قد تستمر في استهلاك وحدات الحساب حتى إيقافها.",16));
   Button close=new Button(this);close.setText("العودة إلى مدار");close.setOnClickListener(v->finish());box.addView(close);
+  if(automatic){for(int i=0;i<box.getChildCount();i++){View child=box.getChildAt(i);if(child!=title&&child!=status&&child!=stop)child.setVisibility(View.GONE);}status.setText("جارٍ توصيل Colab وبدء المعالجة…");if(saved==null)start();}
   if(saved!=null){cleanupMode=saved.getBoolean("cleanupMode");project.setText(saved.getString("project",project.getText().toString()));String previous=saved.getString("report","");if(!previous.isEmpty())complete(previous);if(saved.getBoolean("pending")){activeProject=saved.getString("activeProject","");awaitingResolution=true;setBusy(true);status.setText("بانتظار إكمال موافقة Google؛ يمكنك إلغاء الفحص وإعادته.");}else if(saved.getBoolean("busy"))complete("أُوقف الفحص عند إعادة فتح الشاشة؛ اضغط اتصال لإعادته.");}
  }
  private TextView text(String value,int size){TextView view=new TextView(this);view.setText(value);view.setTextSize(size);view.setTextColor(Color.rgb(37,48,45));view.setPadding(0,12,0,12);return view;}
  private void setBusy(boolean value){busy=value;connect.setEnabled(!value);project.setEnabled(!value);if(cleanup!=null)cleanup.setEnabled(!value);stop.setEnabled(value);copy.setEnabled(!value&&!report.isEmpty());}
- private void complete(String value){awaitingResolution=false;report=value;status.setText(value);setBusy(false);}
+ private void complete(String value){awaitingResolution=false;report=value;status.setText(value);setBusy(false);if(automatic){connect.setVisibility(View.VISIBLE);connect.setText("إعادة الاتصال والمتابعة");stop.setEnabled(true);}}
  private void start(){
   if(busy)return;String selected=project.getText().toString().trim();if(!ColabProbe.validProject(selected)){complete("أدخل معرّف المشروع، مثل madarfiles، وليس اسم العرض أو رقم المشروع.");return;}
   if(GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this)!=ConnectionResult.SUCCESS){complete("خدمات Google Play غير متاحة أو تحتاج تحديثًا على هذا الجهاز. حدّثها ثم أعد الفحص.");return;}
