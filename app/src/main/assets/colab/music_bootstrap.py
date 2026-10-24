@@ -22,3 +22,14 @@ with (job / 'worker.log').open('wb') as log:
         p.write_text(json.dumps(dict(stage='failed', progress=0, error='MUSIC_TIMEOUT')))
         p.replace(job / 'progress.json')
         raise
+    except subprocess.CalledProcessError:
+        import json
+        try:
+            state = json.loads((job / 'progress.json').read_text())
+        except (OSError, ValueError):
+            state = {}
+        if state.get('stage') != 'failed':
+            p = job / 'progress.tmp'
+            p.write_text(json.dumps(dict(stage='failed', progress=0, error='MUSIC_PROCESS_EXIT')))
+            p.replace(job / 'progress.json')
+        raise

@@ -52,6 +52,7 @@ jobs:
           npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
           NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/layout.test.cjs
           NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/subtitle-session.test.cjs
+          NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/agent.test.cjs
       - name: Prepare Android tools
         run: python3 scripts/ensure_android.py
       - name: Compile Java, lint and unit tests (no APK signing)
@@ -106,7 +107,7 @@ jobs:
             mkdir -p phone-screenshots
             adb pull /data/local/tmp/madar-editor.png phone-screenshots/editor.png
             adb pull /data/local/tmp/madar-pdf.png phone-screenshots/pdf.png
-            adb pull /sdcard/Android/data/com.madar.files.validation/files/table-editable.docx phone-screenshots/table-editable.docx
+            python3 qa/collect-table-document.py
       - name: Remove disposable validation key
         if: always()
         run: rm -f "$MADAR_VALIDATION_KEYSTORE"
