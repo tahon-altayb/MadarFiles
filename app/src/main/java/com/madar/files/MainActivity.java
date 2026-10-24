@@ -23,7 +23,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private PreviewProxy mediaProxy;private LocalMediaServer mediaServer;private File webAssets;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
-    private final ExecutorService agentWorker=Executors.newSingleThreadExecutor();private final LocalAgent localAgent=new LocalAgent();private final java.util.concurrent.atomic.AtomicBoolean agentRunning=new java.util.concurrent.atomic.AtomicBoolean();private volatile java.util.concurrent.atomic.AtomicBoolean agentCancel=new java.util.concurrent.atomic.AtomicBoolean();
+    private final ExecutorService agentWorker=Executors.newSingleThreadExecutor();private final LocalAgent localAgent=new LocalAgent();private final java.util.concurrent.atomic.AtomicBoolean agentRunning=new java.util.concurrent.atomic.AtomicBoolean();private volatile boolean agentComputing;private volatile java.util.concurrent.atomic.AtomicBoolean agentCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
     private volatile int previewToken;private volatile int stepToken;private final ExecutorService navigation=Executors.newSingleThreadExecutor();
     private volatile int timelineToken;
@@ -164,16 +164,16 @@ public class MainActivity extends Activity {
     }
     private void startAgent(JSONObject request,boolean install)throws Exception{
         int token=request.optInt("token");if(isBusy()||!agentRunning.compareAndSet(false,true)){send(new JSONObject().put("type","agentError").put("token",token).put("message","انتظر اكتمال العملية الحالية"));return;}
-        final File selected=source;final JSONObject info=sourceInfo==null?new JSONObject():new JSONObject(sourceInfo.toString());final String user=request.optString("text");final java.util.concurrent.atomic.AtomicBoolean cancel=new java.util.concurrent.atomic.AtomicBoolean();agentCancel=cancel;
+        final File selected=source;final JSONObject info=sourceInfo==null?new JSONObject():new JSONObject(sourceInfo.toString());final String user=request.optString("text");final java.util.concurrent.atomic.AtomicBoolean cancel=new java.util.concurrent.atomic.AtomicBoolean();agentCancel=cancel;agentComputing=!install;
         final Handler timer=new Handler(Looper.getMainLooper());Runnable timeout=()->{cancel.set(true);localAgent.cancel();};timer.postDelayed(timeout,install?16L*60*1000:90000);
         agentWorker.execute(()->{try{
             if(install){localAgent.install(this,cancel,(p,m)->{try{send(new JSONObject().put("type","agentProgress").put("token",token).put("progress",p).put("message",m));}catch(Exception ignored){}});agentRunning.set(false);send(new JSONObject().put("type","agentStatus").put("token",token).put("ready",true).put("learning",getSharedPreferences("local_agent",0).getBoolean("learn",false)));}
-            else{JSONObject metadata=new JSONObject();for(String key:new String[]{"kind","duration","width","height","pages"})if(info.has(key))metadata.put(key,info.get(key));JSONObject plan=localAgent.plan(this,user,metadata,cancel);if(source!=selected)throw new IOException("تغير الملف أثناء تحليل الطلب؛ أعد إرساله للملف الحالي");agentRunning.set(false);send(new JSONObject().put("type","agentPlan").put("token",token).put("plan",plan));}
+            else{JSONObject metadata=new JSONObject();for(String key:new String[]{"kind","duration","width","height","pages"})if(info.has(key))metadata.put(key,info.get(key));JSONObject plan=localAgent.plan(this,user,metadata,cancel);if(source!=selected)throw new IOException("تغير الملف أثناء تحليل الطلب؛ أعد إرساله للملف الحالي");agentComputing=false;agentRunning.set(false);send(new JSONObject().put("type","agentPlan").put("token",token).put("plan",plan));}
         }catch(Exception|OutOfMemoryError|LinkageError e){try{send(new JSONObject().put("type","agentError").put("token",token).put("message",cancel.get()?"أُوقف طلب المساعد":e instanceof OutOfMemoryError?"ذاكرة الجهاز لا تكفي للمساعد الآن؛ أغلق الأدوات الأخرى":e instanceof LinkageError?"تعذر تحميل محرك المساعد على هذا الجهاز":"تعذر تنفيذ طلب المساعد؛ "+(e instanceof IOException?e.getMessage():"أعد صياغة الطلب أو أعد تشغيل المساعد")));}catch(Exception ignored){}}
-        finally{timer.removeCallbacks(timeout);agentRunning.set(false);}});
+        finally{timer.removeCallbacks(timeout);agentComputing=false;agentRunning.set(false);}});
     }
     private void export(JSONObject o)throws Exception{
-        if(isBusy())return;mediaProxy.stopPreparing();File input=source;JSONObject info=sourceInfo;if(input==null||info==null)throw new IOException("اختر الملف أولًا");
+        if(agentComputing)throw new IOException("انتظر اكتمال تحليل المساعد أو أوقفه أولًا");if(isBusy())return;mediaProxy.stopPreparing();File input=source;JSONObject info=sourceInfo;if(input==null||info==null)throw new IOException("اختر الملف أولًا");
         String kind=info.getString("kind");if(!kind.equals(o.getString("kind")))throw new IOException("نوع الملف لا يطابق الأداة");
         if(o.optString("tool").equals("subtitles")&&o.optString("translationMode").equals("online")&&!o.optBoolean("geminiPlanApproved")){
             long millis=o.optBoolean("speechSample")?Math.min(30000,info.optLong("duration",30000)):info.optLong("duration");
