@@ -34,7 +34,7 @@ final class LocalAgent {
   File file=model(c);if(!digest(file).equals(MODEL_SHA)){file.delete();throw new IOException("نموذج المساعد تالف؛ أعد تنزيله");}ColabProbe.check(cancel);
   String prompt;try(InputStream in=c.getAssets().open("agent-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   String kind=source.optString("kind");JSONObject data=new JSONObject().put("source",source).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("userRequest",user);
-  EngineConfig config=new EngineConfig(file.getAbsolutePath(),new Backend.CPU(),null,null,4096,0,c.getCacheDir().getAbsolutePath());
+  EngineConfig config=new EngineConfig(file.getAbsolutePath(),new Backend.CPU(),null,null,4096,null,c.getCacheDir().getAbsolutePath());
   try(Engine engine=new Engine(config)){engine.initialize();ColabProbe.check(cancel);
    try(Conversation chat=engine.createConversation(new ConversationConfig(Contents.Companion.of(prompt),Collections.emptyList(),Collections.emptyList(),new SamplerConfig(1,1.0,0.0,0),false,Collections.emptyList(),Collections.emptyMap(),null,false,384,new ThinkingConfig(false),true))){
     conversation=chat;ColabProbe.check(cancel);Message result=chat.sendMessage(Message.Companion.user(data.toString()),Collections.emptyMap(),null,null,null,384,new ThinkingConfig(false),ResponseFormat.Companion.json(AgentTools.schema(kind).toString()));ColabProbe.check(cancel);StringBuilder text=new StringBuilder();for(Content content:result.getContents().getContents())if(content instanceof Content.Text)text.append(((Content.Text)content).getText());
