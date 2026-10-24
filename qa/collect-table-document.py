@@ -39,3 +39,17 @@ with zipfile.ZipFile(out) as archive:
     xml = archive.read('word/document.xml').decode()
     assert '<w:tbl>' in xml and 'سعر المنتج' in xml and '125.00' in xml
 print('PASS: real Android vision-parser editable Arabic Word document collected')
+
+# Source PDF plus both Word modes for image/caption and paragraph visual QA.
+parts = {}
+for path in Path('app/build/outputs/androidTest-results').rglob('*'):
+    if path.is_file() and 'logcat' in path.name:
+        for index, value in re.findall(r'MADAR_LAYOUT_FIXTURE[^\n]*?PART (\d+) ([A-Za-z0-9+/=]+)', path.read_text(errors='replace')):
+            parts[int(index)] = value
+if not parts or sorted(parts) != list(range(0, max(parts) + 1, 2000)):
+    raise RuntimeError('Editable image/caption fixture was not collected')
+out = Path('phone-screenshots/layout-source-and-word.zip')
+out.write_bytes(base64.b64decode(''.join(parts[i] for i in sorted(parts)), validate=True))
+with zipfile.ZipFile(out) as archive:
+    assert sorted(archive.namelist()) == ['flow.docx', 'layout.docx', 'source.pdf']
+print('PASS: actual native source PDF and both image/caption Word modes collected')

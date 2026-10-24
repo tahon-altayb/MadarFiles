@@ -144,9 +144,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 27 --version-name 1.4.22 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 28 --version-name 1.4.23 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.22.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.23.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -194,8 +194,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.4.22-APK
-          path: MadarFiles-1.4.22.apk
+          name: MadarFiles-1.4.23-APK
+          path: MadarFiles-1.4.23.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
