@@ -14,5 +14,6 @@ with tempfile.TemporaryDirectory() as directory:
         result=subprocess.run(['bash',str(root/'qa/run-native-documents.sh')],cwd=work,env=env,capture_output=True,text=True)
         assert result.returncode==expected, (gradle,collector,result.returncode,result.stderr)
         commands=log.read_text()
+        assert 'adb shell wm density 180' in commands, commands
         assert 'adb pull' in commands and 'python3 qa/collect-table-document.py' in commands, commands
 print('PASS native runner success/failure propagation and report collection in four scenarios')
