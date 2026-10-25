@@ -191,6 +191,7 @@ jobs:
             adb pull /data/local/tmp/madar-clean.mp4 phone-screenshots/clean-music-test.mp4 || echo "Optional audio evidence unavailable; see processing test results"
             adb pull /data/local/tmp/madar-colab.png phone-screenshots/colab.png || true
             adb pull /data/local/tmp/madar-player.png phone-screenshots/player.png || true
+            adb pull /data/local/tmp/madar-assistant.png phone-screenshots/assistant.png || true
             adb pull /data/local/tmp/madar-crop.png phone-screenshots/crop.png || true
             cp app/src/androidTest/assets/music-test.mp4 phone-screenshots/original-music-test.mp4
       - name: Upload verified update APK
