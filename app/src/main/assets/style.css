@@ -57,3 +57,7 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 #sheet.editing .editTransport{display:grid;grid-template-columns:40px 40px minmax(60px,1fr) 40px 40px;gap:6px;padding-top:8px}#sheet.editing .editTransport #editPlay{grid-column:3;grid-row:1}#sheet.editing .editTransport #frameBack{grid-column:2;grid-row:1}#sheet.editing .editTransport #frameNext{grid-column:4;grid-row:1}#sheet.editing .editTransport #undoEdit{grid-column:1;grid-row:1}#sheet.editing .editTransport #redoEdit{grid-column:5;grid-row:1}#sheet.editing .editTransport label{grid-column:1/-1;grid-row:2;justify-content:center;gap:14px;padding:5px}#sheet.editing .editTransport label input{width:min(40vw,200px)}
 
 #sheet.editing .livePreview{max-height:none;min-height:0}
+
+.editorTimelineControls{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px;flex-shrink:0}.editorTimelineControls #timelineStatus{flex:1;margin:0!important;font-size:11px!important}.editorTimelineControls label{display:flex!important;align-items:center;gap:8px;margin:0!important;font-size:10px!important;flex:0 1 130px;min-width:0}.editorTimelineControls input{width:80px;min-width:45px}#sheet.editing #editStage,#sheet.editing #editStage video{max-height:20dvh}#sheet.editing #mediaRecovery:not(:has(p)){padding:6px 8px;font-size:10px;line-height:1.4}
+
+#sheet.editing{--preview-height:20dvh}#sheet.editing #editStage,#sheet.editing #editStage video{max-height:var(--preview-height)}@media(min-height:720px){#sheet.editing{--preview-height:29dvh}}
