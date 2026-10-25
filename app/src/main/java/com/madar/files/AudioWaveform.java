@@ -8,7 +8,8 @@ import org.json.*;
 
 /** Streaming peak envelope. Does not save PCM or invoke separation/AI engines. */
 final class AudioWaveform {
- static JSONObject read(File source,BooleanSupplier cancelled)throws Exception{
+ static JSONObject read(File source,BooleanSupplier cancelled)throws Exception{return read(source,cancelled,2400);}
+ static JSONObject read(File source,BooleanSupplier cancelled,int maxBins)throws Exception{
   MediaExtractor extractor=new MediaExtractor();MediaCodec codec=null;
   try{
    check(cancelled);extractor.setDataSource(source.getPath());int track=-1;
@@ -17,7 +18,7 @@ final class AudioWaveform {
    extractor.selectTrack(track);MediaFormat format=extractor.getTrackFormat(track);long duration=format.containsKey(MediaFormat.KEY_DURATION)?format.getLong(MediaFormat.KEY_DURATION):0;
    try(MediaMetadataRetriever metadata=new MediaMetadataRetriever()){metadata.setDataSource(source.getPath());String value=metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);if(value!=null)duration=Math.max(duration,Long.parseLong(value)*1000L);}
    if(duration<=0||duration>7200000000L)throw new IOException("الموجة متاحة لملف مدته حتى ساعتين");
-   int count=(int)Math.max(32,Math.min(2400,duration/50000));float[] peaks=new float[count];
+   int count=(int)Math.max(32,Math.min(maxBins,duration/50000));float[] peaks=new float[count];
    int rate=format.getInteger(MediaFormat.KEY_SAMPLE_RATE),channels=format.getInteger(MediaFormat.KEY_CHANNEL_COUNT),encoding=AudioFormat.ENCODING_PCM_16BIT;
    codec=MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME));codec.configure(format,null,null,0);codec.start();
    boolean inputDone=false,outputDone=false;MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();long began=android.os.SystemClock.elapsedRealtime();
