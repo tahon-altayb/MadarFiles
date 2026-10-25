@@ -16,7 +16,7 @@ class Element{
 const get=id=>{if(!elements.has(id))elements.set(id,new Element(id));return elements.get(id);};
 for(const id of ['textClose','copyText','saveTxt','saveDocx','recognizedText','textPanel','recent','historyBtn','file','fileIcon','thumb','fileTitle','fileSub','tools','meta','choose','previewBtn','toast','sheet','toolTitle','toolKicker','form','export','busy','busyTitle','busyDetail','cancel','progress','result','resultMeta','save','share','view','resultClose','close','quality'])get(id);
 const requests=[],tabs=['image','video','pdf'].map(kind=>{const e=new Element();e.dataset.kind=kind;return e;});
-const context={Image:class {constructor(){this.complete=false;}},console,setTimeout:()=>0,clearTimeout(){},Android:{request:s=>requests.push(JSON.parse(s))},document:{body:new Element(),getElementById:id=>elements.get(id)||null,querySelectorAll:()=>tabs,querySelector:()=>new Element(),createElement:()=>new Element()},window:{}};
+const context={rememberSubtitleSession:()=>true,Image:class {constructor(){this.complete=false;}},console,setTimeout:()=>0,clearTimeout(){},Android:{request:s=>requests.push(JSON.parse(s))},document:{body:new Element(),getElementById:id=>elements.get(id)||null,querySelectorAll:()=>tabs,querySelector:()=>new Element(),createElement:()=>new Element()},window:{}};
 context.window=context;
 vm.createContext(context);vm.runInContext(readFileSync('app/src/main/assets/crop.js','utf8'),context);vm.runInContext(readFileSync('app/src/main/assets/app.js','utf8'),context);
 const run=s=>vm.runInContext(s,context);
@@ -31,7 +31,7 @@ end.value='2.8';run('runExport()');assert.equal(requests.at(-1).action,'export')
 context.window.receive({type:'progress',progress:42});assert.equal(get('progress').value,42);
 context.window.receive({type:'error',message:'test failure'});assert.equal(get('busy').hidden,true);assert.equal(get('toast').textContent,'test failure');
 context.window.receive({type:'result',name:'result.mp4',size:1024,mime:'video/mp4'});assert.equal(get('result').hidden,false);get('share').onclick();assert.equal(requests.at(-1).action,'share');
-context.window.receive({type:'history',files:[{name:'<script>bad()</script>',size:300,mime:'image/png',modified:Date.now()}]});assert.equal(get('recent').children[0].children[1].children[0].textContent,'<script>bad()</script>');
+context.window.receive({type:'history',files:[{name:'<script>bad()</script>',size:300,mime:'image/png',modified:Date.now()}]});assert.equal(get('recent').children[1].children[0].children[1].children[0].textContent,'<script>bad()</script>');
 run("selectKind('pdf')");assert.equal(get('tools').children.length,5);assert.equal(get('previewBtn').hidden,true);
 console.log('PASS: bridge, radial tools, source switching, safe filenames, video trim validation, progress, failures, results and sharing');
 

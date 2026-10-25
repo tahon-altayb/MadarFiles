@@ -42,6 +42,7 @@ with tarfile.open(archive) as t:
  if test:
   with t.extractfile(test) as src,(ROOT/'app/src/androidTest/assets/speech-test.wav').open('wb') as out:shutil.copyfileobj(src,out)
 # A record of the exact bytes bundled in this build is retained with the APK.
+get('https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',ASSETS/'silero_vad.onnx','9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6')
 manifest={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in ASSETS.iterdir() if p.is_file() and p.suffix!='.json'}
 (ASSETS/'checksums.json').write_text(json.dumps(manifest,indent=2))
 print('Offline model assets prepared',manifest)

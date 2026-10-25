@@ -13,7 +13,7 @@ final class ImageProcessor {
         Bitmap b=FilesUtil.image(source,o.optString("tool").equals("removebg")?2048:4096);File result=null;
         try {
             String tool=o.getString("tool"),format=o.optString("format","jpg");
-            if(tool.equals("removebg")){Bitmap next=PersonCutout.cut(c,b,o.optString("cutBackground","transparent").equals("transparent"),Color.parseColor(o.optString("color","#eadcc7")),o.optString("cutModel","fine"),o.optDouble("cutThreshold",50),o.optDouble("cutSoftness",50));b.recycle();b=next;
+            if(tool.equals("removebg")){int background=Color.parseColor(o.optString("color","#eadcc7"));Bitmap next=PersonCutout.cut(c,b,true,background,o.optString("cutModel","general"),o.optDouble("cutThreshold",50),o.optDouble("cutSoftness",50));next=CutoutBrush.apply(b,next,o.optJSONArray("cutoutStrokes"),o.optString("cutBackground","transparent").equals("transparent"),background);b.recycle();b=next;
             }else if(tool.equals("adjust")){
                 float brightness=1+(float)FilesUtil.bounded(o.optDouble("brightness",0),-100,100)/100f,contrast=(float)FilesUtil.bounded(o.optDouble("contrast",100),50,150)/100f,saturation=(float)FilesUtil.bounded(o.optDouble("saturation",100),0,200)/100f;
                 ColorMatrix matrix=new ColorMatrix();matrix.setSaturation(saturation);ColorMatrix scale=new ColorMatrix(new float[]{brightness,0,0,0,0,0,brightness,0,0,0,0,0,brightness,0,0,0,0,0,1,0});matrix.postConcat(scale);float shift=127.5f*(1-contrast);matrix.postConcat(new ColorMatrix(new float[]{contrast,0,0,0,shift,0,contrast,0,0,shift,0,0,contrast,0,shift,0,0,0,1,0}));
@@ -24,7 +24,7 @@ final class ImageProcessor {
                 double w=FilesUtil.bounded(r.getDouble("w"),.001,1-x),h=FilesUtil.bounded(r.getDouble("h"),.001,1-y);
                 int left=(int)(x*b.getWidth()),top=(int)(y*b.getHeight());Bitmap next=Bitmap.createBitmap(b,left,top,Math.max(1,Math.min(b.getWidth()-left,(int)(w*b.getWidth()))),Math.max(1,Math.min(b.getHeight()-top,(int)(h*b.getHeight()))));FilesUtil.replace(b,next);b=next;
             } else if(tool.equals("resize")) {
-                int width=(int)FilesUtil.bounded(o.getDouble("width"),32,4096);int height=Math.max(1,(int)((double)width*b.getHeight()/b.getWidth()));
+                int width,height;if(!o.optString("targetAspect","original").equals("original")){int[] dimensions=AspectSizing.dimensions(o.getString("targetAspect"),o.optInt("aspectQuality",1080));width=dimensions[0];height=dimensions[1];}else{width=(int)FilesUtil.bounded(o.getDouble("width"),32,4096);height=Math.max(1,(int)((double)width*b.getHeight()/b.getWidth()));}
                 if(height>4096){width=Math.max(1,width*4096/height);height=4096;}
                 Bitmap next=Bitmap.createScaledBitmap(b,width,height,true);FilesUtil.replace(b,next);b=next;
             } else if(tool.equals("rotate")) {

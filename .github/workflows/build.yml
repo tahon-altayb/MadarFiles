@@ -1,7 +1,7 @@
 name: Build MadarFiles APK
 on:
   push:
-    branches: [main, master, fixes/usability-arabic-20261021]
+    branches: [main, master, fixes/usability-arabic-20261021, fixes/translation-20261021]
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - name: Prepare preinstalled Android SDK
         timeout-minutes: 10
         run: python3 scripts/ensure_android.py
@@ -48,6 +48,28 @@ jobs:
           if hashlib.sha256(cert).hexdigest()!=expected:
               raise SystemExit('Signing key is not the original update key; build stopped')
           PYKEY
+      - name: Load required Firebase project configuration
+        env:
+          MADAR_FIREBASE_CONFIG: ${{ secrets.MADAR_FIREBASE_CONFIG }}
+        run: |
+          python3 - <<'PYFIREBASE'
+          import os,json,pathlib
+          value=os.environ.get('MADAR_FIREBASE_CONFIG','').strip()
+          if not value:
+              raise SystemExit('MADAR_FIREBASE_CONFIG is required for this managed Gemini release')
+          config=json.loads(value)
+          assert config.get('project_info',{}).get('project_id')=='madar-2ab2e', 'Firebase project mismatch'
+          clients=[c for c in config.get('client',[]) if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.madar.files']
+          assert len(clients)==1, 'Firebase Android package mismatch'
+          assert clients[0].get('api_key',[{}])[0].get('current_key'), 'Firebase client key missing'
+          assert clients[0].get('client_info',{}).get('mobilesdk_app_id'), 'Firebase app ID missing'
+          dest=pathlib.Path('app/google-services.json')
+          dest.write_text(value)
+          dest.chmod(0o600)
+          print('Verified Firebase project and Android client configuration; values withheld.')
+          PYFIREBASE
+      - name: Compile Gemini integration before expensive model checks
+        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac
       - name: Restore processing build assets
         uses: actions/cache@v4
         with:
@@ -71,18 +93,66 @@ jobs:
             app/src/main/assets/models
           key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
       - name: Prepare speech and music test fixture
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg espeak-ng
-          curl -fL --retry 3 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
+          for MADAR_APT_SOURCE in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list /etc/apt/apt-mirrors.txt /etc/apt/apt-mirrors-security.txt; do
+            if [ -f "$MADAR_APT_SOURCE" ]; then
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' "$MADAR_APT_SOURCE"
+            fi
+          done
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends ffmpeg espeak-ng
+          curl -fL --connect-timeout 20 --max-time 90 --speed-time 30 --speed-limit 1024 --retry 2 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
           ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.wav -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
           espeak-ng -v en-us -s 135 -w app/src/androidTest/assets/speech-test.wav "The quick brown fox jumps over the lazy dog. Welcome to this video. This is a test of speech recognition."
+      - name: Restore verified public speech test fixtures
+        id: public-speech
+        uses: actions/cache/restore@v4
+        with:
+          path: app/src/androidTest/assets/speech-reference-*.wav
+          key: madar-public-speech-v1-${{ hashFiles('scripts/prepare_speech_references.py', 'app/src/androidTest/assets/speech-references.json') }}
       - name: Prepare public speech reference fixtures
+        if: steps.public-speech.outputs.cache-hit != 'true'
         run: |
           python3 -m pip install --disable-pip-version-check pyarrow==26.0.0
           python3 scripts/prepare_speech_references.py
+      - name: Cache verified public speech test fixtures
+        if: steps.public-speech.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: app/src/androidTest/assets/speech-reference-*.wav
+          key: madar-public-speech-v1-${{ hashFiles('scripts/prepare_speech_references.py', 'app/src/androidTest/assets/speech-references.json') }}
       - name: Validate interface
-        run: node qa/interface.test.cjs
+        run: |
+          node qa/interface.test.cjs
+          node qa/translation-mode.test.cjs
+          node qa/colab-connection.test.cjs
+          python3 qa/colab-worker.test.py
+          python3 qa/processing-runner.test.py
+      - name: Test subtitle export sessions in browser
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
+          MADAR_UI_FAILED=0
+          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/upgrade.test.cjs qa/release.test.cjs; do
+            NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node "$MADAR_UI_TEST" || MADAR_UI_FAILED=1
+          done
+          exit "$MADAR_UI_FAILED"
+      - name: Test actual Jupyter kernel execution
+        run: |
+          python3 -m pip install --disable-pip-version-check jupyter_server==2.17.0 ipykernel==6.29.5 websocket-client==1.8.0
+          python3 qa/colab-jupyter.test.py
+      - name: Test real Whisper inference and production options
+        timeout-minutes: 8
+        run: |
+          python3 -m pip install --disable-pip-version-check faster-whisper==1.2.1 ctranslate2==4.6.0 av==18.0.0 huggingface-hub==1.33.0
+          python3 qa/colab-whisper.test.py
+      - name: Test pinned Hy-MT2 runtime with current PyTorch
+        timeout-minutes: 10
+        run: |
+          python3 -m venv "$RUNNER_TEMP/madar-qwen"
+          "$RUNNER_TEMP/madar-qwen/bin/pip" install --disable-pip-version-check torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          "$RUNNER_TEMP/madar-qwen/bin/pip" install --disable-pip-version-check transformers==5.6.0 accelerate==1.6.0 bitsandbytes==0.48.2 huggingface-hub==1.33.0
+          "$RUNNER_TEMP/madar-qwen/bin/python" qa/colab-qwen.test.py
       - name: Build and lint APK
         env:
           MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
@@ -90,18 +160,18 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 6 --version-name 1.4.1
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 32 --version-name 1.6.0 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.4.1.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.6.0.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
-          name: MadarFiles-1.4.0-APK
-          run-id: 39436717283
+          name: MadarFiles-1.4.17-APK
+          run-id: 39975762787
           github-token: ${{ github.token }}
           path: upgrade-baseline
       - name: Verify installed-version baseline certificate
-        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.0.apk --version-code 5 --version-name 1.4.0
+        run: python3 scripts/verify_release.py upgrade-baseline/MadarFiles-1.4.17.apk --version-code 22 --version-name 1.4.17
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -117,13 +187,13 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_6
-          ram-size: 4096M
+          ram-size: 6144M
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
             adb shell wm density 180
-            adb install upgrade-baseline/MadarFiles-1.4.0.apk
+            adb install upgrade-baseline/MadarFiles-1.4.17.apk
             adb shell am start -W -n com.madar.files/.MainActivity
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.madar.files/.MainActivity
@@ -131,16 +201,18 @@ jobs:
             mkdir -p phone-screenshots
             adb shell screencap -p /sdcard/madar-home.png
             adb pull /sdcard/madar-home.png phone-screenshots/home.png
-            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 connectedDebugAndroidTest
+            bash qa/run-native-processing.sh
             adb pull /data/local/tmp/madar-clean.mp4 phone-screenshots/clean-music-test.mp4 || echo "Optional audio evidence unavailable; see processing test results"
+            adb pull /data/local/tmp/madar-colab.png phone-screenshots/colab.png || true
             adb pull /data/local/tmp/madar-player.png phone-screenshots/player.png || true
+            adb pull /data/local/tmp/madar-assistant.png phone-screenshots/assistant.png || true
             adb pull /data/local/tmp/madar-crop.png phone-screenshots/crop.png || true
             cp app/src/androidTest/assets/music-test.mp4 phone-screenshots/original-music-test.mp4
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.4.1-APK
-          path: MadarFiles-1.4.1.apk
+          name: MadarFiles-1.6.0-APK
+          path: MadarFiles-1.6.0.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
@@ -155,4 +227,5 @@ jobs:
             app/src/main/assets/models/checksums.json
       - name: Remove temporary signing material
         if: always()
-        run: rm -f .signing/madar-development.keystore
+        run: rm -f .signing/madar-development.keystore app/google-services.json
+

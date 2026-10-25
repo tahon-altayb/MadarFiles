@@ -31,8 +31,8 @@ final class TextProcessor {
   try(PDDocument doc=PDDocument.load(file);ParcelFileDescriptor fd=ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);PdfRenderer renderer=new PdfRenderer(fd)){
    if(first<1||last<first||last>doc.getNumberOfPages()||last-first>=50)throw new IllegalArgumentException("اختر نطاقًا صحيحًا لا يزيد عن 50 صفحة");PDFTextStripper stripper=new PDFTextStripper();stripper.setSortByPosition(true);
    for(int page=first;page<=last;page++){
-    progress.update("قراءة الصفحة "+page+" من "+last);stripper.setStartPage(page);stripper.setEndPage(page);String content=TextQuality.clean(stripper.getText(doc));
-    if(forceOcr||!TextQuality.usable(content,language)){
+    progress.update("قراءة الصفحة "+page+" من "+last);stripper.setStartPage(page);stripper.setEndPage(page);String raw=stripper.getText(doc);String content=TextQuality.clean(raw);
+    if(forceOcr||!TextQuality.usable(raw,language)){
      progress.update("إعادة قراءة الصفحة "+page+" بصريًا؛ طبقة النص مفقودة أو مشوّهة");Bitmap bitmap=PdfProcessor.render(renderer,page-1,2400);try{if(language.equals("eng")){if(tess==null)tess=engine(c,"eng");tess.setImage(bitmap);content=TextQuality.clean(tess.getUTF8Text());tess.clear();}else{if(ocr==null)ocr=new ArabicOcr(c);content=ArabicOcr.text(ocr.read(bitmap));}}finally{bitmap.recycle();}
     }
     if(page>first)text.append('\f');text.append(content);if(text.length()>1000000)throw new IOException("النص كبير جدًا؛ اختر نطاق صفحات أصغر");
@@ -51,7 +51,7 @@ final class TextProcessor {
   StringBuilder body=new StringBuilder();String[] pages=text.split("\\f",-1);
   for(int page=0;page<pages.length;page++){
    if(page>0)body.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>");
-   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"right\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr>");java.util.regex.Matcher latin=java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9 \\t.,:/%+\\-]*").matcher(line);int at=0;while(latin.find()){if(latin.start()>at)wordRun(body,line.substring(at,latin.start()),rtl);wordRun(body,latin.group(),false);at=latin.end();}if(at<line.length())wordRun(body,line.substring(at),rtl);if(line.isEmpty())wordRun(body,"",rtl);body.append("</w:p>");}
+   for(String line:pages[page].split("\\r?\\n",-1)){boolean rtl=line.matches("(?s).*[\\u0600-\\u06ff].*");body.append("<w:p><w:pPr>").append(rtl?"<w:bidi/><w:jc w:val=\"left\"/>":"<w:jc w:val=\"left\"/>").append("</w:pPr>");java.util.regex.Matcher latin=java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9 \\t.,:/%+\\-]*").matcher(line);int at=0;while(latin.find()){if(latin.start()>at)wordRun(body,line.substring(at,latin.start()),rtl);wordRun(body,latin.group(),false);at=latin.end();}if(at<line.length())wordRun(body,line.substring(at),rtl);if(line.isEmpty())wordRun(body,"",rtl);body.append("</w:p>");}
 
   }
   try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(output))){

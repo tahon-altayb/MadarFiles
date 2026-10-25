@@ -27,12 +27,46 @@ extern "C" JNIEXPORT jlong JNICALL Java_com_madar_files_SpeechProcessor_open(JNI
  SherpaOnnxOfflineRecognizerConfig c{};c.feat_config.sample_rate=16000;c.feat_config.feature_dim=80;c.model_config.whisper.encoder=a;c.model_config.whisper.decoder=b;c.model_config.whisper.language=l;c.model_config.whisper.task="transcribe";c.model_config.whisper.tail_paddings=-1;c.model_config.whisper.enable_segment_timestamps=1;c.model_config.tokens=t;c.model_config.provider="cpu";c.model_config.num_threads=2;c.decoding_method="greedy_search";
  auto* r=SherpaOnnxCreateOfflineRecognizer(&c);e->ReleaseStringUTFChars(encoder,a);e->ReleaseStringUTFChars(decoder,b);e->ReleaseStringUTFChars(tokens,t);e->ReleaseStringUTFChars(language,l);if(!r)fail(e,"تعذر تحميل نموذج التفريغ");return reinterpret_cast<jlong>(r);
 }
+// Decode complete utterances only; individual BPE pieces need not be valid UTF-8.
+static bool speechHex(const std::string& encoded,std::string& decoded){
+ if(encoded.size()%2)return false;decoded.clear();decoded.reserve(encoded.size()/2);
+ auto nibble=[](char ch)->int{if(ch>='0'&&ch<='9')return ch-'0';if(ch>='a'&&ch<='f')return ch-'a'+10;return -1;};
+ for(size_t i=0;i<encoded.size();i+=2){int a=nibble(encoded[i]),b=nibble(encoded[i+1]);if(a<0||b<0)return false;decoded.push_back(static_cast<char>((a<<4)|b));}return true;
+}
+static jstring speechUtf8(JNIEnv* e,const std::string& text){
+ auto bytes=e->NewByteArray(text.size());if(!bytes)return nullptr;e->SetByteArrayRegion(bytes,0,text.size(),reinterpret_cast<const jbyte*>(text.data()));
+ auto cls=e->FindClass("java/lang/String");auto constructor=e->GetMethodID(cls,"<init>","([BLjava/lang/String;)V");auto encoding=e->NewStringUTF("UTF-8");
+ auto value=static_cast<jstring>(e->NewObject(cls,constructor,bytes,encoding));e->DeleteLocalRef(bytes);e->DeleteLocalRef(encoding);e->DeleteLocalRef(cls);return value;
+}
 extern "C" JNIEXPORT jobjectArray JNICALL Java_com_madar_files_SpeechProcessor_recognize(JNIEnv* e,jclass,jlong handle,jfloatArray audio){
  auto* r=reinterpret_cast<const SherpaOnnxOfflineRecognizer*>(handle);auto* stream=SherpaOnnxCreateOfflineStream(r);int n=e->GetArrayLength(audio);std::vector<float> samples(n);e->GetFloatArrayRegion(audio,0,n,samples.data());SherpaOnnxAcceptWaveformOffline(stream,16000,samples.data(),n);SherpaOnnxDecodeOfflineStream(r,stream);auto* result=SherpaOnnxGetOfflineStreamResult(stream);std::vector<std::string> values;
- if(result){if(result->segment_count>0&&result->segment_timestamps&&result->segment_durations){for(int i=0;i<result->segment_count;i++){values.push_back(std::to_string(result->segment_timestamps[i]));values.push_back(std::to_string(result->segment_durations[i]));values.push_back(result->segment_texts_arr[i]?result->segment_texts_arr[i]:"");}}else{values={"0",std::to_string(n/16000.0),result->text?result->text:""};}}
- auto out=e->NewObjectArray(values.size(),e->FindClass("java/lang/String"),nullptr);for(int i=0;i<(int)values.size();i++){jstring s=e->NewStringUTF(values[i].c_str());e->SetObjectArrayElement(out,i,s);e->DeleteLocalRef(s);}if(result)SherpaOnnxDestroyOfflineRecognizerResult(result);SherpaOnnxDestroyOfflineStream(stream);return out;
+ values.push_back(result&&result->lang?result->lang:"");
+ if(result){if(result->segment_count>0&&result->segment_timestamps&&result->segment_durations){for(int i=0;i<result->segment_count;i++){values.push_back(std::to_string(result->segment_timestamps[i]));values.push_back(std::to_string(result->segment_durations[i]));values.push_back(result->segment_texts_arr[i]?result->segment_texts_arr[i]:"");}}else{values.insert(values.end(),{"0",std::to_string(n/16000.0),result->text?result->text:""});}}
+ auto out=e->NewObjectArray(values.size(),e->FindClass("java/lang/String"),nullptr);for(int i=0;out&&i<(int)values.size();i++){std::string text=values[i];if(i>0&&i%3==0){if(!speechHex(values[i],text)){fail(e,"تعذر فك ترميز الكلام؛ أعد تجهيز النموذج");break;}}jstring s=speechUtf8(e,text);if(!s)break;e->SetObjectArrayElement(out,i,s);e->DeleteLocalRef(s);}if(result)SherpaOnnxDestroyOfflineRecognizerResult(result);SherpaOnnxDestroyOfflineStream(stream);return out;
 }
 extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechProcessor_close(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxDestroyOfflineRecognizer(reinterpret_cast<const SherpaOnnxOfflineRecognizer*>(handle));}
+extern "C" JNIEXPORT jlong JNICALL Java_com_madar_files_SpeechActivity_open(JNIEnv* e,jclass,jstring model){
+ const char* path=e->GetStringUTFChars(model,nullptr);SherpaOnnxVadModelConfig c{};c.silero_vad.model=path;c.silero_vad.threshold=.5f;c.silero_vad.min_silence_duration=.35f;c.silero_vad.min_speech_duration=.15f;c.silero_vad.max_speech_duration=20;c.silero_vad.window_size=512;c.sample_rate=16000;c.num_threads=1;c.provider="cpu";
+ auto* vad=SherpaOnnxCreateVoiceActivityDetector(&c,30);e->ReleaseStringUTFChars(model,path);if(!vad)fail(e,"تعذر تحميل كاشف الكلام");return reinterpret_cast<jlong>(vad);
+}
+extern "C" JNIEXPORT jintArray JNICALL Java_com_madar_files_SpeechActivity_regions(JNIEnv* e,jclass,jlong handle,jfloatArray audio){
+ auto* vad=reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle);if(!vad){fail(e,"كاشف الكلام غير متاح");return nullptr;}int n=e->GetArrayLength(audio);if(n>320000){fail(e,"نافذة كشف الكلام طويلة");return nullptr;}std::vector<float> samples(n);e->GetFloatArrayRegion(audio,0,n,samples.data());SherpaOnnxVoiceActivityDetectorReset(vad);std::vector<jint> ranges;
+ for(int at=0;at<n;at+=512)SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad,samples.data()+at,std::min(512,n-at));SherpaOnnxVoiceActivityDetectorFlush(vad);
+ while(!SherpaOnnxVoiceActivityDetectorEmpty(vad)){auto* part=SherpaOnnxVoiceActivityDetectorFront(vad);if(part){ranges.push_back(std::max(0,part->start));ranges.push_back(std::min(n,part->start+part->n));SherpaOnnxDestroySpeechSegment(part);}SherpaOnnxVoiceActivityDetectorPop(vad);}
+ auto out=e->NewIntArray(ranges.size());if(out&&!ranges.empty())e->SetIntArrayRegion(out,0,ranges.size(),ranges.data());return out;
+}
+extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechActivity_release(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxDestroyVoiceActivityDetector(reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle));}
+extern "C" JNIEXPORT void JNICALL Java_com_madar_files_SpeechActivity_reset(JNIEnv*,jclass,jlong handle){if(handle)SherpaOnnxVoiceActivityDetectorReset(reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle));}
+// Preserve the detector's recurrent state across input buffers. Returned sample
+// offsets refer to the complete recording, never to the latest input buffer.
+extern "C" JNIEXPORT jintArray JNICALL Java_com_madar_files_SpeechActivity_accept(JNIEnv* e,jclass,jlong handle,jfloatArray audio,jboolean finish){
+ auto* vad=reinterpret_cast<const SherpaOnnxVoiceActivityDetector*>(handle);if(!vad){fail(e,"كاشف الكلام غير متاح");return nullptr;}
+ int n=e->GetArrayLength(audio);if(n>320000){fail(e,"نافذة كشف الكلام طويلة");return nullptr;}std::vector<float> samples(n);if(n>0)e->GetFloatArrayRegion(audio,0,n,samples.data());
+ for(int at=0;at<n;at+=512)SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad,samples.data()+at,std::min(512,n-at));
+ if(finish)SherpaOnnxVoiceActivityDetectorFlush(vad);std::vector<jint> ranges;
+ while(!SherpaOnnxVoiceActivityDetectorEmpty(vad)){auto* part=SherpaOnnxVoiceActivityDetectorFront(vad);if(part){ranges.push_back(std::max(0,part->start));ranges.push_back(part->start+part->n);SherpaOnnxDestroySpeechSegment(part);}SherpaOnnxVoiceActivityDetectorPop(vad);}
+ auto out=e->NewIntArray(ranges.size());if(out&&!ranges.empty())e->SetIntArrayRegion(out,0,ranges.size(),ranges.data());return out;
+}
 #include <cstdio>
 #include "lame.h"
 extern "C" JNIEXPORT void JNICALL Java_com_madar_files_AudioEditor_mp3(JNIEnv* e,jclass,jstring input,jstring output,jobject cancel){

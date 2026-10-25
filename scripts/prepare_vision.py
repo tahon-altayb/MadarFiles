@@ -14,6 +14,8 @@ get('https://raw.githubusercontent.com/microsoft/onnxruntime/v1.17.3/include/onn
 
 get('https://huggingface.co/Xenova/modnet/resolve/fa2fa546052fba4c08921230a26cc69a333fca12/onnx/model.onnx',assets/'portrait-matte.onnx','07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9')
 
+get('https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx',assets/'subject-matte.onnx','60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a')
+
 import json
 manifest={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in assets.iterdir() if p.is_file() and p.suffix!='.json'}
 (assets/'checksums.json').write_text(json.dumps(manifest,indent=2))
