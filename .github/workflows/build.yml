@@ -121,6 +121,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/subtitle-session.test.cjs
           NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/agent.test.cjs
           NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/editor-workspace.test.cjs
+          NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/workspace-plus.test.cjs
       - name: Test actual Jupyter kernel execution
         run: |
           python3 -m pip install --disable-pip-version-check jupyter_server==2.17.0 ipykernel==6.29.5 websocket-client==1.8.0

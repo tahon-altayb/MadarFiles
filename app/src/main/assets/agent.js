@@ -62,8 +62,9 @@
   if(['error','cancelled'].includes(e.type)){remember=null;afterSilence=false;switching=false;busy(false);task('');if(job||!panel.hidden){line(e.message||'توقفت العملية؛ يمكنك تعديل الطلب والمحاولة مجددًا.');job=null;}}
   if(['result','text','subtitles'].includes(e.type)&&remember){if($('agentLearn').checked)native('agentRemember',remember);remember=null;}
   if(['recentDeleted','recentRestored'].includes(e.type)){line(e.message);toast(e.message);return;}
+  if(e.type==='source')state.tool='convert';
   previousReceive(e);
-  if(e.type==='source'){switching=false;busy(false);state.tool='convert';selected=state.source;if(e.fromAgent){const thread=current();if(thread){const {thumbnail,...metadata}=e;thread.attachment=metadata;save();}badge();task('');if(!panel.hidden)line('الملف جاهز. اكتب المطلوب، أو أرفق صورة أو موسيقى لإضافتها إليه.');}else badge();}
+  if(e.type==='source'){switching=false;busy(false);selected=state.source;if(e.fromAgent){const thread=current();if(thread){const {thumbnail,...metadata}=e;thread.attachment=metadata;save();}badge();task('');if(!panel.hidden)line('الملف جاهز. اكتب المطلوب، أو أرفق صورة أو موسيقى لإضافتها إليه.');}else badge();}
   if(e.type==='progress'||e.type==='workProgress'){if(job||!panel.hidden)task((e.message||'جارٍ العمل…')+(e.progress>=0?' · '+e.progress+'٪':''));}
   if(e.type==='result'&&job){if(job.thread===active){$('result').hidden=true;line('اكتمل الملف.','assistant',e);}job=null;task('');}
   if(e.type==='text'&&job){line('استخرجت النص. تقدر تراجعه وتحفظه أو تترجمه.');job=null;task('');panel.hidden=true;}
