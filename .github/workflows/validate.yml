@@ -30,6 +30,7 @@ jobs:
           node qa/colab-connection.test.cjs
           python3 qa/colab-worker.test.py
           python3 qa/native-runner.test.py
+          python3 qa/processing-runner.test.py
       - name: Compile Gemini integration before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac
       - name: Check mobile layouts and tool search
