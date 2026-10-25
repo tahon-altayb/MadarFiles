@@ -69,7 +69,7 @@
  const receiveBefore=receive;window.receive=function(e){
   if(e.type==='sharedLink'){state.kind='links';render();downloads(e.url);return;}
   if(e.type==='driveDiagnostic'){driveIssue(e.details);return;}
-  if(e.type==='error'&&e.driveError){transfer=false;receiveBefore(e);driveIssue(e.driveError,e.message);return;}
+  if(e.type==='error'&&e.driveError){transfer=false;receiveBefore(e);$('toast').classList.remove('show');driveIssue(e.driveError,e.message);return;}
   if(e.type==='transferProgress'){transfer=true;if(!state.busy)setBusy(true,'نقل الملفات');$('cancel').hidden=false;$('busyDetail').textContent=e.message;$('progress').value=e.progress;return;}
   if(e.type==='linkInfo'){transfer=false;setBusy(false);if(state.tool!=='downloadLink')downloads();linkInfo=e;const box=$('linkDetails');box.replaceChildren();box.hidden=false;const title=document.createElement('h3');title.textContent=e.title;box.append(title);if(e.thumbnail){const img=new Image();img.src=e.thumbnail;img.alt=e.title;box.append(img);}const row=document.createElement('div');row.innerHTML='<label>نوع الملف</label>'+select('linkMode',[['video','فيديو بالصوت'],['audio','صوت فقط · MP3']])+'<label>الجودة</label>'+select('linkQuality',[['0','أفضل جودة متاحة'],...e.formats.map(f=>[String(f.height),f.label])]);box.append(row);$('linkMode').onchange=()=>$('linkQuality').disabled=$('linkMode').value==='audio';$('export').disabled=false;window.dispatchEvent(new CustomEvent('agentLinkReady',{detail:e}));return;}
   if(e.type==='linkUpdated'){transfer=false;setBusy(false);toast('محرك التحميل محدّث');return;}
