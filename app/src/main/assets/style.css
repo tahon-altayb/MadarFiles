@@ -124,3 +124,5 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
  #sheet.studio15:has(#studioDock textarea:focus) #timelineScroll{display:none}
  #sheet.studio15:has(#studioDock textarea:focus) .studioDock{height:clamp(132px,40dvh,200px);min-height:132px;max-height:200px}
 }
+
+.driveIssue h2{font-size:20px;line-height:1.6}.driveIssue p{line-height:1.9;overflow-wrap:anywhere}.driveIssue pre{white-space:pre-wrap;direction:ltr;text-align:left;overflow-wrap:anywhere;font:12px/1.8 monospace;background:#eee9df;border-radius:12px;padding:12px}.driveIssue button{margin-top:10px}
