@@ -36,3 +36,6 @@ Apache-2.0 PaddlePaddle models; derivative ONNX export from `vladadu/pp-ocrv5-ar
 ONNX Runtime C API header v1.17.3 (MIT), from microsoft/onnxruntime; linked to the existing sherpa-packaged ONNX Runtime shared library, not a second runtime copy.
 
 MODNet photographic portrait matting: ZHKKKe/MODNet (code and pretrained models Apache-2.0); ONNX derivative Xenova/modnet at `fa2fa546052fba4c08921230a26cc69a333fca12`, SHA-256 `07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9`. Used for the detailed local person cutout with adjustable alpha threshold/softness. The earlier ML Kit selfie model remains available as the fast option. No general object-removal or perfect-hair claim.
+
+## QR generation (1.4.24)
+ZXing Core 3.5.4, Apache License 2.0, Copyright ZXing authors. QR codes are encoded locally, including UTF-8 and standard quiet zones. Upstream: https://github.com/zxing/zxing (core module).

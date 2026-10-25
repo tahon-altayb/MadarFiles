@@ -31,7 +31,7 @@ final class AudioWaveform {
      outputDone=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;
     }finally{codec.releaseOutputBuffer(index,false);}}
    }
-   check(cancelled);JSONArray values=new JSONArray();for(float peak:peaks)values.put(Math.round(peak*1000)/1000.0);
+   check(cancelled);JSONArray values=new JSONArray();for(float peak:peaks){int precision=maxBins>2400?1000000:1000;values.put(Math.round(peak*precision)/(double)precision);}
    return new JSONObject().put("hasAudio",true).put("duration",duration/1000000.0).put("peaks",values);
   }finally{if(codec!=null){try{codec.stop();}catch(Exception ignored){}codec.release();}extractor.release();}
  }

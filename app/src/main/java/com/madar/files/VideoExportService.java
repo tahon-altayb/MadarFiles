@@ -59,7 +59,7 @@ public class VideoExportService extends Service {
             if(tool.equals("burnCaptions"))effects.add(new androidx.media3.effect.OverlayEffect(Collections.singletonList(new CaptionOverlay(o.getJSONArray("cues"),o))));
             if(!audio&&height>0&&height<originalHeight)effects.add(Presentation.createForHeight(height));
             EditedMediaItem edited=new EditedMediaItem.Builder(media.build()).setRemoveAudio(tool.equals("mute")).setRemoveVideo(audio).setEffects(new Effects(Collections.emptyList(),effects)).build();
-            output=FilesUtil.output(this,audio?"m4a":"mp4");partial=new File(output.getAbsolutePath()+".partial");
+            if(tool.equals("editor")&&!o.optString("bedName").isEmpty()){output=File.createTempFile("madar_editmix_",".mp4",getCacheDir());if(!output.delete())throw new java.io.IOException("تعذر تجهيز المزج");}else output=FilesUtil.output(this,audio?"m4a":"mp4");partial=new File(output.getAbsolutePath()+".partial");
             Transformer.Builder builder=new Transformer.Builder(this).setAudioMimeType(MimeTypes.AUDIO_AAC);
             if(!audio)builder.setVideoMimeType(o.optString("format","mp4").equals("hevc")?MimeTypes.VIDEO_H265:MimeTypes.VIDEO_H264);
             int bitrate=o.optInt("bitrate",0);
