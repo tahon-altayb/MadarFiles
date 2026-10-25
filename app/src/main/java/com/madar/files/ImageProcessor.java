@@ -13,7 +13,7 @@ final class ImageProcessor {
         Bitmap b=FilesUtil.image(source,o.optString("tool").equals("removebg")?2048:4096);File result=null;
         try {
             String tool=o.getString("tool"),format=o.optString("format","jpg");
-            if(tool.equals("removebg")){Bitmap next=PersonCutout.cut(c,b,o.optString("cutBackground","transparent").equals("transparent"),Color.parseColor(o.optString("color","#eadcc7")),o.optString("cutModel","fine"),o.optDouble("cutThreshold",50),o.optDouble("cutSoftness",50));b.recycle();b=next;
+            if(tool.equals("removebg")){int background=Color.parseColor(o.optString("color","#eadcc7"));Bitmap next=PersonCutout.cut(c,b,true,background,o.optString("cutModel","general"),o.optDouble("cutThreshold",50),o.optDouble("cutSoftness",50));next=CutoutBrush.apply(b,next,o.optJSONArray("cutoutStrokes"),o.optString("cutBackground","transparent").equals("transparent"),background);b.recycle();b=next;
             }else if(tool.equals("adjust")){
                 float brightness=1+(float)FilesUtil.bounded(o.optDouble("brightness",0),-100,100)/100f,contrast=(float)FilesUtil.bounded(o.optDouble("contrast",100),50,150)/100f,saturation=(float)FilesUtil.bounded(o.optDouble("saturation",100),0,200)/100f;
                 ColorMatrix matrix=new ColorMatrix();matrix.setSaturation(saturation);ColorMatrix scale=new ColorMatrix(new float[]{brightness,0,0,0,0,0,brightness,0,0,0,0,0,brightness,0,0,0,0,0,1,0});matrix.postConcat(scale);float shift=127.5f*(1-contrast);matrix.postConcat(new ColorMatrix(new float[]{contrast,0,0,0,shift,0,contrast,0,0,shift,0,0,contrast,0,shift,0,0,0,1,0}));

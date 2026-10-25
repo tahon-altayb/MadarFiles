@@ -35,8 +35,10 @@ final class LocalAgent {
   int length=0;for(int i=0;i<input.length();i++){JSONObject turn=input.getJSONObject(i);String role=turn.getString("role"),text=turn.getString("text");length+=text.length();if(!Arrays.asList("user","assistant").contains(role)||text.length()>1000||length>6000)throw new IOException("سياق المساعد غير صالح");out.put(new JSONObject().put("role",role).put("text",text));}return out;
  }
  JSONObject plan(Context c,String user,JSONObject source,JSONArray previous,AtomicBoolean cancel)throws Exception {
-  if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");if(!ready(c))throw new IOException("نزّل نموذج المساعد المحلي أولًا");
-  ColabProbe.check(cancel);JSONObject direct=AgentTools.explicitDocument(user,source.optString("kind"));if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));
+  if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");
+  ColabProbe.check(cancel);JSONObject direct=AgentIntents.resolve(user,source,previous);if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));
+  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)){try{return AgentCloud.plan(c,user,source,previous,cancel);}catch(Exception cloud){ColabProbe.check(cancel);if(!ready(c))throw cloud;}}
+  if(!ready(c))throw new IOException("هذا الطلب المركب يحتاج اتصال Gemini أو تنزيل النموذج المحلي؛ الأوامر المباشرة تعمل فورًا");
   File file=model(c);if(!digest(file).equals(MODEL_SHA)){file.delete();throw new IOException("نموذج المساعد تالف؛ أعد تنزيله");}ColabProbe.check(cancel);
   String prompt;try(InputStream in=c.getAssets().open("agent-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   String kind=source.optString("kind");JSONObject data=new JSONObject().put("source",source).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",history(previous)).put("userRequest",user);

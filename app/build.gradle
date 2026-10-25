@@ -13,6 +13,7 @@ def validationBuild = providers.gradleProperty('validationBuild').orNull == 'tru
 android {
     namespace 'com.madar.files'
     compileSdk 35
+    buildToolsVersion '35.0.0'
     ndkVersion '27.2.12479018'
     if (!validationBuild) { externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } } }
     defaultConfig {
@@ -22,8 +23,8 @@ android {
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         if (!validationBuild) { externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_shared' } } }
         targetSdk 35
-        versionCode 29
-        versionName '1.4.24'
+        versionCode 30
+        versionName '1.5.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         if (firebaseClient != null && !validationBuild) {
             resValue 'string', 'google_app_id', firebaseClient.client_info.mobilesdk_app_id
@@ -33,7 +34,7 @@ android {
         }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    packaging { jniLibs { pickFirsts += ["**/libc++_shared.so"] } }
+    packaging { jniLibs { useLegacyPackaging = true; pickFirsts += ["**/libc++_shared.so"] } }
     signingConfigs { debug { storeFile validationBuild ? file(System.getenv("MADAR_VALIDATION_KEYSTORE") ?: System.getProperty("user.home")+"/.android/debug.keystore") : rootProject.file(".signing/madar-development.keystore"); storePassword validationBuild ? "android" : (System.getenv("MADAR_STORE_PASSWORD") ?: "android"); keyAlias validationBuild ? "androiddebugkey" : (System.getenv("MADAR_KEY_ALIAS") ?: "androiddebugkey"); keyPassword validationBuild ? "android" : (System.getenv("MADAR_KEY_PASSWORD") ?: "android") } }
     buildTypes {
         release {
@@ -45,6 +46,8 @@ android {
     lint { abortOnError true }
 }
 dependencies {
+    implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
+    implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
     implementation 'com.google.zxing:core:3.5.4'
     implementation 'com.google.ai.edge.litertlm:litertlm-android:0.18.1'
     implementation platform('com.google.firebase:firebase-bom:35.0.2')
@@ -64,6 +67,8 @@ dependencies {
     implementation 'com.google.mlkit:translate:17.0.3'
     implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta6'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'

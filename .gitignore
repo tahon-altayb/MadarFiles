@@ -21,3 +21,6 @@ __pycache__/
 
 # Firebase project configuration is supplied by the build owner.
 app/google-services.json
+
+# Private visual QA inputs and rendered user photographs
+qa/evidence/

@@ -61,3 +61,51 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 .editorTimelineControls{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px;flex-shrink:0}.editorTimelineControls #timelineStatus{flex:1;margin:0!important;font-size:11px!important}.editorTimelineControls label{display:flex!important;align-items:center;gap:8px;margin:0!important;font-size:10px!important;flex:0 1 130px;min-width:0}.editorTimelineControls input{width:80px;min-width:45px}#sheet.editing #editStage,#sheet.editing #editStage video{max-height:20dvh}#sheet.editing #mediaRecovery:not(:has(p)){padding:6px 8px;font-size:10px;line-height:1.4}
 
 #sheet.editing{--preview-height:20dvh}#sheet.editing #editStage,#sheet.editing #editStage video{max-height:var(--preview-height)}@media(min-height:720px){#sheet.editing{--preview-height:29dvh}}
+/* A single workspace: stable preview, compact timeline and one settings drawer. */
+#sheet.studio15>.sheet{height:100dvh;max-height:100dvh;padding:8px 12px;display:flex;flex-direction:column;border-radius:0;overflow:hidden;position:relative;color:#ecf1e8;background:#111d19}
+#sheet.studio15 .handle,#sheet.studio15>.sheet>.note{display:none}
+#sheet.studio15 .sheetHead{flex:0 0 auto;margin:0;padding:3px 0 7px;min-height:44px}
+#sheet.studio15 .sheetHead h2{font-size:17px;margin:3px 0}
+#sheet.studio15 #form{min-height:0;flex:1;overflow:hidden;display:flex;flex-direction:column;gap:5px;padding:0}
+#sheet.studio15 #livePreview{flex:1 1 0;min-height:96px;overflow:hidden;padding:4px;margin:0;border-radius:13px;display:flex;flex-direction:column;justify-content:center;align-items:center}
+#sheet.studio15 #editStage{flex:0 0 auto;min-height:30px;max-width:100%;margin:auto;transition:none}
+#sheet.studio15 .editTransport{width:100%;flex:0 0 46px;padding:2px;grid-template-columns:44px 44px minmax(50px,1fr) 44px 44px}
+#sheet.studio15 .editTransport button{min-height:42px;padding:5px;font-size:11px;border-radius:9px}
+#sheet.studio15 .editorTimelineControls{min-height:28px;height:28px;margin:0;flex:0 0 28px}
+#sheet.studio15 #timelineScroll{min-height:90px;max-height:160px;flex:0 1 auto;border-radius:11px;overflow:auto;margin:0}
+#sheet.studio15 #timelineRuler{height:24px}
+#sheet.studio15 .clipRow{height:58px;min-height:58px}
+#sheet.studio15 .layerTrack{height:28px}.layerBar{min-height:25px}
+#sheet.studio15 .clipContext{display:flex;align-items:center;gap:6px;flex:0 0 30px}
+#sheet.studio15 .clipContext small{flex:1;color:#aebdb0;font-size:10px}
+#sheet.studio15 .clipContext button,#sheet.studio15 .studioAdd button{padding:6px 12px;min-height:28px;font-size:11px;border:1px solid #3b5347;background:#21382d;color:#e4efdb;border-radius:10px}
+#sheet.studio15 .studioAdd{display:flex;justify-content:center;gap:8px;flex:0 0 30px}
+#sheet.studio15 .studioToolbar{display:flex;flex:0 0 48px;min-height:48px;overflow-x:auto;gap:5px;border-top:1px solid #304238;padding-top:4px;scrollbar-width:none}
+#sheet.studio15 .studioToolbar button{flex:1 0 58px;padding:8px 5px;border:0;border-radius:10px;color:#bfcec1;background:transparent;font:11px Tahoma,Arial,sans-serif;white-space:nowrap}
+#sheet.studio15 .studioToolbar button.active{background:#c7dcac;color:#1b2e20}
+#sheet.studio15 .studioDock{min-height:0;max-height:min(27dvh,210px);flex:0 1 auto;overflow:hidden;border-radius:13px;background:#1b2e24;border:1px solid #3b5141;display:flex;flex-direction:column}
+#sheet.studio15 .studioDock[hidden]{display:none}
+#sheet.studio15 .dockHeading{display:flex;align-items:center;justify-content:space-between;height:33px;min-height:33px;padding:2px 12px;border-bottom:1px solid #344a3a}
+#sheet.studio15 .dockHeading b{font-size:12px;color:#d9e9cc}
+#sheet.studio15 .dockHeading button{padding:4px;color:#d6e8c9;font-size:12px}
+#sheet.studio15 #dockContent{overflow:auto;min-height:0;padding:8px 12px;overscroll-behavior:contain}
+#sheet.studio15 #dockContent>div[hidden]{display:none}
+#sheet.studio15 #dockContent details{margin:0;padding:0;border:0;background:transparent}
+#sheet.studio15 #dockContent summary{display:none}
+#sheet.studio15 #dockContent label{margin:5px 0;font-size:12px}
+#sheet.studio15 #dockContent input,#sheet.studio15 #dockContent select{margin:3px 0;max-width:100%}
+#sheet.studio15 .editActions{border:0;grid-template-rows:repeat(2,36px);padding:0;grid-auto-columns:minmax(86px,1fr)}
+#sheet.studio15 #layerPanel{border:0;padding:0;margin:0}
+#sheet.studio15 #layerPanel textarea{max-height:70px;min-height:48px}
+#sheet.studio15 #export{flex:0 0 42px;min-height:42px;padding:10px;margin:6px 0 0;border-radius:12px;font-size:13px}
+#sheet.studio15 #mediaRecovery{padding:4px;font-size:9px;max-height:40px;overflow:auto}
+#sheet.studio15 #mediaRecovery p{font-size:9px;margin:2px}
+.platforms{display:flex;flex-wrap:wrap;gap:8px;margin:5px 0 20px}.platforms span{padding:8px 12px;background:#e9eee2;border:1px solid #dbe2d0;border-radius:10px;font-size:11px;color:#31523d}
+#linkUrl{width:100%;padding:13px;border-radius:13px;border:1px solid #ccd5c3;font:14px/1.8 Tahoma,Arial,sans-serif;resize:vertical;background:#fffefa}
+#linkDetails{border:1px solid #d8dfd1;background:#f0f3e9;border-radius:15px;padding:15px;margin-top:15px}
+#linkDetails h3{font-size:15px;line-height:1.8;overflow-wrap:anywhere}
+#linkDetails img{width:100%;max-height:190px;object-fit:contain;border-radius:12px}
+.qrSelected{padding:14px;background:#e8eee1;border:1px dashed #8ca07a;border-radius:13px;overflow-wrap:anywhere;font-size:13px}
+.shareRecord{border:1px solid #d8dfd1;border-radius:14px;padding:12px;margin-bottom:10px}.shareRecord b,.shareRecord small{display:block;overflow-wrap:anywhere;margin:4px 0}.shareRecord small{color:#6c7e65}.shareRecord button{margin:4px}
+.tabs{flex-wrap:wrap}.tabs button{flex:1;min-width:44px}button:disabled{opacity:.45}
+@media(max-height:699px){#sheet.studio15 #livePreview{min-height:75px}#sheet.studio15 .studioDock{max-height:125px}#sheet.studio15 #timelineScroll{max-height:115px;min-height:83px}#sheet.studio15 .studioAdd{flex-basis:27px}#sheet.studio15 .studioToolbar{flex-basis:41px;min-height:41px}#sheet.studio15 .studioToolbar button{padding:5px}#sheet.studio15 .sheetHead{min-height:39px}#sheet.studio15 .sheetHead .eyebrow{display:none}}

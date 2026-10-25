@@ -39,3 +39,7 @@ MODNet photographic portrait matting: ZHKKKe/MODNet (code and pretrained models 
 
 ## QR generation (1.4.24)
 ZXing Core 3.5.4, Apache License 2.0, Copyright ZXing authors. QR codes are encoded locally, including UTF-8 and standard quiet zones. Upstream: https://github.com/zxing/zxing (core module).
+
+## v1.5 additions
+- IS-Net general-use segmentation via danielgatis/rembg, Apache-2.0 model/source, pinned SHA-256 60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a. Source: https://github.com/xuebinqin/DIS
+- youtubedl-android 0.18.1, Apache-2.0: https://github.com/yausername/youtubedl-android . Bundles yt-dlp and FFmpeg; upstream licenses and source: https://github.com/yt-dlp/yt-dlp and https://ffmpeg.org/legal.html .

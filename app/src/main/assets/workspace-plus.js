@@ -13,7 +13,7 @@
   plusOpen(tool);if(state.tool==='editor')enhanceWorkspace();
  };
  function fitEditorPreview(){
-  if(state.tool!=='editor'||$('sheet').hidden)return;const form=$('form'),preview=$('livePreview'),stage=$('editStage'),timeline=$('timelineScroll'),video=$('liveVideo');if(!form||!preview||!stage||!timeline||!video||form.clientHeight<100)return;
+  if(state.tool!=='editor'||$('sheet').hidden||$('sheet').classList.contains('studio15'))return;const form=$('form'),preview=$('livePreview'),stage=$('editStage'),timeline=$('timelineScroll'),video=$('liveVideo');if(!form||!preview||!stage||!timeline||!video||form.clientHeight<100)return;
   const ratio=(state.source.width||16)/(state.source.height||9),current=stage.getBoundingClientRect().height,formBox=form.getBoundingClientRect(),beforeTimeline=timeline.getBoundingClientRect().top+form.scrollTop-formBox.top-current;
   const widthLimit=Math.max(1,preview.clientWidth-16)/ratio,defaultHeight=innerHeight*(innerHeight>=720?.29:.20),available=form.clientHeight-beforeTimeline-100;
   const height=Math.max(Math.min(40,widthLimit),Math.min(defaultHeight,widthLimit,available));
