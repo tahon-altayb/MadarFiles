@@ -105,10 +105,23 @@ jobs:
           curl -fL --connect-timeout 20 --max-time 90 --speed-time 30 --speed-limit 1024 --retry 2 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
           ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.wav -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
           espeak-ng -v en-us -s 135 -w app/src/androidTest/assets/speech-test.wav "The quick brown fox jumps over the lazy dog. Welcome to this video. This is a test of speech recognition."
+      - name: Restore verified public speech test fixtures
+        id: public-speech
+        uses: actions/cache/restore@v4
+        with:
+          path: app/src/androidTest/assets/speech-reference-*.wav
+          key: madar-public-speech-v1-${{ hashFiles('scripts/prepare_speech_references.py', 'app/src/androidTest/assets/speech-references.json') }}
       - name: Prepare public speech reference fixtures
+        if: steps.public-speech.outputs.cache-hit != 'true'
         run: |
           python3 -m pip install --disable-pip-version-check pyarrow==26.0.0
           python3 scripts/prepare_speech_references.py
+      - name: Cache verified public speech test fixtures
+        if: steps.public-speech.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: app/src/androidTest/assets/speech-reference-*.wav
+          key: madar-public-speech-v1-${{ hashFiles('scripts/prepare_speech_references.py', 'app/src/androidTest/assets/speech-references.json') }}
       - name: Validate interface
         run: |
           node qa/interface.test.cjs

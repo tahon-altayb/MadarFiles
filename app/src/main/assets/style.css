@@ -109,3 +109,18 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 .shareRecord{border:1px solid #d8dfd1;border-radius:14px;padding:12px;margin-bottom:10px}.shareRecord b,.shareRecord small{display:block;overflow-wrap:anywhere;margin:4px 0}.shareRecord small{color:#6c7e65}.shareRecord button{margin:4px}
 .tabs{flex-wrap:wrap}.tabs button{flex:1;min-width:44px}button:disabled{opacity:.45}
 @media(max-height:699px){#sheet.studio15 #livePreview{min-height:75px}#sheet.studio15 .studioDock{max-height:125px}#sheet.studio15 #timelineScroll{max-height:115px;min-height:83px}#sheet.studio15 .studioAdd{flex-basis:27px}#sheet.studio15 .studioToolbar{flex-basis:41px;min-height:41px}#sheet.studio15 .studioToolbar button{padding:5px}#sheet.studio15 .sheetHead{min-height:39px}#sheet.studio15 .sheetHead .eyebrow{display:none}}
+/* Leave room for the active editor when the on-screen keyboard reduces the viewport. */
+@media(max-height:599px){
+ #sheet.studio15 .clipContext,#sheet.studio15 .studioAdd,#sheet.studio15 .editorTimelineControls{display:none}
+ #sheet.studio15 .studioToolbar{flex-basis:34px;min-height:34px}
+ #sheet.studio15 .studioToolbar button{padding:5px}
+ #sheet.studio15 #livePreview{min-height:70px}
+ #sheet.studio15 #timelineScroll{min-height:54px;max-height:70px;flex-basis:60px}
+ #sheet.studio15 .studioDock{height:clamp(90px,30dvh,150px);max-height:150px;min-height:90px;flex:0 0 auto}
+ #sheet.studio15:has(#studioDock:not([hidden])) .studioToolbar{display:none}
+ #sheet.studio15:has(#studioDock:not([hidden])) #timelineScroll{min-height:42px;max-height:54px;flex-basis:48px}
+}
+@media(max-height:599px){
+ #sheet.studio15:has(#studioDock textarea:focus) #timelineScroll{display:none}
+ #sheet.studio15:has(#studioDock textarea:focus) .studioDock{height:clamp(132px,40dvh,200px);min-height:132px;max-height:200px}
+}
