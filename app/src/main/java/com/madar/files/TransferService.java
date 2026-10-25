@@ -34,7 +34,7 @@ public class TransferService extends Service {
   finally{active=false;if(timer!=null)timer.removeCallbacksAndMessages(null);if(wake!=null&&wake.isHeld())wake.release();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}},"madar-transfer");worker.start();return START_NOT_STICKY;
  }
  private void progress(int percent,String text){try{emit(new JSONObject().put("type","transferProgress").put("progress",percent).put("message",text));}catch(Exception ignored){}}
- private void emit(JSONObject event){lastEvent=event.toString();sendBroadcast(new Intent(VideoExportService.EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
+ private void emit(JSONObject event){try{event.put("at",System.currentTimeMillis());}catch(JSONException ignored){}lastEvent=event.toString();if(java.util.Arrays.asList("result","text","subtitles","driveShared").contains(event.optString("type")))WorkNotifications.complete(this,741);sendBroadcast(new Intent(VideoExportService.EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
  @Override public IBinder onBind(Intent i){return null;}
  @Override public void onDestroy(){if(active){cancel.set(true);LinkDownloads.cancel();if(drive!=null)drive.cancel();if(worker!=null)worker.interrupt();}if(timer!=null)timer.removeCallbacksAndMessages(null);if(wake!=null&&wake.isHeld())wake.release();super.onDestroy();}
 }

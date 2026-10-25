@@ -19,6 +19,8 @@ final class AgentIntents {
   if(has(t,"وبعد|بعدين|بعدها|\\bthen\\b|ثم|(?:و|\\s)(حسن|حسّن|قص|اضغط|حول|اكتب|حط|اضف|ضف|ترجم)"))return null;
   if(has(t,"qr|كيو\\s*ار")){if(Arrays.asList("image","video","pdf").contains(kind)&&!has(t,"https?://"))return plan("qr","qrType",kind);Matcher link=Pattern.compile("https?://[^\\s]+",Pattern.CASE_INSENSITIVE).matcher(user);if(link.find())return plan("qr","qrType","link","qrValue",link.group());}
   if(has(t,"https?://")&&has(t,"حمل|تحميل|نزل|تنزيل|download")){return plan("downloadLink","linkUrl",LinkDownloads.url(user),"linkMode",has(t,"صوت فقط|الصوت فقط|mp3")?"audio":"video");}
+  if(kind.isEmpty()&&has(t,"موسيقي|موسيقى|music")&&has(t,"ازل|ازاله|احذف|شيل|بدون|فصل|remove"))return plan("ask").put("message","أرفق الفيديو أو الصوت من زر + هنا، وسأزيل الموسيقى منه وأبقي الكلام.");
+  if((kind.equals("image")||kind.equals("video"))&&has(t,"طولي|عرضي|للطول|للعرض|افقي|عمودي")&&has(t,"حول|خلي|اجعل|مدد|تحويل"))return plan("resize","targetAspect",has(t,"للطول|لطولي|الي طولي|عمودي")?"9:16":"16:9","aspectQuality","1080");
   if(kind.equals("video")||kind.equals("audio")){
    if(has(t,"موسيقي|موسيقى|الموسيقي|الموسيقى|music|الاغاني|الالحان")&&has(t,"ازل|ازاله|احذف|حذف|شيل|شيلها|بدون|فصل|remove|separate"))return plan("music","musicMode",source.optLong("duration")>60000?"colab":"local","musicOutput",kind.equals("video")?"video":"audio");
    if(has(t,"كتم|اكتم|صامت|بدون صوت|mute")&&!has(t,"[0-9]"))return kind.equals("video")?plan("mute"):plan("sound","volume","0");

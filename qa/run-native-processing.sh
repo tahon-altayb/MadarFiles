@@ -5,7 +5,12 @@ mkdir -p phone-screenshots || exit $?
 gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:installDebug :app:installDebugAndroidTest || exit $?
 status=0
 adb shell am force-stop com.madar.files || status=1
+adb logcat -c
+adb logcat -v threadtime > phone-screenshots/local-agent-logcat.txt 2>&1 &
+logcat_pid=$!
 adb shell am instrument -w -r -e class com.madar.files.LocalAgentRuntimeTest com.madar.files.test/androidx.test.runner.AndroidJUnitRunner > phone-screenshots/local-agent-tests.txt 2>&1 || status=$?
+kill "$logcat_pid" 2>/dev/null || true
+wait "$logcat_pid" 2>/dev/null || true
 cat phone-screenshots/local-agent-tests.txt
 python3 - <<'PY'
 from pathlib import Path
