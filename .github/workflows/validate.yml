@@ -29,6 +29,7 @@ jobs:
           node qa/translation-mode.test.cjs
           node qa/colab-connection.test.cjs
           python3 qa/colab-worker.test.py
+          python3 qa/native-runner.test.py
       - name: Compile Gemini integration before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac
       - name: Check mobile layouts and tool search
@@ -103,16 +104,7 @@ jobs:
           heap-size: 512M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
-          script: |
-            adb shell wm density 180
-            MADAR_DOCUMENT_STATUS=0
-            gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.DocumentToolsTest,com.madar.files.ImageBatchTest,com.madar.files.CaptionExportTest,com.madar.files.AudioWaveformTest,com.madar.files.InteractivePreviewTest,com.madar.files.PlayerLayoutTest,com.madar.files.TranslationPathsTest,com.madar.files.FrameStepperTest,com.madar.files.LocalMediaServerTest,com.madar.files.EditorAudioProcessorTest,com.madar.files.PreviewRecoveryTest,com.madar.files.GeminiQualityTest,com.madar.files.OnlineTranslationTest,com.madar.files.WordTableExportTest,com.madar.files.EditableDocumentTest,com.madar.files.CloudDocumentsTest,com.madar.files.RecentFilesTest,com.madar.files.AssistantConversationTest,com.madar.files.WorkspaceToolsTest --stacktrace || MADAR_DOCUMENT_STATUS=$?
-            mkdir -p phone-screenshots
-            adb pull /data/local/tmp/madar-editor.png phone-screenshots/editor.png || true
-            adb pull /data/local/tmp/madar-editor-failed.png phone-screenshots/editor-failed.png || true
-            adb pull /data/local/tmp/madar-pdf.png phone-screenshots/pdf.png || true
-            python3 qa/collect-table-document.py || MADAR_DOCUMENT_STATUS=1
-            exit "$MADAR_DOCUMENT_STATUS"
+          script: bash qa/run-native-documents.sh
       - name: Remove disposable validation key
         if: always()
         run: rm -f "$MADAR_VALIDATION_KEYSTORE"
