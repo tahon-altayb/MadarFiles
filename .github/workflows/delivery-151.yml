@@ -1,0 +1,101 @@
+name: Prepare verified MadarFiles 1.5.1 download
+on:
+  push:
+    branches: [delivery/1.5.1-apk]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Require verified original build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let verified = false;
+            for (let attempt = 0; attempt < 80; attempt++) {
+              const {data: run} = await github.rest.actions.getWorkflowRun({owner: context.repo.owner, repo: context.repo.repo, run_id: 40199737482});
+              if (run.head_sha !== '4a5c38ca9b490b0d7b04ff60db1f5c2253af89cf') throw new Error('Unexpected original commit');
+              if (run.status === 'completed') {
+                if (run.conclusion !== 'success') throw new Error('Original build did not pass');
+                verified = true; break;
+              }
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            if (!verified) throw new Error('Original build is still pending; retry this delivery after completion');
+      - uses: actions/download-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-APK
+          path: package
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 40199737482
+      - name: Split existing signed APK without rebuilding
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          apk=pathlib.Path('package/MadarFiles-1.5.1.apk')
+          root=pathlib.Path('delivery');root.mkdir()
+          manifest={'name':apk.name,'bytes':apk.stat().st_size,'sha256':hashlib.file_digest(apk.open('rb'),'sha256').hexdigest(),'source_run':40199737482,'source_commit':'4a5c38ca9b490b0d7b04ff60db1f5c2253af89cf','parts':[]}
+          with apk.open('rb') as source:
+            for index in range(6):
+              data=source.read(96*1024*1024)
+              if not data:raise RuntimeError('Unexpected APK part count')
+              name=f'MadarFiles-1.5.1.apk.part{index:02d}'
+              folder=root/f'part{index:02d}';folder.mkdir()
+              (folder/name).write_bytes(data)
+              manifest['parts'].append({'name':name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+            if source.read(1):raise RuntimeError('APK exceeds prepared transport size')
+          (root/'manifest.json').write_text(json.dumps(manifest,indent=2))
+          print(json.dumps({key:manifest[key] for key in ['name','bytes','sha256','source_commit']}))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-manifest
+          path: delivery/manifest.json
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-part00
+          path: delivery/part00/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-part01
+          path: delivery/part01/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-part02
+          path: delivery/part02/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-part03
+          path: delivery/part03/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-part04
+          path: delivery/part04/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.5.1-part05
+          path: delivery/part05/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
