@@ -13,6 +13,7 @@
   plusOpen(tool);if(state.tool==='editor')enhanceWorkspace();
  };
  function enhanceWorkspace(){
+  $('editStage').style.width='min(100%, '+(29*(state.source.width||16)/(state.source.height||9))+'dvh)';
   state.bed=null;const sound=document.querySelector('.editorAudio');if(sound){const add=document.createElement('div');add.innerHTML='<label>توحيد مستوى الصوت</label>'+select('normalize',[['none','الأصلي'],['peak','ضبط القمة · دون إزالة الضوضاء']])+'<button id="bedPick" type="button" class="secondary">♫ إضافة موسيقى</button><div id="bedSettings"></div>';sound.append(add);$('bedPick').onclick=()=>native('pickBed');}
   const actions=document.querySelector('.editActions');const silence=document.createElement('button');silence.type='button';silence.textContent='قص السكتات';silence.onclick=()=>{const box=$('silenceSettings');box.hidden=!box.hidden;};actions.append(silence);
   const box=document.createElement('details');box.id='silenceSettings';box.hidden=true;box.open=true;box.className='editorAudio';box.innerHTML='<summary>قص السكتات</summary><p class="hint">يكشف انخفاض مستوى الصوت، وليس معنى الكلام. ابدأ بالقيم المقترحة وعاين الحدود قبل التصدير. يُحتفظ بـ 0.12 ثانية حول الكلام.</p><label>أقل مدة للسكتة بالثواني</label>'+number('silenceMinimum',.6,.3,3,.1)+'<label>حد الصمت بالديسيبل · الأقل يحافظ على الكلام الهادئ</label>'+number('silenceThreshold',-38,-60,-15,1)+'<button id="silenceAnalyze" class="secondary" type="button">تحليل السكتات</button>';$('form').append(box);$('silenceAnalyze').onclick=()=>window.analyzeSilence();
