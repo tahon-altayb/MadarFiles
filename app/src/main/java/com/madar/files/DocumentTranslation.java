@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class DocumentTranslation {
  static JSONArray paragraphs(String text,String language)throws Exception{
   if(text==null||text.trim().isEmpty())throw new IOException("لم يُعثر على نص للترجمة");if(text.length()>200000)throw new IOException("اختر صفحات أقل؛ حد النص 200 ألف حرف");
-  JSONArray lines=new JSONArray();for(String paragraph:text.replace("\r","").split("\n\s*\n")){String value=paragraph.trim();while(!value.isEmpty()){int end=Math.min(4000,value.length());if(end<value.length()){int boundary=value.lastIndexOf(' ',end);if(boundary>2000)end=boundary;}String part=value.substring(0,end).trim();if(!part.isEmpty()){int id=lines.length();lines.put(new JSONObject().put("start",id*2).put("end",id*2+1).put("language",language).put("text",part));}value=value.substring(end).trim();}}
+  JSONArray lines=new JSONArray();for(String paragraph:text.replace("\r","").replace("\f","\n\n").split("\n\s*\n")){String value=paragraph.trim();while(!value.isEmpty()){int end=Math.min(4000,value.length());if(end<value.length()){int boundary=value.lastIndexOf(' ',end);if(boundary>2000)end=boundary;}String part=value.substring(0,end).trim();if(!part.isEmpty()){int id=lines.length();lines.put(new JSONObject().put("start",id*2).put("end",id*2+1).put("language",language).put("text",part));}value=value.substring(end).trim();}}
   return lines;
  }
  static String join(JSONArray lines)throws Exception{StringBuilder out=new StringBuilder();for(int i=0;i<lines.length();i++){if(i>0)out.append("\n\n");out.append(lines.getJSONObject(i).getString("text"));}return out.toString();}
