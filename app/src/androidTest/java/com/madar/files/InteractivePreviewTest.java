@@ -43,4 +43,19 @@ public class InteractivePreviewTest {
   }
   js("$('subtitleTrack').value='original';$('subtitleTrack').onchange()");assertEquals("\"すまねえな\"",js("$('subtitleEditor').querySelector('.subtitleRow textarea').value"));
  }
+ @Test public void transcriptCutsUseRealCompositionClockAndModelHubResponds()throws Exception{
+  await("typeof MadarMontage==='object'&&typeof MadarTextEditor==='object'",10000);
+  File file=File.createTempFile("transcript-source-",".media",context.getCacheDir());
+  try{try(InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("sample.mp4");OutputStream out=new FileOutputStream(file)){FilesUtil.copy(in,out);}
+   source(file,new JSONObject().put("type","source").put("kind","video").put("name","speech.mp4").put("mime","video/mp4").put("size",file.length()).put("width",320).put("height",240).put("duration",3000).put("hasAudio",true));
+   js("openTool('editor');state.editorTranscript=[{start:.4,end:1.4,text:'اليوم اليوم',words:[{start:.4,end:.8,text:'اليوم'},{start:1,end:1.4,text:'اليوم'}]}];MadarTextEditor.refresh();$('montageOpen').click()");
+   await("$('transcriptWords').children.length===2",5000);
+   js("$('transcriptWords').firstElementChild.click();[...$('transcriptWorkspace').querySelectorAll('button')].find(b=>b.textContent==='حذف الفترة من الفيديو والصوت').click()");
+   assertEquals("true",js("Math.abs(editDuration()-2.6)<.001"));
+   js("$('undoEdit').click()");assertEquals("true",js("Math.abs(editDuration()-3)<.001&&state.editorTranscript[0].words.length===2"));
+   js("native('modelHub')");await("$('modelHub').querySelectorAll('.modelHubRow').length>=3",10000);
+   assertEquals("false",js("document.documentElement.scrollWidth>innerWidth"));
+  }finally{file.delete();}
+ }
+
 }
