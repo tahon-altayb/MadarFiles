@@ -1,0 +1,12 @@
+'use strict';
+// Source-clock transcripts and composition-clock edits. No fabricated word timings.
+(function(root){
+ const finite=n=>typeof n==='number'&&Number.isFinite(n);
+ function valid(c){return c&&finite(c.start)&&finite(c.end)&&c.start>=0&&c.end>c.start&&typeof c.text==='string'&&c.text.trim();}
+ function units(cues){const out=[];for(const [index,c]of cues.entries()){if(!valid(c))throw Error('توقيت التفريغ غير صالح');const words=c.words;if(Array.isArray(words)&&words.length&&words.every(w=>valid(w)&&w.start>=c.start-.001&&w.end<=c.end+.001)&&words.every((w,i)=>!i||w.start>=words[i-1].end-.001)){words.forEach((w,i)=>out.push({...w,id:index+':'+i,precise:true}));}else out.push({...c,id:String(index),precise:false});}return out;}
+ function project(cues,segments){const out=[];let offset=0;for(const [clip,r]of segments.entries()){for(const u of units(cues)){const a=Math.max(r[0],u.start),b=Math.min(r[1],u.end);if(b-a>.015)out.push({...u,id:clip+':'+u.id,start:offset+a-r[0],end:offset+b-r[0],clipped:a>u.start+.001||b<u.end-.001});}offset+=r[1]-r[0];}return out;}
+ function cut(segments,layers,bed,start,end){const total=segments.reduce((n,r)=>n+r[1]-r[0],0);if(!finite(start)||!finite(end)||start<0||end>total+.001||end<=start)throw Error('حدد فترة داخل المقطع');const kept=[];let at=0;for(const r of segments){const len=r[1]-r[0];for(const [a,b]of [[at,Math.min(at+len,start)],[Math.max(at,end),at+len]])if(b-a>=.02)kept.push([r[0]+a-at,r[0]+b-at]);at+=len;}if(!kept.length||kept.length>50)throw Error('لا يمكن حذف المقطع كاملًا أو تجاوز 50 جزءًا');const map=t=>t<=start?t:t>=end?t-(end-start):start;const remap=x=>({...x,start:map(x.start),end:map(x.end)});return {segments:kept,layers:layers.map(remap).filter(x=>x.end-x.start>=.05),bed:bed&&map(bed.end)-map(bed.start)>=.05?remap(bed):null};}
+ const normalize=s=>s.normalize('NFKC').replace(/[\u064b-\u065f\u0670ـ]/g,'').replace(/^[\s.,،!?؟…]+|[\s.,،!?؟…]+$/g,'').trim();
+ function suggestions(items){return items.filter((u,i)=>{if(!u.precise||u.clipped)return false;const text=normalize(u.text),next=items[i+1];return /^(?:ام{2,}|أم{2,}|آم{2,})$/.test(text)||!!(next?.precise&&text&&normalize(next.text)===text&&next.start-u.end>=-.01&&next.start-u.end<.45);}).map(u=>u.id);}
+ const api={units,project,cut,suggestions};if(typeof module!=='undefined')module.exports=api;root.MadarMontage=api;
+})(typeof window==='undefined'?globalThis:window);

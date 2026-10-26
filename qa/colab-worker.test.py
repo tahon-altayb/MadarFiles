@@ -385,7 +385,7 @@ class TimestampBoundaryTest(unittest.TestCase):
         words=[SimpleNamespace(start=AlignmentTime(.12),end=AlignmentTime(.4),word='シン'),
             SimpleNamespace(start=AlignmentTime(.4),end=AlignmentTime(.82),word='！')]
         cues=w.split_segment(SimpleNamespace(words=words),'ja')
-        self.assertEqual(cues,[{'start':.12,'end':.82,'text':'シン！','language':'ja'}])
+        self.assertEqual(cues,[{'start':.12,'end':.82,'text':'シン！','language':'ja','words':[{'start':.12,'end':.4,'text':'シン'},{'start':.4,'end':.82,'text':'！'}]}])
         self.assertIs(type(cues[0]['start']),float);self.assertIs(type(cues[0]['end']),float)
         self.assertTrue(w.valid_cues(cues,1.))
         self.assertEqual(json.loads(json.dumps(cues,allow_nan=False)),cues)
@@ -518,7 +518,7 @@ class GapRecoveryTest(unittest.TestCase):
     def test_recovery_does_not_clip_or_duplicate_context_and_rejects_uncertain_words(self):
         good=self.segment()
         self.assertEqual(w.recovered_segment_cues(good,'en',2,(8,10),(8,10)),
-            [{'start':8.,'end':9.,'text':'clear speech','language':'en'}])
+            [{'start':8.,'end':9.,'text':'clear speech','language':'en','words':[{'start':8.,'end':8.5,'text':'clear'},{'start':8.5,'end':9.,'text':'speech'}]}])
         self.assertEqual(w.recovered_segment_cues(good,'en',2,(8.1,10),(8.1,10)),[])
         self.assertEqual(w.recovered_segment_cues(good,'en',2,(8,10),(9,10)),[])
         self.assertEqual(w.recovered_segment_cues(self.segment(probability=.01),'en',2,(8,10),(8,10)),[])
@@ -555,7 +555,7 @@ class GapRecoveryTest(unittest.TestCase):
             return iter([self.segment(18.,20.)]),SimpleNamespace(language='en')
         with patch.dict(sys.modules,{'faster_whisper.audio':SimpleNamespace(decode_audio=lambda path:list(range(24*16000)))}):
             result,quality=w.repair_stretched_cues(SimpleNamespace(transcribe=transcribe),'audio',original,'en',[],24.,lambda *args:None)
-            self.assertEqual(result,[{'start':18.,'end':20.,'text':'clear speech','language':'en'}])
+            self.assertEqual(result,[{'start':18.,'end':20.,'text':'clear speech','language':'en','words':[{'start':18.,'end':19.,'text':'clear'},{'start':19.,'end':20.,'text':'speech'}]}])
             self.assertEqual(w.asr_gaps(result,24.),[(0.,18.),(20.,24.)])
             self.assertEqual(quality,{'realigned':1,'alignment_incomplete':False})
             self.assertFalse(calls[0]['vad_filter']);self.assertNotIn('vad_parameters',calls[0])

@@ -442,9 +442,13 @@ def native_timestamp(value):
 
 
 def split_segment(segment, language):
-    def cue(start, end, text):
-        return {'start': native_timestamp(start), 'end': native_timestamp(end),
+    def cue(start, end, text, group=None):
+        result = {'start': native_timestamp(start), 'end': native_timestamp(end),
             'text': text.strip(), 'language': language}
+        aligned = [{'start': native_timestamp(w.start), 'end': native_timestamp(w.end), 'text': w.word.strip()} for w in (group or []) if w.word.strip()]
+        if aligned and all(w['end'] > w['start'] and start <= w['start'] <= w['end'] <= end for w in aligned) and all(aligned[i]['start'] >= aligned[i-1]['end'] for i in range(1, len(aligned))):
+            result['words'] = aligned
+        return result
     words = list(segment.words or [])
     if not words:
         return [cue(segment.start, segment.end, segment.text)]
@@ -453,11 +457,11 @@ def split_segment(segment, language):
         text = ''.join(w.word for w in group)
         boundary = language not in ('ja', 'zh') or bool(re.search(r'[。！？!?、,]$', text.rstrip()) or word.word.startswith(' '))
         if group and boundary and (word.end - group[0].start > (5 if language in ('ja', 'zh') else 7) or len(text) > 90):
-            out.append(cue(group[0].start, group[-1].end, text))
+            out.append(cue(group[0].start, group[-1].end, text, group))
             group = []
         group.append(word)
     if group:
-        out.append(cue(group[0].start, group[-1].end, ''.join(w.word for w in group)))
+        out.append(cue(group[0].start, group[-1].end, ''.join(w.word for w in group), group))
     return [line for line in out if line['text'] and line['end'] > line['start']]
 
 
@@ -485,6 +489,8 @@ def recovered_segment_cues(segment, language, offset, gap, core):
     out = []
     for cue in split_segment(segment, language):
         cue = dict(cue, start=cue['start'] + offset, end=cue['end'] + offset)
+        if 'words' in cue:
+            cue['words'] = [dict(word, start=word['start'] + offset, end=word['end'] + offset) for word in cue['words']]
         midpoint = (cue['start'] + cue['end']) / 2
         # Context supplies meaning only. Never clip or extend a timestamp to make a cue fit.
         if gap[0] <= cue['start'] < cue['end'] <= gap[1] and core[0] <= midpoint < core[1]:

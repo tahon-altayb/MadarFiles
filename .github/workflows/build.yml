@@ -1,7 +1,7 @@
 name: Build MadarFiles APK
 on:
   push:
-    branches: [main, master, fixes/usability-arabic-20261021, fixes/translation-20261021]
+    branches: [main, master, fixes/usability-arabic-20261021, fixes/translation-20261021, development/gemini-studio-20261026]
   workflow_dispatch:
 permissions:
   contents: read
@@ -125,6 +125,7 @@ jobs:
       - name: Validate interface
         run: |
           node qa/interface.test.cjs
+          node qa/montage-core.test.cjs
           node qa/translation-mode.test.cjs
           node qa/colab-connection.test.cjs
           python3 qa/colab-worker.test.py
@@ -133,7 +134,7 @@ jobs:
         run: |
           npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
           MADAR_UI_FAILED=0
-          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/upgrade.test.cjs qa/release.test.cjs; do
+          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs; do
             NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node "$MADAR_UI_TEST" || MADAR_UI_FAILED=1
           done
           exit "$MADAR_UI_FAILED"
@@ -160,9 +161,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 32 --version-name 1.6.0 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 33 --version-name 1.7.0 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.6.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.7.0.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -211,8 +212,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.6.0-APK
-          path: MadarFiles-1.6.0.apk
+          name: MadarFiles-1.7.0-APK
+          path: MadarFiles-1.7.0.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
