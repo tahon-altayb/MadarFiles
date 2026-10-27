@@ -19,6 +19,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Prepare preinstalled Android SDK
         timeout-minutes: 10
         run: python3 scripts/ensure_android.py
