@@ -129,6 +129,7 @@ jobs:
           key: madar-public-speech-v1-${{ hashFiles('scripts/prepare_speech_references.py', 'app/src/androidTest/assets/speech-references.json') }}
       - name: Validate interface
         run: |
+          python3 -m pip install --disable-pip-version-check numpy==2.2.6
           node qa/interface.test.cjs
           node qa/montage-core.test.cjs
           node qa/translation-mode.test.cjs
