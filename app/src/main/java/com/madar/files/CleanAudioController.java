@@ -24,7 +24,7 @@ final class CleanAudioController implements AutoCloseable {
  };
  private void setVideoPlaying(boolean value){if(video.getPlayWhenReady()==value)return;ownPlayChanges.addLast(value);video.setPlayWhenReady(value);}
  private void pause(){playing=false;adjusting=true;try{setVideoPlaying(false);audio.pause();}finally{adjusting=false;}}
- void move(long positionMs){pause();audio.flush();double start=session.offsetUs/1e6,at=Math.max(start,Math.min(session.ready(),positionMs/1000.0));cursor=Math.max(0,Math.min(session.frames,Math.round((at-start)*44100)));baseFrame=cursor;adjusting=true;try{video.seekTo(Math.round((start+cursor/44100.0)*1000));}finally{adjusting=false;}}
+ void move(long positionMs){pause();audio.flush();double start=session.offsetUs/1e6,at=Math.max(start,Math.min(session.ready(),positionMs/1000.0));cursor=Math.max(0,Math.min(session.frames,Math.round((at-start)*44100)));baseFrame=cursor;adjusting=true;try{long target=Math.round((start+cursor/44100.0)*1000);if(video.getCurrentPosition()!=target)video.seekTo(target);}finally{adjusting=false;}}
  private final BroadcastReceiver noisy=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent intent){if(!closed)setWanted(false);}};
  private void requestFocus(){if(hasFocusRequest)return;hasFocusRequest=true;focused=manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;if(!focused){hasFocusRequest=false;wanted=false;failure="الصوت مشغول بتطبيق آخر؛ اضغط تشغيل للمحاولة";}}
  void setWanted(boolean value){if(closed)return;wanted=value;if(value){failure="";requestFocus();}else{pause();if(hasFocusRequest)manager.abandonAudioFocusRequest(focus);hasFocusRequest=false;focused=false;}}
