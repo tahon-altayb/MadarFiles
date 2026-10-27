@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -12,8 +12,10 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/><data android:mimeType="image/*"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/pdf"/></intent-filter>
         </activity>
+        <!-- Legacy external players use the exact mixed-case MIME x-mpegURL.
+             Keep that single compatibility alias alongside the standard lowercase type. -->
         <activity android:name=".OpenMediaActivity" android:exported="true" android:label="مدار · مشغّل الفيديو">
-            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="content"/><data android:scheme="file"/><data android:scheme="http"/><data android:scheme="https"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/mp4"/><data android:mimeType="application/x-matroska"/><data android:mimeType="application/x-mpegURL"/><data android:mimeType="application/x-mpegurl"/><data android:mimeType="application/vnd.apple.mpegurl"/><data android:mimeType="application/dash+xml"/><data android:mimeType="application/ogg"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="content"/><data android:scheme="file"/><data android:scheme="http"/><data android:scheme="https"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/mp4"/><data android:mimeType="application/x-matroska"/><data android:mimeType="application/x-mpegURL" tools:ignore="AppLinkUrlError"/><data android:mimeType="application/x-mpegurl"/><data android:mimeType="application/vnd.apple.mpegurl"/><data android:mimeType="application/dash+xml"/><data android:mimeType="application/ogg"/></intent-filter>
             <!-- API 29-compatible patterns; do not claim ordinary web pages. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>

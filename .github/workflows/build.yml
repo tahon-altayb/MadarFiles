@@ -71,8 +71,8 @@ jobs:
           dest.chmod(0o600)
           print('Verified Firebase project and Android client configuration; values withheld.')
           PYFIREBASE
-      - name: Compile Gemini integration before expensive model checks
-        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac
+      - name: Compile and lint before expensive model checks
+        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:lintDebug
       - name: Restore processing build assets
         uses: actions/cache@v4
         with:
