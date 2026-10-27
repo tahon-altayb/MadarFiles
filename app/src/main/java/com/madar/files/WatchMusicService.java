@@ -22,7 +22,7 @@ public class WatchMusicService extends Service {
   if(busy())throw new IOException("انتظر انتهاء المعالجة الحالية أو أوقفها أولًا");
   if(durationMs<=0||positionMs<0||positionMs>=durationMs)throw new IOException("انتظر تحميل مدة المقطع أو اختر موضعًا قبل نهايته");
   if(cloud&&!ColabCredentials.ready())throw new IOException("اتصل بحساب Colab أولًا");
-  Job old=current;if(old!=null&&!old.clean.watching)dispose(old);
+  Job old=current;if(old!=null&&!old.clean.watching)dispose(old);if(old==null){File[] orphaned=c.getCacheDir().listFiles(f->f.getName().startsWith("madar_watch_input_")||f.getName().startsWith("madar_watch_clean_"));if(orphaned!=null)for(File orphan:orphaned)orphan.delete();}
   boolean owned=file==null;File source=owned?File.createTempFile("madar_watch_input_",".media",c.getCacheDir()):file;
   Job job=new Job(uri,source,owned,identity,title,positionMs*1000,durationMs*1000,cloud);current=job;starting=true;
   try{Intent intent=new Intent(c,WatchMusicService.class).putExtra("job",job.id).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("الصوت للمشاهدة",uri));c.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=null;dispose(job);throw error;}
