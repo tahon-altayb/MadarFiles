@@ -12,7 +12,7 @@ for isolated,watch,rest,expect in [('pass','pass','0',0),('fail','pass','0',1),(
 if [[ "$*" == *"am instrument"* ]]; then
  result="$MADAR_FAKE_ISOLATED"
  count=2
- if [[ "$*" == *"PlayerWatchTest"* ]]; then result="$MADAR_FAKE_WATCH";count=3;fi
+ if [[ "$*" == *"PlayerWatchTest"* ]]; then result="$MADAR_FAKE_WATCH";count=7;fi
  if [ "$result" = fail ]; then echo 'FAILURES!!!'; elif [ "$result" = skip ]; then printf 'INSTRUMENTATION_STATUS_CODE: -3\\nOK (%s tests)\\n' "$count"; else printf 'INSTRUMENTATION_STATUS_CODE: 0\\nOK (%s tests)\\n' "$count"; fi
 fi
 ''');adb.chmod(0o700)

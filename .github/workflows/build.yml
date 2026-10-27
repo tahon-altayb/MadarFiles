@@ -105,6 +105,8 @@ jobs:
           curl -fL --connect-timeout 20 --max-time 90 --speed-time 30 --speed-limit 1024 --retry 2 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
           ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.wav -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
           espeak-ng -v en-us -s 135 -w app/src/androidTest/assets/speech-test.wav "The quick brown fox jumps over the lazy dog. Welcome to this video. This is a test of speech recognition."
+          ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=15 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 24 -c:v libx264 -preset ultrafast -crf 35 -c:a aac -movflags +faststart app/src/androidTest/assets/watch-long.mp4
+          ffmpeg -v error -y -i app/src/androidTest/assets/sample.mp4 -c copy -hls_time 1 -hls_list_size 0 -hls_segment_filename app/src/androidTest/assets/watch-hls-%03d.ts app/src/androidTest/assets/watch-hls.m3u8
       - name: Restore verified public speech test fixtures
         id: public-speech
         uses: actions/cache/restore@v4
@@ -161,9 +163,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 35 --version-name 1.9.0 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 36 --version-name 1.9.1 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.1.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -212,8 +214,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.0-APK
-          path: MadarFiles-1.9.0.apk
+          name: MadarFiles-1.9.1-APK
+          path: MadarFiles-1.9.1.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports

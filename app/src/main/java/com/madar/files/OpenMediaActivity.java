@@ -10,8 +10,10 @@ import android.widget.Toast;
 public class OpenMediaActivity extends Activity {
  @Override public void onCreate(Bundle state){super.onCreate(state);try{
   Intent incoming=getIntent();Uri uri=incoming.getData();
-  if(!Intent.ACTION_VIEW.equals(incoming.getAction())||uri==null||!("content".equals(uri.getScheme())||"file".equals(uri.getScheme())))throw new IllegalArgumentException("اختر مقطعًا من مدير الملفات أو المعرض");
-  Intent player=new Intent(this,PlayerActivity.class).setDataAndType(uri,incoming.getType()).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+  if(!Intent.ACTION_VIEW.equals(incoming.getAction())||uri==null||!ExternalMedia.supported(uri))throw new IllegalArgumentException("اختر ملفًا أو رابط فيديو صالحًا");
+  if("http".equalsIgnoreCase(uri.getScheme())&&!android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(uri.getHost()))throw new IllegalArgumentException("هذا المصدر يستخدم HTTP غير مشفّر؛ استخدم رابط HTTPS أو ملفًا محفوظًا");
+  Intent player=new Intent(this,PlayerActivity.class).setDataAndType(uri,ExternalMedia.mime(incoming)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+  player.putExtra("android.media.intent.extra.HTTP_HEADERS",ExternalMedia.bundle(ExternalMedia.headers(incoming)));
   player.setClipData(ClipData.newRawUri("مقطع للمشاهدة",uri));startActivity(player);
  }catch(Exception error){Toast.makeText(this,"تعذر فتح المقطع: "+error.getMessage(),Toast.LENGTH_LONG).show();}finally{finish();}}
 }
