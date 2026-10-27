@@ -12,6 +12,10 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/><data android:mimeType="image/*"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/pdf"/></intent-filter>
         </activity>
+        <activity android:name=".OpenMediaActivity" android:exported="true" android:label="مدار · مشغّل الفيديو">
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><data android:scheme="content"/><data android:scheme="file"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/mp4"/><data android:mimeType="application/x-matroska"/></intent-filter>
+        </activity>
+        <service android:name=".WatchMusicService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <activity android:name=".DriveAccessActivity" android:exported="false" />
         <service android:name=".FileProcessingService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".TransferService" android:exported="false" android:foregroundServiceType="dataSync" />

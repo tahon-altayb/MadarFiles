@@ -69,7 +69,7 @@ jobs:
           print('Verified Firebase project and Android client configuration; values withheld.')
           PYFIREBASE
       - name: Compile Gemini integration before expensive model checks
-        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac
+        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac
       - name: Restore processing build assets
         uses: actions/cache@v4
         with:
@@ -161,9 +161,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 34 --version-name 1.8.0 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 35 --version-name 1.9.0 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.8.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.0.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -212,8 +212,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.8.0-APK
-          path: MadarFiles-1.8.0.apk
+          name: MadarFiles-1.9.0-APK
+          path: MadarFiles-1.9.0.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
