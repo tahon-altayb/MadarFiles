@@ -65,7 +65,7 @@ public class WatchMusicService extends Service {
       appendPrefix(part,job.clean,out,base,skip,count);MusicSeparator.check(job.cancel);
       if(job.clean.frames==base)throw new IOException("لم يُنتج الفصل صوتًا قابلًا للمشاهدة");
       if(window.coreEnd<job.durationUs&&job.clean.frames-base<count)throw new IOException("جزء الصوت غير مكتمل");
-      if(job.clean.buffer!=null)job.clean.buffer.completeCycle((job.clean.frames-base)/44100.0,(SystemClock.elapsedRealtime()-cycleBegan)/1000.0);next=window.coreEnd;
+      if(job.clean.buffer!=null)job.clean.buffer.completeCycle((job.clean.frames-base)/44100.0,Math.max(1,SystemClock.elapsedRealtime()-cycleBegan-(job.cloud?cloudSession.lastColdStartMs:0))/1000.0);next=window.coreEnd;
      }finally{if(decoded!=null)decoded.pcm.delete();if(processed!=null)processed.delete();}
     }
    }
