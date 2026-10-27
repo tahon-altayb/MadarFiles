@@ -24,8 +24,11 @@ def write_json(path, value):
     tmp.replace(p)
 
 
-def status(stage, progress):
-    write_json('progress.json', dict(stage=stage, progress=progress))
+def status(stage, progress, parts=None, frames=None):
+    value = dict(stage=stage, progress=progress)
+    if parts is not None:
+        value.update(chunks=parts, frames=frames, sample_rate=RATE, channels=2, model_sha256=MODEL_SHA)
+    write_json('progress.json', value)
 
 
 def validate_request(req):
@@ -103,10 +106,10 @@ def run():
         pcm = np.floor(np.clip(values, -1, 1) * 32767 + .5).astype('<i2').tobytes()
         Path(f'output_{i}.pcm').write_bytes(pcm)
         parts.append(dict(bytes=len(pcm), sha256=hashlib.sha256(pcm).hexdigest()))
-        status('separate', 40 + int(54 * min(frames, start + CORE) / frames))
+        status('separate', 40 + int(54 * min(frames, start + CORE) / frames), parts, frames)
     write_json('result.json', dict(frames=frames, sample_rate=RATE, channels=2,
                                   model_sha256=MODEL_SHA, provider='cpu', chunks=parts))
-    status('done', 97)
+    status('done', 97, parts, frames)
 
 
 if __name__ == '__main__':

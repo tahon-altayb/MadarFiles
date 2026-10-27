@@ -16,7 +16,7 @@
         <service android:name=".FileProcessingService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".TransferService" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity android:name=".ColabActivity" android:exported="false" />
-        <activity android:name=".PlayerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".SeparationPlayerActivity" android:exported="false"/><activity android:name=".PlayerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
         <service android:name=".ImageBatchService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <service android:name=".VideoExportService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/></provider>

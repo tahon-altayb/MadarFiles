@@ -51,14 +51,15 @@ final class OnlineTranslation {
   StringBuilder text=new StringBuilder();JSONArray parts=candidate.getJSONObject("content").getJSONArray("parts");for(int i=0;i<parts.length();i++){JSONObject part=parts.getJSONObject(i);if(!part.optBoolean("thought"))text.append(part.optString("text"));}
   return new JSONObject(text.toString());
  }
- static JSONObject post(String model,String key,JSONObject body,AtomicBoolean cancel)throws Exception {
+ static JSONObject post(String model,String key,JSONObject body,AtomicBoolean cancel)throws Exception {return post(model,key,body,cancel,2000000);}
+ static JSONObject post(String model,String key,JSONObject body,AtomicBoolean cancel,int responseLimit)throws Exception {
   if(!model.matches("gemini-[a-zA-Z0-9.\\-]{1,80}"))throw new IOException("اسم نموذج غير صالح");
   HttpURLConnection connection=(HttpURLConnection)new URL("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent").openConnection();
   AtomicBoolean done=new AtomicBoolean();Thread watcher=new Thread(()->{try{while(!done.get()){if(cancel.get()){connection.disconnect();return;}Thread.sleep(100);}}catch(InterruptedException ignored){}},"madar-translation-cancel");watcher.setDaemon(true);
   try{connection.setInstanceFollowRedirects(false);connection.setRequestMethod("POST");connection.setConnectTimeout(15000);connection.setReadTimeout(120000);connection.setRequestProperty("Content-Type","application/json; charset=utf-8");connection.setRequestProperty("x-goog-api-key",key);connection.setDoOutput(true);byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);connection.setFixedLengthStreamingMode(bytes.length);watcher.start();MusicSeparator.check(cancel);
    try(OutputStream stream=connection.getOutputStream()){stream.write(bytes);}int code=connection.getResponseCode();MusicSeparator.check(cancel);
    if(code!=200){String reason=code==401||code==403?"تحقق من مفتاح الخدمة وصلاحياته":code==429?"وصلت الخدمة إلى حد الاستخدام؛ أعد المحاولة لاحقًا":code==404?"النموذج غير متاح لحسابك؛ راجع اسم النموذج في الإعدادات":"تعذر اتصال خدمة الترجمة";throw new IOException(reason+" ("+code+")");}
-   try(InputStream in=connection.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] chunk=new byte[8192];int n;while((n=in.read(chunk))!=-1){MusicSeparator.check(cancel);if(out.size()+n>2000000)throw new IOException("استجابة الخدمة أكبر من الحد");out.write(chunk,0,n);}return new JSONObject(out.toString("UTF-8"));}
+   try(InputStream in=connection.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] chunk=new byte[8192];int n;while((n=in.read(chunk))!=-1){MusicSeparator.check(cancel);if(out.size()+n>responseLimit)throw new IOException("استجابة الخدمة أكبر من الحد");out.write(chunk,0,n);}return new JSONObject(out.toString("UTF-8"));}
   }catch(Exception e){MusicSeparator.check(cancel);throw e;}finally{done.set(true);watcher.interrupt();connection.disconnect();}
  }
 }

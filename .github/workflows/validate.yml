@@ -38,7 +38,7 @@ jobs:
         run: |
           npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
           MADAR_UI_FAILED=0
-          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs; do
+          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs qa/personal-studio.test.cjs; do
             NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node "$MADAR_UI_TEST" || MADAR_UI_FAILED=1
           done
           exit "$MADAR_UI_FAILED"

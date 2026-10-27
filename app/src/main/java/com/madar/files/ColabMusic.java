@@ -36,11 +36,14 @@ final class ColabMusic {
   }finally{if(!complete)output.delete();}
  }
  static Result run(Context c,AudioPipeline.Decoded audio,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception {
+  return run(c,audio,grant,cancel,progress,null);
+ }
+ static Result run(Context c,AudioPipeline.Decoded audio,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception {
   if(grant==null)throw new IOException("أعد الاتصال بحساب Colab للفصل السحابي");
   long frames=audio.pcm.length()/4,total=Math.round(frames*RATE/(double)audio.sampleRate);
   if(total<=0||total>600L*RATE)throw new IOException("الفصل السحابي متاح حتى 10 دقائق لكل مقطع");
   File output=File.createTempFile("madar_cloud_vocals_",".pcm",c.getCacheDir());boolean success=false;Result result=new Result();result.pcm=output;
-  ColabDiagnostics diagnostic=new ColabDiagnostics(c);
+  ColabDiagnostics diagnostic=new ColabDiagnostics(c);if(live!=null)LiveSeparation.attach(live,output,audio.offsetUs);final int[] fetched={0};
   try(ColabRuntime runtime=new ColabRuntime(c,grant,cancel);RandomAccessFile input=new RandomAccessFile(audio.pcm,"r")){
    try {
     diagnostic.record("RUNTIME_CREATE");runtime.create(progress);String folder="madar_"+UUID.randomUUID().toString().replace("-","");
@@ -55,11 +58,15 @@ final class ColabMusic {
      channel.execute("JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+asset(c,"music_bootstrap.py"),()->{
       JSONObject state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536));String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));
       if(stage.equals("failed")){String failed=state.optString("last_stage");if(ColabDiagnostics.stageKnown(failed))diagnostic.record("STAGE_"+failed.toUpperCase(Locale.ROOT));String code=state.optString("error");if(!code.matches("[A-Za-z0-9_]{1,80}"))code="MUSIC_FAILED";throw new IOException("Colab · "+code);}
+      if(live!=null&&state.has("chunks")){
+       JSONArray chunks=state.getJSONArray("chunks");if(state.optLong("frames")!=total||state.optInt("sample_rate")!=RATE||state.optInt("channels")!=2||!MODEL_SHA.equals(state.optString("model_sha256"))||chunks.length()>parts.length())throw new IOException("Colab · MUSIC_PREFIX_SCHEMA");
+       try(OutputStream append=new FileOutputStream(output,true)){while(fetched[0]<chunks.length()){int i=fetched[0];JSONObject part=chunks.getJSONObject(i);long expected=Math.min(CORE,total-(long)i*CORE)*4;if(part.optLong("bytes",-1)!=expected||!part.optString("sha256").matches("[a-f0-9]{64}"))throw new IOException("Colab · MUSIC_RESULT_SCHEMA");byte[] bytes=runtime.getBinary(folder+"/output_"+i+".pcm",2*1024*1024);if(bytes.length!=expected||!sha(bytes).equals(part.getString("sha256")))throw new IOException("Colab · MUSIC_OUTPUT_HASH");append.write(bytes);append.flush();fetched[0]++;LiveSeparation.publish(live,output.length()/4);}}
+      }
       String message;switch(stage){case "install":message="تجهيز محرك الفصل السحابي";break;case "model_download":message="تنزيل نموذج UVR والتحقق من بصمته";break;case "model_load":message="تحميل نموذج الفصل · معالج Colab";break;case "separate":message="فصل الموسيقى سحابيًا · نفس النموذج المحلي";break;case "done":message="استرجاع الصوت المفصول والتحقق من سلامته";break;default:message="انتظار محرك الفصل السحابي";}
       progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),message);return stage.equals("done");
      });
      diagnostic.record("FETCH_RESULT");
-     fetchResult(runtime,folder,total,parts.length(),output,cancel,progress);
+     if(live==null)fetchResult(runtime,folder,total,parts.length(),output,cancel,progress);else if(fetched[0]!=parts.length()||output.length()!=total*4)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
      diagnostic.record("RESULT_VERIFIED");
     }
    }finally{progress.update(98,"إغلاق جلسة الفصل السحابي…");boolean cleaned=runtime.cleanup();diagnostic.record(cleaned?"CLEANUP_OK":"CLEANUP_PENDING");if(!cleaned)result.warning="تعذر تأكيد إيقاف جلسة Colab؛ افتح اتصال Colab لإيقاف جلسة مدار السابقة حتى لا يستمر استهلاك الوحدات.";}

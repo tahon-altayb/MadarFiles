@@ -153,3 +153,30 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 #sheet.studio15.layerEditing #timelineScroll{display:block;flex:0 0 76px;min-height:70px;max-height:76px}
 #sheet.studio15.textTyping #timelineScroll{display:none}
 .transcriptWorkspace{margin:12px 0;padding:12px;border:1px solid #8c7d6440;border-radius:14px;background:#29272114}.transcriptControls{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.transcriptControls label{flex:1;min-width:100px}.transcriptControls textarea{width:100%;box-sizing:border-box}.transcriptControls button{flex:1;min-width:125px}#transcriptWords{display:flex;flex-wrap:wrap;gap:7px;max-height:220px;overflow:auto}#transcriptWords button{white-space:normal;overflow-wrap:anywhere;text-align:right;padding:8px 10px}#transcriptWords .suspect{border-color:#a88e57}#transcriptWords .active{outline:2px solid #a88e57}#transcriptWords .speaking{background:#9d8d6740}.modelHubRow{padding:12px 0;border-bottom:1px solid #8883}.modelHubRow p{margin:5px 0}.modelHubRow button{margin:4px}
+/* One invariant preview and one isolated drawer for every editor tool. */
+#sheet.studio15 #form{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+#sheet.studio15 #livePreview,#sheet.studio15.layerEditing #livePreview,#sheet.studio15.textTyping #livePreview{flex:0 0 clamp(210px,37dvh,380px);height:clamp(210px,37dvh,380px);min-height:210px;max-height:none;position:sticky;top:0;z-index:6;background:#101f1a}
+#sheet.studio15 #editStage{margin:0 auto;flex-shrink:0}
+#sheet.studio15 #timelineScroll,#sheet.studio15.layerEditing #timelineScroll,#sheet.studio15.textTyping #timelineScroll{display:block;flex:0 0 142px;min-height:142px;max-height:142px;direction:ltr;touch-action:none}
+#sheet.studio15 .studioToolbar,#sheet.studio15.layerEditing .studioToolbar,#sheet.studio15.textTyping .studioToolbar{display:flex;flex:0 0 44px;min-height:44px}
+#sheet.studio15 .editorTimelineControls,#sheet.studio15.layerEditing .editorTimelineControls{display:flex;flex:0 0 28px}
+#sheet.studio15 .studioAdd,#sheet.studio15.layerEditing .studioAdd{display:flex;flex:0 0 32px}
+#sheet.studio15 .clipContext,#sheet.studio15.layerEditing .clipContext{display:flex;flex:0 0 32px}.clipContext small{min-width:70px;white-space:nowrap}
+#sheet.studio15 .studioDock,#sheet.studio15.layerEditing .studioDock,#sheet.studio15.textTyping .studioDock{flex:0 0 235px;height:235px;min-height:160px;max-height:235px}
+#sheet.studio15 .studioDock[hidden]{display:none!important}#sheet.studio15 #dockContent>[data-panel][hidden]{display:none!important}
+#sheet.studio15 .editActions{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:none;grid-auto-rows:minmax(50px,auto);overflow:visible;gap:7px;direction:rtl}
+#sheet.studio15 .editActions button{width:auto;min-width:0;min-height:50px;height:auto;margin:0;padding:8px;font-size:12px;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+#sheet.studio15 #layerPanel>textarea{width:100%}.layerBar,.layerTimeHandle{touch-action:none}.bedTrack{height:32px}.bedBar{background:#385848!important;border-color:#96b48e!important}
+#sheet.studio15.textTyping .sheetHead .eyebrow,#sheet.studio15.textTyping #export,#sheet.studio15.textTyping .editTransport,#sheet.studio15.textTyping #mediaStatus,#sheet.studio15.textTyping #previewSize{display:revert}
+@media(max-height:550px){#sheet.studio15 #livePreview,#sheet.studio15.layerEditing #livePreview,#sheet.studio15.textTyping #livePreview{flex-basis:170px;height:170px;min-height:170px}}
+#sheet.studio15 #editStage{position:absolute;top:4px;left:50%;transform:translateX(-50%)}
+#sheet.studio15 .editTransport{position:absolute;bottom:4px;left:4px;right:4px;width:calc(100% - 8px);height:46px;z-index:3}
+#sheet.studio15 #mediaStatus,#sheet.studio15 #previewSize,#sheet.studio15 .previewLabel{position:absolute;top:4px;right:6px;z-index:2;max-width:95%;font-size:9px;background:#10251a99;pointer-events:none}
+#sheet.studio15 #mediaRecovery{position:absolute;bottom:52px;left:4px;right:4px;z-index:4;max-height:64px;overflow:auto;background:#10251aee}
+#sheet.studio15 .editActions{grid-auto-flow:row;grid-auto-columns:auto;width:100%}
+@media(max-height:500px){
+ #sheet.studio15.textTyping #timelineScroll,#sheet.studio15.textTyping .studioAdd,#sheet.studio15.textTyping .clipContext,#sheet.studio15.textTyping .studioToolbar,#sheet.studio15.textTyping .editorTimelineControls{display:none}
+ #sheet.studio15.textTyping #livePreview{flex-basis:140px;height:140px;min-height:140px}
+ #sheet.studio15.textTyping .studioDock{flex-basis:140px;height:140px;min-height:140px;max-height:140px;position:sticky;bottom:0}
+ #sheet.studio15.textTyping #export{display:none}
+}
