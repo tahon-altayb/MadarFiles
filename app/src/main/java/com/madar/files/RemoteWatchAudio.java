@@ -33,7 +33,7 @@ final class RemoteWatchAudio {
    }catch(Exception e){failure.set(e);done.countDown();}});
    long began=SystemClock.elapsedRealtime();while(!done.await(200,TimeUnit.MILLISECONDS)){MusicSeparator.check(cancel);if(SystemClock.elapsedRealtime()-began>10L*60*1000)throw new IOException("انتهت مهلة تحميل صوت الرابط");}
    MusicSeparator.check(cancel);if(failure.get()!=null)throw failure.get();
-   AudioPipeline.Decoded result=AudioPipeline.decode(c,audio,0,cancel,(p,m)->{});result.offsetUs+=startUs;return result;
+   AudioPipeline.Decoded result=AudioPipeline.decodeRange(c,audio,0,endUs-startUs,cancel,(p,m)->{});result.offsetUs+=startUs;return result;
   }finally{CountDownLatch stopped=new CountDownLatch(1);handler.post(()->{try{Transformer transformer=running.get();if(transformer!=null)transformer.cancel();}finally{stopped.countDown();}});try{stopped.await(5,TimeUnit.SECONDS);}finally{thread.quitSafely();audio.delete();}}
  }
 }

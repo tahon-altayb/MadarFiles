@@ -21,6 +21,7 @@ assert not re.search(r'INSTRUMENTATION_STATUS_CODE:\s*-\d+',log), 'Failed or ski
 assert 'INSTRUMENTATION_FAILED' not in log and 'FAILURES!!!' not in log, 'Local-agent instrumentation failed'
 PY
 if [ "$?" -ne 0 ]; then status=1; fi
+if [ "$status" -ne 0 ]; then exit "$status"; fi
 adb shell am force-stop com.madar.files || status=1
 adb logcat -c
 adb logcat -v threadtime > phone-screenshots/player-watch-logcat.txt 2>&1 &
@@ -40,6 +41,7 @@ PYWATCH
 if [ "$?" -ne 0 ]; then
  status=1
  tail -n 350 phone-screenshots/player-watch-logcat.txt
+ exit "$status"
 fi
 adb shell am force-stop com.madar.files || status=1
 gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest || status=$?

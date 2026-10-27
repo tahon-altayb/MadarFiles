@@ -40,7 +40,9 @@ public class PlayerWatchTest {
   }
   assertNull(ExternalMedia.mime(new Intent().setType("video/*")));assertEquals("application/x-mpegURL",ExternalMedia.mime(new Intent().setType("application/vnd.apple.mpegurl")));
   java.util.Map<String,String> pairs=ExternalMedia.headers(new Intent().putExtra("headers",new String[]{"Referer","https://media.example.invalid/","Range","bytes=10-"}));assertEquals(1,pairs.size());assertTrue(pairs.containsKey("Referer"));
-  for(String suffix:new String[]{"mp4","mkv","m3u8","mpd","MP4","1.2.mp4"})assertTrue(c.getPackageManager().queryIntentActivities(new Intent(Intent.ACTION_VIEW,Uri.parse("https://media.example.invalid/nested/path/video."+suffix+"?token=1")).addCategory(Intent.CATEGORY_BROWSABLE),android.content.pm.PackageManager.MATCH_DEFAULT_ONLY).stream().anyMatch(r->r.activityInfo.name.equals(OpenMediaActivity.class.getName())));
+  // Untyped web intents follow Android domain/browser policy. Package-scoped
+  // queries verify our media path filters; actual Anime Slayer typed handoffs above stay unscoped.
+  for(String suffix:new String[]{"mp4","mkv","m3u8","mpd","MP4","1.2.mp4"})assertTrue(suffix,c.getPackageManager().queryIntentActivities(new Intent(Intent.ACTION_VIEW,Uri.parse("https://media.example.invalid/nested/path/video."+suffix+"?token=1")).setPackage(c.getPackageName()).addCategory(Intent.CATEGORY_BROWSABLE),android.content.pm.PackageManager.MATCH_DEFAULT_ONLY).stream().anyMatch(r->r.activityInfo.name.equals(OpenMediaActivity.class.getName())));
  }
  @Test public void feederSurvivesBusyUiAndClockCorrectionWithoutDroppingPcm()throws Exception{
   Context c=instrumentation.getTargetContext();File source=File.createTempFile("watch-long-",".mp4",c.getCacheDir()),pcm=File.createTempFile("watch-continuity-",".pcm",c.getCacheDir());

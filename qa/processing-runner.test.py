@@ -24,7 +24,8 @@ if [[ "$*" == *connectedDebugAndroidTest* ]]; then exit "$MADAR_FAKE_REST"; fi
   result=subprocess.run(['bash',str(script)],cwd=root,env=env,capture_output=True,text=True)
   assert result.returncode==expect,(isolated,watch,rest,result.returncode,result.stderr)
   calls=(root/'calls.txt').read_text()
-  assert ':app:installDebugAndroidTest' in calls and 'notClass=com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest' in calls
+  assert ':app:installDebugAndroidTest' in calls
+  assert ('notClass=com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest' in calls)==(isolated=='pass' and watch=='pass')
   assert (root/'phone-screenshots/local-agent-tests.txt').is_file()
-  assert (root/'phone-screenshots/player-watch-tests.txt').is_file()
+  assert (root/'phone-screenshots/player-watch-tests.txt').is_file()==(isolated=='pass')
 print('PASS: local model, real player/watch and remaining tests retain every failure or skip')
