@@ -22,5 +22,25 @@ assert 'INSTRUMENTATION_FAILED' not in log and 'FAILURES!!!' not in log, 'Local-
 PY
 if [ "$?" -ne 0 ]; then status=1; fi
 adb shell am force-stop com.madar.files || status=1
-gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.madar.files.LocalAgentRuntimeTest || status=$?
+adb logcat -c
+adb logcat -v threadtime > phone-screenshots/player-watch-logcat.txt 2>&1 &
+watch_logcat_pid=$!
+adb shell am instrument -w -r -e class com.madar.files.PlayerWatchTest com.madar.files.test/androidx.test.runner.AndroidJUnitRunner > phone-screenshots/player-watch-tests.txt 2>&1 || status=$?
+kill "$watch_logcat_pid" 2>/dev/null || true
+wait "$watch_logcat_pid" 2>/dev/null || true
+cat phone-screenshots/player-watch-tests.txt
+python3 - <<'PYWATCH'
+from pathlib import Path
+import re
+log=Path('phone-screenshots/player-watch-tests.txt').read_text(errors='replace')
+assert re.search(r'\bOK\s*\(3 tests\)',log), 'All real player-watch tests must pass'
+assert not re.search(r'INSTRUMENTATION_STATUS_CODE:\s*-\d+',log), 'Failed or skipped player-watch tests'
+assert 'INSTRUMENTATION_FAILED' not in log and 'FAILURES!!!' not in log, 'Player-watch instrumentation failed'
+PYWATCH
+if [ "$?" -ne 0 ]; then
+ status=1
+ tail -n 350 phone-screenshots/player-watch-logcat.txt
+fi
+adb shell am force-stop com.madar.files || status=1
+gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest || status=$?
 exit "$status"
