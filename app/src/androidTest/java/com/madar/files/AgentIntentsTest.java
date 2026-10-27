@@ -23,6 +23,11 @@ public class AgentIntentsTest {
  @Test public void negationQuestionsAndMultipleStepsAreNotSilentlyExecuted()throws Exception{
   for(String request:new String[]{"لا تحذف الموسيقى","ما ابي ازالة الموسيقى","كيف ازيل الموسيقى؟","هل تقدر تشيل الموسيقى؟","شيل الموسيقى ثم قص من 2 إلى 5"})assertNull(request,AgentIntents.resolve(request,video(30000),null));
  }
+ @Test public void explicitTimedTextKeepsTheActualLetters()throws Exception{
+  for(String request:new String[]{"أضف النص مرحبا إلى الفيديو من الثانية 2 إلى الثانية 5","أضف النص مرحبا إلى الفيديو من الثانية ٢ إلى الثانية ٥"}){JSONObject p=AgentTools.validate(AgentIntents.resolve(request,video(10000),null),"video");JSONObject a=p.getJSONArray("actions").getJSONObject(0);assertEquals("addText",a.getString("action"));assertEquals("مرحبا",a.getString("text"));assertEquals(2,a.getDouble("start"),.001);assertEquals(5,a.getDouble("end"),.001);}
+  JSONObject p=AgentIntents.resolve("اكتب النص أمانة إلى الفيديو من الثانية 2 إلى الثانية 5",video(10000),null);assertEquals("أمانة",p.getJSONArray("actions").getJSONObject(0).getString("text"));
+  assertNull(AgentIntents.resolve("أضف النص مرحبا من 2 إلى 5 ثم قص من 6 إلى 8",video(10000),null));
+ }
  @Test public void imageCutoutUsesGeneralModel()throws Exception{JSONObject p=AgentIntents.resolve("ازل الخلفية",new JSONObject().put("kind","image"),null);assertEquals("removebg",p.getString("tool"));assertTrue(p.toString().contains("general"));}
  @Test public void onlyPlatformHttpsUrlsAreAccepted()throws Exception{
   assertEquals("https://youtu.be/abc",LinkDownloads.url("هذا مقطع https://youtu.be/abc"));

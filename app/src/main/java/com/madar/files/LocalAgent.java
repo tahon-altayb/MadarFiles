@@ -41,7 +41,7 @@ final class LocalAgent {
   if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));source=new JSONObject(source.toString());source.remove("_visual");
   if(!ready(c))throw new IOException("هذا الطلب المركب يحتاج اتصال Gemini أو تنزيل النموذج المحلي؛ الأوامر المباشرة تعمل فورًا");
   File file=model(c);if(!digest(file).equals(MODEL_SHA)){file.delete();throw new IOException("نموذج المساعد تالف؛ أعد تنزيله");}ColabProbe.check(cancel);
-  String prompt;try(InputStream in=c.getAssets().open("agent-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
+  String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   String kind=source.optString("kind");JSONObject data=new JSONObject().put("source",source).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",history(previous)).put("userRequest",user);
   EngineConfig config=new EngineConfig(file.getAbsolutePath(),new Backend.CPU(),null,null,8192,null,c.getCacheDir().getAbsolutePath());
   try(Engine engine=new Engine(config)){engine.initialize();ColabProbe.check(cancel);

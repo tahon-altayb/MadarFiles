@@ -17,6 +17,11 @@ final class AgentIntents {
   if(has(t,"^(كيف|ليش|لماذا|هل|اشرح|وش|ما هو|ماهي|ما هي|ماذا)|(?:^|\\s)(لا|مو|ليس|not|don't)(?:\\s|$)|ما\\s*(ابي|ابغي|ابغى|اريد)|^(لات|لا ت)"))return null;
   // Leave multi-step edits to the structured planner, instead of silently dropping steps.
   if(has(t,"وبعد|بعدين|بعدها|\\bthen\\b|ثم|(?:و|\\s)(حسن|حسّن|قص|اضغط|حول|اكتب|حط|اضف|ضف|ترجم)"))return null;
+  if(kind.equals("video")){
+   StringBuilder raw=new StringBuilder();for(char c:java.text.Normalizer.normalize(user,java.text.Normalizer.Form.NFKC).toCharArray()){int d=Character.digit(c,10);raw.append(d<0?c:(char)('0'+d));}
+   Matcher overlay=Pattern.compile("^(?:أضف|اضف|ضف|اكتب|حط|ضع)\\s+(?:النص|نص|العنوان|عنوان)\\s+(.+?)\\s+(?:(?:إلى|الى|على|في)\\s+الفيديو\\s+)?من\\s+(?:(?:الثانية|ثانية|الثانيه|ثانيه)\\s+)?(\\d+(?:\\.\\d+)?)\\s*(?:ثواني|ثانية|ثوان|ثانيه)?\\s*(?:إلى|الى|حتى|حتي|لين)\\s*(?:(?:الثانية|ثانية|الثانيه|ثانيه)\\s+)?(\\d+(?:\\.\\d+)?)\\s*(?:ثواني|ثانية|ثوان|ثانيه)?[.!؟ ]*$").matcher(raw.toString().trim());
+   if(overlay.matches()){String text=overlay.group(1).trim();if(text.length()>1&&((text.startsWith("\"")&&text.endsWith("\""))||(text.startsWith("«")&&text.endsWith("»"))))text=text.substring(1,text.length()-1);return plan("editor").put("actions",new JSONArray().put(new JSONObject().put("action","addText").put("text",text).put("start",Double.parseDouble(overlay.group(2))).put("end",Double.parseDouble(overlay.group(3)))));}
+  }
   if(has(t,"qr|كيو\\s*ار")){if(Arrays.asList("image","video","pdf").contains(kind)&&!has(t,"https?://"))return plan("qr","qrType",kind);Matcher link=Pattern.compile("https?://[^\\s]+",Pattern.CASE_INSENSITIVE).matcher(user);if(link.find())return plan("qr","qrType","link","qrValue",link.group());}
   if(has(t,"https?://")&&has(t,"حمل|تحميل|نزل|تنزيل|download")){return plan("downloadLink","linkUrl",LinkDownloads.url(user),"linkMode",has(t,"صوت فقط|الصوت فقط|mp3")?"audio":"video");}
   if(kind.isEmpty()&&has(t,"موسيقي|موسيقى|music")&&has(t,"ازل|ازاله|احذف|شيل|بدون|فصل|remove"))return plan("ask").put("message","أرفق الفيديو أو الصوت من زر + هنا، وسأزيل الموسيقى منه وأبقي الكلام.");
