@@ -13,9 +13,87 @@
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/><data android:mimeType="image/*"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/pdf"/></intent-filter>
         </activity>
         <activity android:name=".OpenMediaActivity" android:exported="true" android:label="مدار · مشغّل الفيديو">
-            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="content"/><data android:scheme="file"/><data android:scheme="http"/><data android:scheme="https"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/mp4"/><data android:mimeType="application/x-matroska"/><data android:mimeType="application/x-mpegURL"/><data android:mimeType="application/vnd.apple.mpegurl"/><data android:mimeType="application/dash+xml"/><data android:mimeType="application/ogg"/></intent-filter>
-            <!-- Media links sent without a MIME type, without claiming ordinary web pages. -->
-            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="http"/><data android:scheme="https"/><data android:host="*"/><data android:pathSuffix=".mp4"/><data android:pathSuffix=".mkv"/><data android:pathSuffix=".webm"/><data android:pathSuffix=".m3u8"/><data android:pathSuffix=".mpd"/><data android:pathSuffix=".m4v"/><data android:pathSuffix=".mov"/><data android:pathSuffix=".mp3"/><data android:pathSuffix=".m4a"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="content"/><data android:scheme="file"/><data android:scheme="http"/><data android:scheme="https"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/mp4"/><data android:mimeType="application/x-matroska"/><data android:mimeType="application/x-mpegURL"/><data android:mimeType="application/x-mpegurl"/><data android:mimeType="application/vnd.apple.mpegurl"/><data android:mimeType="application/dash+xml"/><data android:mimeType="application/ogg"/></intent-filter>
+            <!-- API 29-compatible patterns; do not claim ordinary web pages. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="http"/><data android:scheme="https"/><data android:host="*"/>
+                <data android:pathPattern=".*\\.mp4"/>
+                <data android:pathPattern=".*\\..*\\.mp4"/>
+                <data android:pathPattern=".*\\..*\\..*\\.mp4"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.mp4"/>
+                <data android:pathPattern=".*\\.MP4"/>
+                <data android:pathPattern=".*\\..*\\.MP4"/>
+                <data android:pathPattern=".*\\..*\\..*\\.MP4"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.MP4"/>
+                <data android:pathPattern=".*\\.mkv"/>
+                <data android:pathPattern=".*\\..*\\.mkv"/>
+                <data android:pathPattern=".*\\..*\\..*\\.mkv"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.mkv"/>
+                <data android:pathPattern=".*\\.MKV"/>
+                <data android:pathPattern=".*\\..*\\.MKV"/>
+                <data android:pathPattern=".*\\..*\\..*\\.MKV"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.MKV"/>
+                <data android:pathPattern=".*\\.webm"/>
+                <data android:pathPattern=".*\\..*\\.webm"/>
+                <data android:pathPattern=".*\\..*\\..*\\.webm"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.webm"/>
+                <data android:pathPattern=".*\\.WEBM"/>
+                <data android:pathPattern=".*\\..*\\.WEBM"/>
+                <data android:pathPattern=".*\\..*\\..*\\.WEBM"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.WEBM"/>
+                <data android:pathPattern=".*\\.m3u8"/>
+                <data android:pathPattern=".*\\..*\\.m3u8"/>
+                <data android:pathPattern=".*\\..*\\..*\\.m3u8"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.m3u8"/>
+                <data android:pathPattern=".*\\.M3U8"/>
+                <data android:pathPattern=".*\\..*\\.M3U8"/>
+                <data android:pathPattern=".*\\..*\\..*\\.M3U8"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.M3U8"/>
+                <data android:pathPattern=".*\\.mpd"/>
+                <data android:pathPattern=".*\\..*\\.mpd"/>
+                <data android:pathPattern=".*\\..*\\..*\\.mpd"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.mpd"/>
+                <data android:pathPattern=".*\\.MPD"/>
+                <data android:pathPattern=".*\\..*\\.MPD"/>
+                <data android:pathPattern=".*\\..*\\..*\\.MPD"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.MPD"/>
+                <data android:pathPattern=".*\\.m4v"/>
+                <data android:pathPattern=".*\\..*\\.m4v"/>
+                <data android:pathPattern=".*\\..*\\..*\\.m4v"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.m4v"/>
+                <data android:pathPattern=".*\\.M4V"/>
+                <data android:pathPattern=".*\\..*\\.M4V"/>
+                <data android:pathPattern=".*\\..*\\..*\\.M4V"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.M4V"/>
+                <data android:pathPattern=".*\\.mov"/>
+                <data android:pathPattern=".*\\..*\\.mov"/>
+                <data android:pathPattern=".*\\..*\\..*\\.mov"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.mov"/>
+                <data android:pathPattern=".*\\.MOV"/>
+                <data android:pathPattern=".*\\..*\\.MOV"/>
+                <data android:pathPattern=".*\\..*\\..*\\.MOV"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.MOV"/>
+                <data android:pathPattern=".*\\.mp3"/>
+                <data android:pathPattern=".*\\..*\\.mp3"/>
+                <data android:pathPattern=".*\\..*\\..*\\.mp3"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.mp3"/>
+                <data android:pathPattern=".*\\.MP3"/>
+                <data android:pathPattern=".*\\..*\\.MP3"/>
+                <data android:pathPattern=".*\\..*\\..*\\.MP3"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.MP3"/>
+                <data android:pathPattern=".*\\.m4a"/>
+                <data android:pathPattern=".*\\..*\\.m4a"/>
+                <data android:pathPattern=".*\\..*\\..*\\.m4a"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.m4a"/>
+                <data android:pathPattern=".*\\.M4A"/>
+                <data android:pathPattern=".*\\..*\\.M4A"/>
+                <data android:pathPattern=".*\\..*\\..*\\.M4A"/>
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.M4A"/>
+            </intent-filter>
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="http"/><data android:scheme="https"/><data android:mimeType="application/octet-stream"/></intent-filter>
         </activity>
         <service android:name=".WatchMusicService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <activity android:name=".DriveAccessActivity" android:exported="false" />
