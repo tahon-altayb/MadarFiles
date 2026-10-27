@@ -25,7 +25,7 @@ public class WatchMusicService extends Service {
   Job old=current;if(old!=null&&!old.clean.watching)dispose(old);
   boolean owned=file==null;File source=owned?File.createTempFile("madar_watch_input_",".media",c.getCacheDir()):file;
   Job job=new Job(uri,source,owned,identity,title,positionMs*1000,durationMs*1000,cloud);current=job;starting=true;
-  try{Intent intent=new Intent(c,WatchMusicService.class).putExtra("job",job.id).setData(uri).setClipData(ClipData.newRawUri("الصوت للمشاهدة",uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);c.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=null;dispose(job);throw error;}
+  try{Intent intent=new Intent(c,WatchMusicService.class).putExtra("job",job.id).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("الصوت للمشاهدة",uri));c.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=null;dispose(job);throw error;}
  }
  static void dispose(Job job){if(job.clean.pcm!=null)job.clean.pcm.delete();if(job.ownsSource)job.source.delete();}
  static void release(Job job){job.clean.watching=false;if(job.clean.done&&current!=job)dispose(job);}
