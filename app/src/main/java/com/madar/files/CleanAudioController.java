@@ -60,7 +60,7 @@ final class CleanAudioController implements AutoCloseable {
   if(!failure.isEmpty()){wanted=false;pause();}
   if(playing&&(video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE))pause();
   long queued;synchronized(audioLock){queued=cursor-frames;}
-  double reserve=(rebuffered?8:3)*Math.max(1,speed);
+  double reserve=session.waitForComplete?Double.POSITIVE_INFINITY:session.buffer==null?(rebuffered?8:3)*Math.max(1,speed):session.buffer.required(frames/44100.0,speed,now);
   if(wanted&&focused&&!playing&&video.getPlaybackState()==Player.STATE_READY&&ready>played&&now>=refillAfter&&((ready-played>=reserve)||session.done)){
    // Only arm prefill when resuming is intended; never submit a tiny refill
    // into the final hardware quantum of a paused/starved AudioTrack.
@@ -72,7 +72,7 @@ final class CleanAudioController implements AutoCloseable {
    else if(video.getPlaybackState()==Player.STATE_READY&&now-lastSync>1500&&Math.abs(video.getCurrentPosition()/1000.0-played)>.25){if(driftSince==0)driftSince=now;else if(now-driftSince>=350){syncSeekCount++;seekVideo(Math.round(played*1000));lastSync=now;driftSince=0;}}
    else driftSince=0;
   }
-  String text=!failure.isEmpty()?failure:session.failed?session.error:session.done?"الصوت المنظّف · اكتمل الفصل":"الصوت المنظّف · جاهز إلى "+stamp(Math.round(ready*1000))+(wanted&&!playing?" · تجهيز مخزون للمشاهدة المستقرة":"");
+  String text=!failure.isEmpty()?failure:session.failed?session.error:session.done?"الصوت المنظّف · اكتمل الفصل":"الصوت المنظّف · جاهز إلى "+stamp(Math.round(ready*1000))+(session.waitForComplete?" · انتظار اكتمال الفصل قبل المشاهدة":session.buffer!=null?" · "+session.buffer.describe(frames/44100.0,session.frames/44100.0,speed,now):wanted&&!playing?" · تجهيز مخزون للمشاهدة المستقرة":"");
   if(now-lastUi>=250){lastUi=now;status.show(text,wanted&&!playing||session.failed||!failure.isEmpty());}
  }catch(Exception error){wanted=false;pause();failure="تعذرت متابعة الصوت المنظّف: "+error.getMessage();status.show(failure,true);}main.postDelayed(this,30);}};
  private static String stamp(long ms){return String.format(java.util.Locale.US,"%d:%02d",ms/60000,ms/1000%60);}

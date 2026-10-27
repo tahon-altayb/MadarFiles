@@ -1,0 +1,42 @@
+package com.madar.files;
+
+/** A measured production budget, in media seconds. No device/server speed is assumed. */
+final class WatchBuffer {
+ private final double duration;private final boolean waitForCycle;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;
+ WatchBuffer(double duration){this(duration,false);}
+ WatchBuffer(double duration,boolean waitForCycle){this.duration=Math.max(0,duration);this.waitForCycle=waitForCycle;}
+ synchronized void completeCycle(double seconds,double elapsed){if(seconds>0&&elapsed>0)cycleRatio=cycleRatio==0?elapsed/seconds:.6*cycleRatio+.4*elapsed/seconds;}
+ synchronized void commit(double ready,long now){
+  if(firstAt<0){firstAt=lastAt=now;lastReady=ready;return;}
+  double produced=ready-lastReady,seconds=(now-lastAt)/1000.0;
+  if(produced<=0||seconds<=0)return;
+  media+=produced;wall+=seconds;double ratio=seconds/produced;
+  slowRatio=samples++==0?ratio:Math.max(ratio,slowRatio*.85+ratio*.15);
+  gap=Math.max(gap,seconds);lastAt=now;lastReady=ready;
+ }
+ synchronized double speed(long now){
+  if(samples<2||media<8||wall<=0||(waitForCycle&&cycleRatio==0))return 0;
+  // Include time spent decoding/uploading the next window, and use the slower
+  // of the whole observed pipeline and recent batches, with a 20% margin.
+  double stalled=Math.max(0,(now-lastAt)/1000.0);
+  return .8/Math.max(cycleRatio,Math.max(slowRatio,(wall+stalled)/media));
+ }
+ synchronized double required(double played,double playbackSpeed,long now){
+  double remaining=Math.max(0,duration-played),rate=speed(now),s=Math.max(.25,playbackSpeed);
+  if(rate==0)return remaining; // Measure first; never start from an arbitrary tiny prefix.
+  double safety=Math.max(20*s,Math.min(120,gap*1.5)*s);
+  return Math.min(remaining,Math.max(safety,remaining*(1-rate/s)+safety));
+ }
+ synchronized long waitSeconds(double played,double ready,double playbackSpeed,long now){
+  double rate=speed(now);if(rate==0)return -1;
+  // The budget shrinks as more frames are produced. This is a conservative
+  // estimate, recalculated from completed audio rather than a fake countdown.
+  return (long)Math.ceil(Math.max(0,required(played,playbackSpeed,now)-(ready-played))/rate);
+ }
+ synchronized String describe(double played,double ready,double playbackSpeed,long now){
+  double rate=speed(now);if(rate==0)return "قياس سرعة الفصل · تجهيز احتياطي للمشاهدة";
+  long wait=waitSeconds(played,ready,playbackSpeed,now);
+  return "سرعة الفصل "+String.format(java.util.Locale.US,"%.2f",rate/.8)+"× · الاحتياطي "+format(Math.max(0,ready-played))+" · انتظار مقدّر "+format(wait);
+ }
+ private static String format(double seconds){long n=(long)Math.ceil(seconds);return n/60+":"+String.format(java.util.Locale.US,"%02d",n%60);}
+}

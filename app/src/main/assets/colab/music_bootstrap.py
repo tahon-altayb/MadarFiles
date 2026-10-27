@@ -4,32 +4,47 @@ import subprocess
 import sys
 
 folder = JOB_FOLDER
-if not isinstance(folder, str) or not folder.startswith('madar_') or not folder[6:].isalnum():
+import re
+if not isinstance(folder, str) or not re.fullmatch(r'madar_[A-Za-z0-9]+(?:_b[0-9]+)?', folder):
     raise ValueError('MADAR_JOB_ID')
 current = Path.cwd()
-paths = ([current] if current.name == folder else []) + [current / folder, Path('/content') / folder, Path('/') / folder]
-job = next((p.resolve() for p in paths if (p / 'music_worker.py').is_file() and (p / 'request.json').is_file()), None)
+paths = ([current] if current.name == folder else []) + [current / folder, current.parent / folder, Path('/content') / folder, Path('/') / folder]
+job = next((p.resolve() for p in paths if (p / 'request.json').is_file()), None)
 if job is None:
     raise FileNotFoundError('MADAR_JOB_FILES')
-with (job / 'worker.log').open('wb') as log:
-    # A child process also bounds native inference and dependency installation.
-    try:
-        subprocess.run([sys.executable, str(job / 'music_worker.py'), str(job)],
-                       stdout=log, stderr=log, check=True, timeout=1800)
-    except subprocess.TimeoutExpired:
-        import json
-        p = job / 'progress.tmp'
-        p.write_text(json.dumps(dict(stage='failed', progress=0, error='MUSIC_TIMEOUT')))
-        p.replace(job / 'progress.json')
-        raise
-    except subprocess.CalledProcessError:
-        import json
+if 'SERVICE_FOLDER' in globals():
+    import json
+    import re
+    import time
+    service = SERVICE_FOLDER
+    if not isinstance(service, str) or not re.fullmatch(r'madar_[a-f0-9]{32}', service):
+        raise ValueError('MADAR_JOB_ID')
+    roots = ([current] if current.name == service else []) + [current / service, current.parent / service, Path('/content') / service, Path('/') / service]
+    root = next((p.resolve() for p in roots if (p / 'music_worker.py').is_file()), None)
+    if root is None or job.parent != root.parent or not re.fullmatch(re.escape(root.name) + r'_b[0-9]+', job.name):
+        raise ValueError('MUSIC_JOB_PATH')
+    if '_madar_music_service' not in globals() or _madar_music_service.poll() is not None:
+        _madar_music_log = (root / 'worker.log').open('ab')
+        _madar_music_service = subprocess.Popen([sys.executable, str(root / 'music_worker.py'), str(root), '--serve'], stdout=_madar_music_log, stderr=_madar_music_log)
+    command = root / 'command.tmp'
+    command.write_text(json.dumps(dict(folder=str(job))))
+    command.replace(root / 'command.json')
+    deadline = time.monotonic() + 1800
+    while True:
         try:
             state = json.loads((job / 'progress.json').read_text())
         except (OSError, ValueError):
             state = {}
-        if state.get('stage') != 'failed':
-            p = job / 'progress.tmp'
-            p.write_text(json.dumps(dict(stage='failed', progress=0, error='MUSIC_PROCESS_EXIT')))
-            p.replace(job / 'progress.json')
-        raise
+        if state.get('stage') in ('done', 'failed'):
+            break
+        if _madar_music_service.poll() is not None or time.monotonic() > deadline:
+            code = 'MUSIC_PROCESS_EXIT' if _madar_music_service.poll() is not None else 'MUSIC_TIMEOUT'
+            if _madar_music_service.poll() is None:
+                _madar_music_service.kill()
+            (job / 'progress.json').write_text(json.dumps(dict(stage='failed', progress=0, error=code)))
+            raise RuntimeError(code)
+        time.sleep(.2)
+else:
+    # Standalone export/diagnostic compatibility path.
+    with (job / 'worker.log').open('wb') as log:
+        subprocess.run([sys.executable, str(job / 'music_worker.py'), str(job)], stdout=log, stderr=log, check=True, timeout=1800)

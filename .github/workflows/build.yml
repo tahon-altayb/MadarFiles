@@ -134,6 +134,7 @@ jobs:
           node qa/translation-mode.test.cjs
           node qa/colab-connection.test.cjs
           python3 qa/colab-worker.test.py
+          python3 qa/colab-music.test.py
           python3 qa/processing-runner.test.py
       - name: Test subtitle export sessions in browser
         run: |
@@ -166,9 +167,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 36 --version-name 1.9.1 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 37 --version-name 1.9.2 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.1.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.2.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -217,8 +218,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.1-APK
-          path: MadarFiles-1.9.1.apk
+          name: MadarFiles-1.9.2-APK
+          path: MadarFiles-1.9.2.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports

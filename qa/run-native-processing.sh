@@ -34,7 +34,7 @@ python3 - <<'PYWATCH'
 from pathlib import Path
 import re
 log=Path('phone-screenshots/player-watch-tests.txt').read_text(errors='replace')
-assert re.search(r'\bOK\s*\(7 tests\)',log), 'All real player-watch tests must pass'
+assert re.search(r'\bOK\s*\(8 tests\)',log), 'All real player-watch tests must pass'
 assert not re.search(r'INSTRUMENTATION_STATUS_CODE:\s*-\d+',log), 'Failed or skipped player-watch tests'
 assert 'INSTRUMENTATION_FAILED' not in log and 'FAILURES!!!' not in log, 'Player-watch instrumentation failed'
 PYWATCH

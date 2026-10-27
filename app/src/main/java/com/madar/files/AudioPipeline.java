@@ -13,10 +13,17 @@ final class AudioPipeline {
  static Decoded decodeRange(Context c,File source,long startUs,long endUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   if(startUs<0||endUs<=startUs)throw new IOException("حدود فك الصوت غير صالحة");return decodeInternal(c,source,startUs,endUs,true,cancel,progress);
  }
+ static Decoded decodeRemoteRange(Context c,android.net.Uri uri,java.util.Map<String,String> headers,long startUs,long endUs,AtomicBoolean cancel)throws Exception{
+  if(startUs<0||endUs<=startUs)throw new IOException("حدود فك الصوت غير صالحة");return decodeInput(c,ex->ex.setDataSource(uri.toString(),headers),startUs,endUs,true,cancel,(p,m)->{});
+ }
+ interface Input {void open(MediaExtractor extractor)throws IOException;}
  private static Decoded decodeInternal(Context c,File source,long startUs,long endUs,boolean exact,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  return decodeInput(c,ex->ex.setDataSource(source.getAbsolutePath()),startUs,endUs,exact,cancel,progress);
+ }
+ private static Decoded decodeInput(Context c,Input source,long startUs,long endUs,boolean exact,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   MediaExtractor ex=new MediaExtractor();MediaCodec codec=null;File raw=File.createTempFile("madar_decode_",".pcm",c.getCacheDir());
   try(OutputStream out=new BufferedOutputStream(new FileOutputStream(raw))){
-   ex.setDataSource(source.getAbsolutePath());int t=track(ex,"audio/");if(t<0)throw new IOException("الفيديو لا يحتوي على مسار صوت");ex.selectTrack(t);if(startUs>0)ex.seekTo(Math.max(0,startUs-1000000L),MediaExtractor.SEEK_TO_PREVIOUS_SYNC);MediaFormat format=ex.getTrackFormat(t);int rate=format.getInteger(MediaFormat.KEY_SAMPLE_RATE),channels=format.getInteger(MediaFormat.KEY_CHANNEL_COUNT),encoding=android.media.AudioFormat.ENCODING_PCM_16BIT;
+   source.open(ex);int t=track(ex,"audio/");if(t<0)throw new IOException("الفيديو لا يحتوي على مسار صوت");ex.selectTrack(t);if(startUs>0)ex.seekTo(Math.max(0,startUs-1000000L),MediaExtractor.SEEK_TO_PREVIOUS_SYNC);MediaFormat format=ex.getTrackFormat(t);int rate=format.getInteger(MediaFormat.KEY_SAMPLE_RATE),channels=format.getInteger(MediaFormat.KEY_CHANNEL_COUNT),encoding=android.media.AudioFormat.ENCODING_PCM_16BIT;
    codec=MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME));codec.configure(format,null,null,0);codec.start();boolean inputDone=false,outputDone=false;long offset=-1;MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();long began=System.currentTimeMillis();
    while(!outputDone){ColabProbe.check(cancel);if(System.currentTimeMillis()-began>30L*60*1000)throw new IOException("استغرق فك الصوت وقتًا طويلًا");
     if(!inputDone){int index=codec.dequeueInputBuffer(10000);if(index>=0){ByteBuffer buffer=codec.getInputBuffer(index);buffer.clear();int n=ex.readSampleData(buffer,0);long time=ex.getSampleTime();if(n<0||(endUs>0&&time>=endUs)){codec.queueInputBuffer(index,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputDone=true;}else{codec.queueInputBuffer(index,0,n,time,0);ex.advance();}}}

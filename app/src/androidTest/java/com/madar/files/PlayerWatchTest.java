@@ -80,6 +80,18 @@ public class PlayerWatchTest {
    instrumentation.runOnMainSync(()->clean.setWanted(false));LiveSeparation.publish(session,14*44100);Thread.sleep(500);assertEquals("Manual pause must survive a large refill",4*44100,clean.playedFrames());instrumentation.runOnMainSync(()->clean.setWanted(true));end=System.currentTimeMillis()+5000;while(clean.playedFrames()<5*44100&&System.currentTimeMillis()<end)Thread.sleep(50);assertTrue(clean.playedFrames()>5*44100);instrumentation.runOnMainSync(()->assertEquals("Refills must not reset/drop the last words",resets[0],clean.resetCount));
   }finally{LiveSeparation.end(session,null);instrumentation.runOnMainSync(activity::finish);source.delete();pcm.delete();}
  }
+ @Test public void remoteProgressiveAudioUsesHeadersAndExactRangeWithoutIntermediateEncoding()throws Exception{
+  Context c=instrumentation.getTargetContext();byte[] media;try(InputStream in=instrumentation.getContext().getAssets().open("sample.mp4")){media=in.readAllBytes();}
+  java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();
+  try(okhttp3.mockwebserver.MockWebServer server=new okhttp3.mockwebserver.MockWebServer()){
+   server.setDispatcher(new okhttp3.mockwebserver.Dispatcher(){@Override public okhttp3.mockwebserver.MockResponse dispatch(okhttp3.mockwebserver.RecordedRequest request){
+    if(!"https://media.example.invalid/".equals(request.getHeader("Referer")))return new okhttp3.mockwebserver.MockResponse().setResponseCode(403);accepted.incrementAndGet();int start=0;String range=request.getHeader("Range");if(range!=null&&range.matches("bytes=[0-9]+-.*"))start=Integer.parseInt(range.substring(6,range.indexOf('-')));if(start>=media.length)return new okhttp3.mockwebserver.MockResponse().setResponseCode(416);
+    okhttp3.mockwebserver.MockResponse response=new okhttp3.mockwebserver.MockResponse().setHeader("Content-Type","video/mp4").setHeader("Accept-Ranges","bytes").setBody(new okio.Buffer().write(media,start,media.length-start));if(range!=null)response.setResponseCode(206).setHeader("Content-Range","bytes "+start+"-"+(media.length-1)+"/"+media.length);return response;
+   }});server.start(java.net.InetAddress.getByName("127.0.0.1"),0);File local=fixture(c);AudioPipeline.Decoded remote=null,reference=null;
+   try{remote=RemoteWatchAudio.decode(c,Uri.parse(server.url("/opaque?token=private").newBuilder().host("127.0.0.1").build().toString()),java.util.Collections.singletonMap("Referer","https://media.example.invalid/"),null,400000,1500000,new java.util.concurrent.atomic.AtomicBoolean());reference=AudioPipeline.decodeRange(c,local,400000,1500000,new java.util.concurrent.atomic.AtomicBoolean(),(p,m)->{});assertTrue(accepted.get()>0);assertEquals(reference.sampleRate,remote.sampleRate);assertEquals(reference.offsetUs,remote.offsetUs);assertArrayEquals("Direct remote PCM must equal decoding the same local range",java.nio.file.Files.readAllBytes(reference.pcm.toPath()),java.nio.file.Files.readAllBytes(remote.pcm.toPath()));}
+   finally{if(remote!=null)remote.pcm.delete();if(reference!=null)reference.pcm.delete();local.delete();}
+  }
+ }
  private float playerVolume(ExoPlayer player){final float[] value={1};instrumentation.runOnMainSync(()->value[0]=player.getVolume());return value[0];}
  private long position(ExoPlayer player){final long[] at={0};instrumentation.runOnMainSync(()->at[0]=player.getCurrentPosition());return at[0];}
  private long jobReady(CleanAudioController ignored,WatchMusicService.Job job){return Math.round(job.clean.ready()*1000);}
