@@ -181,3 +181,4 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
  #sheet.studio15.textTyping #export{display:none}
 }
 @media(max-height:500px){#sheet.studio15.textTyping #livePreview{flex-basis:210px;height:210px;min-height:210px}}
+.agentGeneratedImage{width:100%;max-height:320px;object-fit:contain;border-radius:14px;display:block;margin:10px 0;background:#10251a}
