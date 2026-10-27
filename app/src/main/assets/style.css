@@ -182,3 +182,5 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 }
 @media(max-height:500px){#sheet.studio15.textTyping #livePreview{flex-basis:210px;height:210px;min-height:210px}}
 .agentGeneratedImage{width:100%;max-height:320px;object-fit:contain;border-radius:14px;display:block;margin:10px 0;background:#10251a}
+#sheet.studio15 #timelineScroll:has(.layerTrack){flex-basis:185px;min-height:185px;max-height:185px}
+@media(max-height:500px){#sheet.studio15.textTyping #timelineScroll:has(.layerTrack){display:none}}
