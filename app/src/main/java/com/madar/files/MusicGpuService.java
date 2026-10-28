@@ -7,7 +7,7 @@ public final class MusicGpuService extends Service {
  @Override public int onStartCommand(Intent intent,int flags,int startId){
   generation=MusicGpuSession.generation();final long ticket=generation;long idleMs=MusicGpuSession.remainingIdle();boolean busy=MusicGpuSession.busy();
   PendingIntent stop=PendingIntent.getService(this,194,new Intent(this,MusicGpuService.class).setAction("stop"),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
-  String message=busy?"معالجة GPU جارية؛ يمكنك إيقاف العملية من هنا":"جاهز لإعادة الاستخدام حتى "+Math.max(1,(idleMs+59999)/60000)+" دقيقة؛ بعدها تُغلق الجلسة تلقائيًا";
+  String message=MusicGpuSession.closing()?"جارٍ إغلاق جلسة GPU السابقة بأمان؛ يمكنك متابعة استخدام التطبيق":busy?"معالجة GPU جارية؛ يمكنك إيقاف العملية من هنا":"جاهز لإعادة الاستخدام حتى "+Math.max(1,(idleMs+59999)/60000)+" دقيقة؛ بعدها تُغلق الجلسة تلقائيًا";
   Notification n=new Notification.Builder(this,"gpu_warm").setSmallIcon(R.drawable.ic_launcher).setContentTitle("مدار · جلسة GPU").setContentText(message).setOngoing(true).addAction(new Notification.Action.Builder(null,"إيقاف GPU الآن",stop).build()).build();
   startForeground(194,n); // Must happen even when a queued start arrives after a lease ended.
   timer.removeCallbacksAndMessages(null);if(lock!=null&&lock.isHeld())lock.release();

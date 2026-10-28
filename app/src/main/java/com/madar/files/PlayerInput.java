@@ -20,7 +20,7 @@ final class PlayerInput {
   Uri uri=ExternalMedia.uri(intent);File file=null;String title=intent.getStringExtra("title"),identity,bookmark;
   if(uri!=null){if(!ExternalMedia.supported(uri))throw new IOException("ملف أو رابط فيديو غير صالح");identity=uri.toString();bookmark=key(identity);if(title==null){if(!ExternalMedia.network(uri))try(android.database.Cursor cursor=c.getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())title=cursor.getString(0);}catch(Exception ignored){}if(title==null)title=uri.getLastPathSegment();}}
   else{String path=intent.getStringExtra("path");if(path==null)throw new IOException("اختر مقطعًا للمشاهدة");file=new File(path).getCanonicalFile();if(!file.isFile()||!(file.getPath().startsWith(c.getCacheDir().getCanonicalPath()+"/")||file.getPath().startsWith(FilesUtil.directory(c).getCanonicalPath()+"/")||AssistantFiles.owns(c,file)))throw new IOException("ملف غير صالح");uri=Uri.fromFile(file);identity=uri.toString();bookmark="position_"+file.getName();if(title==null)title=file.getName();}
-  return new PlayerInput(uri,file,identity,title==null?"مقطع":title,bookmark,ExternalMedia.headers(intent),ExternalMedia.mime(intent));
+  return new PlayerInput(MediaResolver.secureProvider(uri),file,identity,title==null?"مقطع":title,bookmark,ExternalMedia.headers(intent),ExternalMedia.mime(intent));
  }
  private static String key(String identity)throws Exception{byte[] digest=MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));StringBuilder out=new StringBuilder("position_");for(byte b:digest)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));return out.toString();}
 }

@@ -37,8 +37,33 @@ final class MediaHttp {
   Request.Builder request=new Request.Builder().url(target.toString());for(Map.Entry<String,String> header:extra.entrySet())if(!header.getKey().equalsIgnoreCase("Cookie"))request.header(header.getKey(),header.getValue());request.header("Range","bytes=0-1023");
   try(Response response=session.client.newBuilder().callTimeout(12,TimeUnit.SECONDS).build().newCall(request.build()).execute()){
    if(!response.isSuccessful())throw new IOException("HTTP "+response.code());if(response.body()==null)throw new IOException("استجابة وسائط فارغة");String type=response.header("Content-Type","").split(";",2)[0].trim().toLowerCase(Locale.ROOT);byte[] data=new byte[1024];int size=0;InputStream in=response.body().byteStream();while(size<data.length){int n=in.read(data,size,data.length-size);if(n<0)break;size+=n;}String text=new String(data,0,size,java.nio.charset.StandardCharsets.UTF_8).trim();
-   String mime=null;if(type.contains("mpegurl")||text.startsWith("#EXTM3U"))mime="application/x-mpegURL";else if(type.equals("application/dash+xml")||text.contains("<MPD"))mime="application/dash+xml";else if(type.startsWith("video/")||type.startsWith("audio/"))mime=type;else if(size>8&&data[4]=='f'&&data[5]=='t'&&data[6]=='y'&&data[7]=='p')mime="video/mp4";else if(size>4&&(data[0]&255)==0x1a&&(data[1]&255)==0x45&&(data[2]&255)==0xdf&&(data[3]&255)==0xa3)mime="video/x-matroska";
+   String mime=sniff(type,data,size);
    boolean html=type.equals("text/html")||text.toLowerCase(Locale.ROOT).startsWith("<!doctype html")||text.toLowerCase(Locale.ROOT).startsWith("<html");Uri resolved=Uri.parse(response.request().url().toString());return new Probe(resolved,mime,html,session.headersFor(resolved));
+  }
+ }
+ static String sniff(String type,byte[] data,int size){
+  String text=new String(data,0,size,java.nio.charset.StandardCharsets.UTF_8).trim();
+  if(type.contains("mpegurl")||text.startsWith("#EXTM3U"))return "application/x-mpegURL";
+  if(type.equals("application/dash+xml")||text.contains("<MPD"))return "application/dash+xml";
+  if(type.startsWith("video/")||type.startsWith("audio/"))return type;
+  if(size>8&&data[4]=='f'&&data[5]=='t'&&data[6]=='y'&&data[7]=='p')return "video/mp4";
+  if(size>4&&(data[0]&255)==0x1a&&(data[1]&255)==0x45&&(data[2]&255)==0xdf&&(data[3]&255)==0xa3)return "video/x-matroska";
+  return null;
+ }
+ static final class Page {final Uri uri;final String html;final Probe media;Page(Uri uri,String html,Probe media){this.uri=uri;this.html=html;this.media=media;}}
+ /** Bounded native HTML load; a direct media response is handed back without downloading the video. */
+ static Page page(Session session,Uri target)throws IOException{
+  Request.Builder request=new Request.Builder().url(target.toString());for(Map.Entry<String,String> h:session.headersFor(target).entrySet())if(!h.getKey().equalsIgnoreCase("Cookie"))request.header(h.getKey(),h.getValue());
+  OkHttpClient client=session.client.newBuilder().connectTimeout(5,TimeUnit.SECONDS).readTimeout(8,TimeUnit.SECONDS).callTimeout(10,TimeUnit.SECONDS).build();
+  try(Response response=client.newCall(request.build()).execute()){
+   if(!response.isSuccessful())throw new IOException("HTTP "+response.code());ResponseBody body=response.body();if(body==null)throw new IOException("EMPTY_PAGE");
+   Uri uri=Uri.parse(response.request().url().toString());String type=response.header("Content-Type","").split(";",2)[0].trim().toLowerCase(Locale.ROOT);InputStream in=body.byteStream();ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] bytes=new byte[8192];
+   while(out.size()<1024){int n=in.read(bytes,0,Math.min(bytes.length,1024-out.size()));if(n<0)break;out.write(bytes,0,n);}
+   byte[] head=out.toByteArray();String mime=sniff(type,head,head.length);if(mime!=null)return new Page(uri,null,new Probe(uri,mime,false,session.headersFor(uri)));
+   int n;while((n=in.read(bytes))!=-1){if(out.size()+n>1024*1024)throw new IOException("PAGE_TOO_LARGE");out.write(bytes,0,n);}
+   java.nio.charset.Charset charset=body.contentType()==null?java.nio.charset.StandardCharsets.UTF_8:body.contentType().charset(java.nio.charset.StandardCharsets.UTF_8);String html=out.toString(charset.name());
+   if(!type.equals("text/html")&&!html.toLowerCase(Locale.ROOT).contains("<html")&&!html.toLowerCase(Locale.ROOT).contains("<script"))throw new IOException("NOT_PROVIDER_HTML");
+   return new Page(uri,html,null);
   }
  }
  static boolean looksPlayable(Uri uri){String value=(uri.getPath()==null?"":uri.getPath()).toLowerCase(Locale.ROOT);return value.matches(".*\\.(mp4|m4v|mkv|webm|mov|m3u8|mpd|ts|mp3|m4a|aac|flac|ogg|opus)$")||value.endsWith("/get_video")||value.endsWith("/videoplayback");}

@@ -27,6 +27,18 @@ public class ColabProcessingTest {
   List<JSONObject> candidates=ColabRuntime.candidates(response);assertEquals(3,candidates.size());assertEquals("L4",candidates.get(0).getString("accelerator"));assertEquals("T4",candidates.get(1).getString("accelerator"));
   assertTrue(ColabRuntime.candidates(new JSONObject().put("runtimeSpecs",new JSONArray().put(spec("L4",false)))).isEmpty());
  }
+ @Test public void musicUsesRememberedOrSelectedEligibleGpuInsteadOfAlwaysWaitingForL4()throws Exception{
+  JSONObject response=new JSONObject().put("runtimeSpecs",new JSONArray().put(spec("A100",true)).put(spec("L4",true)).put(spec("T4",true)));
+  assertEquals("T4",ColabRuntime.musicCandidates(response,"auto","").get(0).getString("accelerator"));assertEquals("L4",ColabRuntime.musicCandidates(response,"auto","L4").get(0).getString("accelerator"));assertEquals("A100",ColabRuntime.musicCandidates(response,"A100","L4").get(0).getString("accelerator"));
+  assertTrue(ColabRuntime.musicCandidates(new JSONObject().put("runtimeSpecs",new JSONArray().put(spec("T4",false))),"T4","").isEmpty());
+ }
+ @Test public void cancellingPendingGpuAllocationReturnsPromptlyAndKeepsOwnedCleanupJournal()throws Exception{
+  List<String> calls=new ArrayList<>();ColabRuntime.CloudTransport transport=(method,path,body,cancel)->{calls.add(method+" "+path);if(path.equals("v1beta/runtimespecs"))return new JSONObject().put("runtimeSpecs",new JSONArray().put(spec("T4",true)));if(method.equals("POST"))return new JSONObject().put("name","operations/pending").put("done",false);if(path.equals("v1/operations/pending"))return new JSONObject().put("done",true);if(method.equals("DELETE"))return new JSONObject();throw new AssertionError(path);};
+  try(ColabRuntime runtime=new ColabRuntime(context,new ColabCredentials.Grant("SECRET","madarfiles"),stop,transport)){
+   long began=System.currentTimeMillis();try{runtime.create((p,m)->{if(m.contains("الفصل لم يبدأ"))stop.set(true);},true);fail("cancelled create completed");}catch(java.util.concurrent.CancellationException expected){}
+   assertTrue("Cancellation must not wait for the five-minute operation deadline",System.currentTimeMillis()-began<1500);assertEquals("operations/pending",context.getSharedPreferences("colab_owned_runtime",0).getString("operation",""));assertEquals(2,calls.size());assertTrue(runtime.cleanup());assertEquals(4,calls.size());assertFalse(context.getSharedPreferences("colab_owned_runtime",0).contains("name"));
+  }
+ }
  @Test public void acceptsAuthenticatedRuntimeAddressesWithoutGuessingGoogleDnsSuffixes()throws Exception{
   assertEquals("https://runtime.colab.googleusercontent.com/base/",ColabRuntime.runtimeUrl("https://runtime.colab.googleusercontent.com/base").toString());
   assertEquals("https://assigned.runtime.example.net/base/",ColabRuntime.runtimeUrl("https://assigned.runtime.example.net/base").toString());

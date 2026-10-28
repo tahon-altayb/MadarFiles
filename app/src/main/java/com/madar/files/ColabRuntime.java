@@ -23,10 +23,11 @@ final class ColabRuntime implements AutoCloseable {
   ColabProbe.check(stop);
   if(!path.matches("v1beta/(runtimespecs|runtimes(\\?.*)?|runtimes/madar-[a-z0-9-]+(\\?.*)?)|v1/operations/[A-Za-z0-9_./-]+"))throw new IOException("مسار Colab غير صالح");
   if(transport!=null)return transport.call(method,path,data,stop);
-  return request(new Request.Builder().url("https://colaboratory.googleapis.com/"+path).header("Authorization","Bearer "+grant.token).header("X-Goog-User-Project",grant.project),method,data,stop,2*1024*1024);
+  return request(new Request.Builder().url("https://colaboratory.googleapis.com/"+path).header("Authorization","Bearer "+grant.token).header("X-Goog-User-Project",grant.project),method,data,stop,2*1024*1024,20000);
  }
- JSONObject request(Request.Builder builder,String method,JSONObject body,AtomicBoolean stop,int maximum)throws Exception {
-  ColabProbe.check(stop);RequestBody payload=body==null?null:RequestBody.create(body.toString(),MediaType.get("application/json; charset=utf-8"));Call call=http.newCall(builder.method(method,payload).build());
+ JSONObject request(Request.Builder builder,String method,JSONObject body,AtomicBoolean stop,int maximum)throws Exception {return request(builder,method,body,stop,maximum,100000);}
+ JSONObject request(Request.Builder builder,String method,JSONObject body,AtomicBoolean stop,int maximum,long timeoutMs)throws Exception {
+  ColabProbe.check(stop);RequestBody payload=body==null?null:RequestBody.create(body.toString(),MediaType.get("application/json; charset=utf-8"));Call call=http.newCall(builder.method(method,payload).build());call.timeout().timeout(timeoutMs,TimeUnit.MILLISECONDS);
   Thread watcher=new Thread(()->{try{while(!Thread.currentThread().isInterrupted()){if(stop.get()){call.cancel();return;}Thread.sleep(100);}}catch(InterruptedException ignored){}},"colab-cancel");watcher.setDaemon(true);watcher.start();
   try(Response response=call.execute()){
    ColabProbe.check(stop);if(!response.isSuccessful())throw new HttpFailure(response.code());if(response.body()==null)return new JSONObject();
@@ -45,20 +46,29 @@ final class ColabRuntime implements AutoCloseable {
  }
  static boolean ownName(String name){return name!=null&&name.matches("runtimes/madar-[a-f0-9-]{36}");}
  private android.content.SharedPreferences journal(){return context.getSharedPreferences("colab_owned_runtime",0);}
- void create(MusicSeparator.Progress progress)throws Exception {
-  MusicGpuSession.beforeRuntime(this);cleanupPrevious();List<JSONObject> specs=candidates(cloud("GET","v1beta/runtimespecs",null,cancel));if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
+ static List<JSONObject> musicCandidates(JSONObject response,String preferred,String last)throws Exception{
+  List<JSONObject> list=candidates(response);String first=Arrays.asList("T4","L4","A100").contains(preferred)?preferred:Arrays.asList("T4","L4","A100").contains(last)?last:"T4";
+  List<String> order=new ArrayList<>(Arrays.asList("T4","L4","A100"));order.remove(first);order.add(0,first);list.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));return list;
+ }
+ void create(MusicSeparator.Progress progress)throws Exception {create(progress,false);}
+ void create(MusicSeparator.Progress progress,boolean music)throws Exception {
+  ColabProbe.check(cancel);MusicGpuSession.beforeRuntime(this);if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
+  android.content.SharedPreferences settings=context.getSharedPreferences("colab_connection",0);
+  List<JSONObject> specs=music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
   for(int i=0;i<Math.min(2,specs.size());i++){
    ColabProbe.check(cancel);JSONObject spec=specs.get(i);String id="madar-"+UUID.randomUUID();runtime="runtimes/"+id;
    if(!journal().edit().putString("name",runtime).putString("project",grant.project).putString("requestId",UUID.randomUUID().toString()).putString("spec",spec.toString()).remove("operation").commit())throw new IOException("تعذر حفظ حالة جلسة Colab");
    progress.update(12,"طلب GPU · "+spec.getString("accelerator")+"؛ قد يستغرق بدء الجلسة دقائق");
    JSONObject operation=cloud("POST","v1beta/runtimes?runtimeId="+id+"&requestId="+journal().getString("requestId",""),new JSONObject().put("runtimeSpec",spec),cancel);
-   String name=operation.optString("name");if(!name.isEmpty())journal().edit().putString("operation",name).commit();long deadline=System.nanoTime()+TimeUnit.MINUTES.toNanos(5);
-   // Track completion even after cancellation, then delete our assignment in finally.
+   String name=operation.optString("name");if(!name.isEmpty())journal().edit().putString("operation",name).commit();long began=System.nanoTime(),deadline=began+TimeUnit.MINUTES.toNanos(5);
+   // Cancellation leaves the journal intact; background cleanup resolves the same operation.
    while(!operation.optBoolean("done")){
-    if(!name.matches("operations/[A-Za-z0-9_./-]+")||System.nanoTime()>deadline)throw new IOException("لم يكتمل بدء Colab؛ افحص الجلسة السابقة قبل إعادة التجربة");Thread.sleep(2000);operation=cloud("GET","v1/"+name,null,new AtomicBoolean());
+    ColabProbe.check(cancel);if(!name.matches("operations/[A-Za-z0-9_./-]+")||System.nanoTime()>deadline)throw new IOException("لم يوفّر Colab مورد GPU خلال خمس دقائق؛ لم يبدأ فصل الصوت. غيّر مورد GPU من إعدادات Colab بعد انتهاء إغلاق الجلسة");
+    long elapsed=TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()-began);progress.update(12,"انتظار مورد GPU · "+spec.getString("accelerator")+" · مضى "+elapsed+" ثانية؛ الفصل لم يبدأ بعد");
+    long pause=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(System.nanoTime()<pause){ColabProbe.check(cancel);Thread.sleep(50);}operation=cloud("GET","v1/"+name,null,cancel);
    }
    JSONObject error=operation.optJSONObject("error");if(error!=null){int code=error.optInt("code");journal().edit().clear().commit();runtime="";if((code==8||code==9||code==14)&&i+1<Math.min(2,specs.size())){progress.update(12,"المورد غير متاح؛ تجربة GPU بديل مرة واحدة");continue;}throw new IOException("لم يمنح Colab موردًا للمعالجة ("+code+"). راجع توفر الموارد ورصيد وحدات الحساب.");}
-   ColabProbe.check(cancel);refresh();return;
+   ColabProbe.check(cancel);refresh();if(music)settings.edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return;
   }
  }
  void refresh()throws Exception{

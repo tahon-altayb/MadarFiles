@@ -36,6 +36,28 @@ public class PlayerSourceTest {
    server.setDispatcher(new Dispatcher(){@Override public MockResponse dispatch(RecordedRequest request){if(request.getPath().startsWith("/episode"))return new MockResponse().setHeader("Content-Type","text/html").setHeader("Set-Cookie","page=yes; Path=/").setBody("<!doctype html><html><body><div id='robotlink' hidden></div><script>setTimeout(()=>document.getElementById('robotlink').innerHTML=location.origin+('xxx/get_video?id=private').substring(3),200)</script></body></html>");if(request.getPath().startsWith("/get_video"))return new MockResponse().setResponseCode(302).setHeader("Location","/opaque-media?token=private");if(request.getPath().startsWith("/opaque-media")){pageCookie.set("page=yes".equals(request.getHeader("Cookie")));referrer.set(request.getHeader("Referer")!=null);if(!pageCookie.get())return new MockResponse().setResponseCode(403);return bytes(media,"video/mp4",request);}return new MockResponse().setResponseCode(404);}});server.start(java.net.InetAddress.getByName("127.0.0.1"),0);String original=server.url("/episode?private=not-logged").newBuilder().host("127.0.0.1").build().toString();PlayerActivity activity=open(original);try{playing(activity,35000);PlayerInput input=(PlayerInput)field(activity,"input");assertEquals(Uri.parse(original).toString(),input.identity);assertEquals("/opaque-media",input.uri.getPath());assertNull(input.file);assertTrue(pageCookie.get());assertTrue(referrer.get());String diagnostic=context.getSharedPreferences("player_diagnostics",0).getString("last","");assertFalse(diagnostic.contains("not-logged"));assertFalse(diagnostic.contains("page=yes"));}finally{instrumentation.runOnMainSync(activity::finish);}
   }
  }
+ @Test public void nativeHtmlRecoverySurvivesWebViewFailureAndBlocksAdNavigation()throws Exception{
+  byte[] media=asset("sample.mp4");AtomicInteger nativePages=new AtomicInteger(),browserFailures=new AtomicInteger();AtomicBoolean cookie=new AtomicBoolean(),referer=new AtomicBoolean();
+  try(MockWebServer server=new MockWebServer()){
+   server.setDispatcher(new Dispatcher(){@Override public MockResponse dispatch(RecordedRequest r){
+    if(r.getPath().startsWith("/episode")){
+     if("document".equals(r.getHeader("Sec-Fetch-Dest"))||r.getHeader("Upgrade-Insecure-Requests")!=null){browserFailures.incrementAndGet();return new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START);}
+     if(r.getHeader("Range")==null)nativePages.incrementAndGet();
+     return new MockResponse().setHeader("Content-Type","text/html").setHeader("Set-Cookie","native=yes; Path=/").setBody("<!doctype html><html><body><div id='robotlink' hidden></div><script>setTimeout(()=>{document.getElementById('robotlink').textContent=location.origin+'/get_video?id=private';location.href='https://ads.example.invalid/';},200)</script></body></html>");
+    }
+    if(r.getPath().startsWith("/get_video")){cookie.set("native=yes".equals(r.getHeader("Cookie")));referer.set(r.getHeader("Referer")!=null&&r.getHeader("Referer").contains("/episode"));if(!cookie.get()||!referer.get())return new MockResponse().setResponseCode(403);return bytes(media,"video/mp4",r);}
+    return new MockResponse().setResponseCode(404);
+   }});server.start(java.net.InetAddress.getByName("127.0.0.1"),0);PlayerActivity activity=open(server.url("/episode").toString());
+   try{playing(activity,35000);assertTrue("Chromium transport must fail in the fixture",browserFailures.get()>0);assertTrue("Full HTML must be recovered through native HTTP",nativePages.get()>0);assertTrue(cookie.get());assertTrue(referer.get());PlayerInput input=(PlayerInput)field(activity,"input");assertEquals("/get_video",input.uri.getPath());}finally{instrumentation.runOnMainSync(activity::finish);}
+  }
+ }
+ @Test public void providerHttpUpgradesWithoutChangingOtherSitesOrAllowingAdRedirects(){
+  assertEquals("https://streamtape.to/e/Abc?token=keep",MediaResolver.secureProvider(Uri.parse("http://streamtape.to/e/Abc?token=keep")).toString());
+  assertEquals("http://other.invalid/e/Abc",MediaResolver.secureProvider(Uri.parse("http://other.invalid/e/Abc")).toString());
+  assertTrue(MediaResolver.allowedNavigation(Uri.parse("https://streamtape.to/e/Abc"),Uri.parse("https://streamtape.com/e/Abc")));
+  assertFalse(MediaResolver.allowedNavigation(Uri.parse("https://streamtape.to/e/Abc"),Uri.parse("https://ad.invalid/")));
+  assertFalse(MediaResolver.allowedNavigation(Uri.parse("https://streamtape.to/e/Abc"),Uri.parse("intent://streamtape.to")));
+ }
  @Test public void opaqueHlsResponseIsDetectedFromContentRatherThanItsUrl()throws Exception{
   byte[] playlist=asset("watch-hls.m3u8"),segment=asset("watch-hls-000.ts");
   try(MockWebServer server=new MockWebServer()){
@@ -46,9 +68,20 @@ public class PlayerSourceTest {
   File file=File.createTempFile("gpu-lease-",".mp4",context.getCacheDir());try(OutputStream out=new FileOutputStream(file)){out.write(asset("sample.mp4"));}
   PlayerActivity activity=(PlayerActivity)instrumentation.startActivitySync(new Intent(context,PlayerActivity.class).putExtra("path",file.getPath()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
   String project=context.getSharedPreferences("colab_connection",0).getString("project","madarfiles");AtomicBoolean previous=new AtomicBoolean(),next=new AtomicBoolean();ColabMusic.Session second=null;
-  try{playing(activity,12000);ColabMusic.Session first=MusicGpuSession.acquire(context,new ColabCredentials.Grant("test-only-memory-token",project),previous,(p,m)->{});first.kernel="retained-kernel";first.batch=7;first.healthy=true;first.close();assertTrue(MusicGpuSession.available(context));java.lang.reflect.Field generation=MusicGpuSession.class.getDeclaredField("generation");generation.setAccessible(true);long retired=generation.getLong(null);
+  try{awaitGpuClosed();playing(activity,12000);ColabMusic.Session first=MusicGpuSession.acquire(context,new ColabCredentials.Grant("test-only-memory-token",project),previous,(p,m)->{});first.kernel="retained-kernel";first.batch=7;first.healthy=true;first.close();assertTrue(MusicGpuSession.available(context));java.lang.reflect.Field generation=MusicGpuSession.class.getDeclaredField("generation");generation.setAccessible(true);long retired=generation.getLong(null);
    second=MusicGpuSession.acquire(context,null,next,(p,m)->{});assertSame(first,second);assertEquals("retained-kernel",second.kernel);assertEquals(7,second.batch);try(ColabRuntime other=new ColabRuntime(context,new ColabCredentials.Grant("test-only",project),new AtomicBoolean())){boolean blocked=false;try{MusicGpuSession.beforeRuntime(other);}catch(IOException expected){blocked=true;}assertTrue("Another tool must not delete the active GPU runtime",blocked);}previous.set(true);Thread.sleep(150);assertFalse(second.cancel.get());second.healthy=true;second.close();second=null;MusicGpuSession.expire(retired);assertTrue(MusicGpuSession.available(context));MusicGpuSession.stopIdle();assertFalse(MusicGpuSession.available(context));
-  }finally{if(second!=null){second.healthy=false;second.close();}MusicGpuSession.stopIdle();instrumentation.runOnMainSync(activity::finish);file.delete();}
+  }finally{if(second!=null){second.healthy=false;second.close();}MusicGpuSession.stopIdle();awaitGpuClosed();instrumentation.runOnMainSync(activity::finish);file.delete();}
+ }
+ private void awaitGpuClosed()throws Exception{long end=System.currentTimeMillis()+5000;while(MusicGpuSession.closing()&&System.currentTimeMillis()<end)Thread.sleep(20);assertFalse("GPU cleanup must complete without a state-lock deadlock",MusicGpuSession.closing());}
+ @Test public void closingDuringWarmupNeverHoldsTheLockNeededByInitializer()throws Exception{
+  awaitGpuClosed();File file=File.createTempFile("gpu-retire-",".mp4",context.getCacheDir());try(OutputStream out=new FileOutputStream(file)){out.write(asset("sample.mp4"));}
+  PlayerActivity activity=(PlayerActivity)instrumentation.startActivitySync(new Intent(context,PlayerActivity.class).putExtra("path",file.getPath()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+  java.util.concurrent.CountDownLatch entered=new java.util.concurrent.CountDownLatch(1),proceed=new java.util.concurrent.CountDownLatch(1);java.util.concurrent.FutureTask<Void> future=null;Thread closer=null;ColabMusic.Session session=null;
+  try{playing(activity,12000);session=MusicGpuSession.acquire(context,new ColabCredentials.Grant("test-only-memory-token","madarfiles"),new AtomicBoolean(),(p,m)->{});final ColabMusic.Session current=session;
+   future=new java.util.concurrent.FutureTask<>(()->{entered.countDown();proceed.await();MusicGpuSession.beforeRuntime(current.runtime);return null;});java.lang.reflect.Field initializer=ColabMusic.Session.class.getDeclaredField("initializer");initializer.setAccessible(true);initializer.set(session,future);new Thread(future,"test-initializer").start();assertTrue(entered.await(2,java.util.concurrent.TimeUnit.SECONDS));
+   closer=new Thread(session::close,"test-early-close");closer.start();closer.join(1000);assertFalse("Closing the UI job must not await GPU preparation",closer.isAlive());assertTrue(MusicGpuSession.closing());assertFalse(MusicGpuSession.available(context));
+   proceed.countDown();future.get(2,java.util.concurrent.TimeUnit.SECONDS);awaitGpuClosed();assertFalse(MusicGpuSession.busy());
+  }finally{proceed.countDown();if(future!=null)future.cancel(true);if(closer!=null)closer.join(2000);if(session!=null)session.close();awaitGpuClosed();instrumentation.runOnMainSync(activity::finish);file.delete();}
  }
  @Test public void softwareAudioReallyDecodesAdditionalFormatsAndCanSupplyPcmForSeparation()throws Exception{
   assertTrue(androidx.media3.decoder.ffmpeg.FfmpegLibrary.isAvailable());for(String type:new String[]{MimeTypes.AUDIO_AAC,MimeTypes.AUDIO_AC3,MimeTypes.AUDIO_E_AC3,MimeTypes.AUDIO_DTS,MimeTypes.AUDIO_TRUEHD,MimeTypes.AUDIO_FLAC,MimeTypes.AUDIO_ALAC,MimeTypes.AUDIO_OPUS,MimeTypes.AUDIO_VORBIS,MimeTypes.AUDIO_MPEG,MimeTypes.AUDIO_AMR_NB,MimeTypes.AUDIO_AMR_WB})assertTrue(type,androidx.media3.decoder.ffmpeg.FfmpegLibrary.supportsFormat(type));

@@ -16,7 +16,7 @@ python3 - <<'PYSOURCE'
 from pathlib import Path
 import re
 log=Path('phone-screenshots/player-source-tests.txt').read_text(errors='replace')
-assert re.search(r'\bOK\s*\(5 tests\)',log), 'All actual source and software codec tests must pass'
+assert re.search(r'\bOK\s*\(8 tests\)',log), 'All actual source and software codec tests must pass'
 assert not re.search(r'INSTRUMENTATION_STATUS_CODE:\s*-\d+',log), 'Failed or skipped player source tests'
 assert 'INSTRUMENTATION_FAILED' not in log and 'FAILURES!!!' not in log
 PYSOURCE
