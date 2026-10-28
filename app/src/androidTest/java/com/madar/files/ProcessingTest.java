@@ -23,6 +23,12 @@ public class ProcessingTest {
         Bitmap b=Bitmap.createBitmap(400,200,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(b);canvas.drawColor(Color.RED);Paint p=new Paint();p.setColor(Color.BLUE);canvas.drawRect(200,0,400,200,p);ImageProcessor.writeImage(b,input,"png",100);b.recycle();
     }
     @After public void clean(){if(activity!=null)InstrumentationRegistry.getInstrumentation().runOnMainSync(()->activity.finish());input.delete();File[] files=FilesUtil.directory(c).listFiles();if(files!=null)for(File f:files)f.delete();}
+    @Test public void wholeMusicToolActuallyExportsPastOneMinuteAcrossWindows()throws Exception {
+        File source=File.createTempFile("music-whole-",".mp4",c.getCacheDir());try(InputStream in=InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("music-long.mp4");OutputStream out=new FileOutputStream(source)){FilesUtil.copy(in,out);}
+        try{VideoExportService.lastEvent=null;InstrumentationRegistry.getInstrumentation().runOnMainSync(()->c.startForegroundService(new Intent(c,VideoExportService.class).putExtra("input",source.getPath()).putExtra("options","{\"tool\":\"music\",\"musicMode\":\"local\",\"musicOutput\":\"audio\"}").putExtra("duration",65000L).putExtra("height",90)));
+            boolean completed=false;long deadline=System.currentTimeMillis()+10*60000L;while(System.currentTimeMillis()<deadline){String value=VideoExportService.lastEvent;if(value!=null){JSONObject event=new JSONObject(value);if(event.optString("type").equals("error"))fail(value);if(event.optString("type").equals("result")){File result=FilesUtil.resolve(c,event.getString("name"));try(MediaMetadataRetriever meta=new MediaMetadataRetriever()){meta.setDataSource(result.getPath());assertEquals("yes",meta.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO));assertEquals(65000,Long.parseLong(meta.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)),250);}completed=true;break;}}Thread.sleep(100);}assertTrue("Full music export did not finish",completed);
+        }finally{source.delete();}
+    }
     @Test public void cropAndRotateRetainPixels()throws Exception {
         JSONObject o=new JSONObject("{\"tool\":\"crop\",\"format\":\"png\",\"crop\":{\"x\":0.5,\"y\":0,\"w\":0.5,\"h\":1}}");
         File cropped=ImageProcessor.export(c,input,o);Bitmap b=FilesUtil.image(cropped,4096);assertEquals(200,b.getWidth());assertEquals(200,b.getHeight());assertEquals(Color.BLUE,b.getPixel(100,100));b.recycle();

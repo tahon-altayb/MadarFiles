@@ -111,6 +111,7 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.wav -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
           espeak-ng -v en-us -s 135 -w app/src/androidTest/assets/speech-test.wav "The quick brown fox jumps over the lazy dog. Welcome to this video. This is a test of speech recognition."
           ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=15 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 24 -c:v libx264 -preset ultrafast -crf 35 -c:a aac -movflags +faststart app/src/androidTest/assets/watch-long.mp4
+          ffmpeg -v error -y -stream_loop 2 -i app/src/androidTest/assets/watch-long.mp4 -t 65 -c copy app/src/androidTest/assets/music-long.mp4
           ffmpeg -v error -y -i app/src/androidTest/assets/sample.mp4 -c copy -hls_time 1 -hls_list_size 0 -hls_segment_filename app/src/androidTest/assets/watch-hls-%03d.ts app/src/androidTest/assets/watch-hls.m3u8
           for MADAR_AUDIO_CODEC in ac3 eac3 dca flac libopus libmp3lame mp2; do
             ffmpeg -v error -y -i app/src/androidTest/assets/sample.mp4 -t 2 -map 0:v -map 0:a -c:v copy -strict -2 -c:a "$MADAR_AUDIO_CODEC" "app/src/androidTest/assets/codec-$MADAR_AUDIO_CODEC.mkv"
