@@ -29,9 +29,9 @@ final class WatchBuffer {
  }
  synchronized long waitSeconds(double played,double ready,double playbackSpeed,long now){
   double rate=speed(now);if(rate==0)return -1;
-  // The budget shrinks as more frames are produced. This is a conservative
-  // estimate, recalculated from completed audio rather than a fake countdown.
-  return (long)Math.ceil(Math.max(0,required(played,playbackSpeed,now)-(ready-played))/rate);
+  // The reserve already contains the safety margin; estimate its fill time
+  // from measured production, without applying that margin a second time.
+  return (long)Math.ceil(Math.max(0,required(played,playbackSpeed,now)-(ready-played))/(rate/.8));
  }
  synchronized String describe(double played,double ready,double playbackSpeed,long now){
   double rate=speed(now);if(rate==0)return "قياس سرعة الفصل · تجهيز احتياطي للمشاهدة";

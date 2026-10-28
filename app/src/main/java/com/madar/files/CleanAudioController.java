@@ -56,7 +56,7 @@ final class CleanAudioController implements AutoCloseable {
  }}catch(Exception error){failure="تعذرت متابعة الصوت المنظّف: "+error.getMessage();}if(!closed)feeder.postDelayed(this,10);}};
  private final byte[] feedBuffer=new byte[16384];
  private final Runnable tick=new Runnable(){@Override public void run(){if(closed)return;try{
-  video.setVolume(0);long frames=playedFrames();double played=session.offsetUs/1e6+frames/44100.0,ready=session.ready();long now=SystemClock.elapsedRealtime();
+  video.setVolume(0);long frames=playedFrames();session.playedFrames=frames;double played=session.offsetUs/1e6+frames/44100.0,ready=session.ready();long now=SystemClock.elapsedRealtime();
   if(!failure.isEmpty()){wanted=false;pause();}
   if(playing&&(video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE))pause();
   long queued;synchronized(audioLock){queued=cursor-frames;}

@@ -2,6 +2,10 @@ package com.madar.files;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class WatchWindowsTest {
+ @Test public void firstCloudWindowUploadsAtMostThirtyTwoSecondsThenGrowsOnlyWithReserve(){
+  long start=632500000L,end=start+3600000000L;WatchWindows first=WatchWindows.forWatch(start,end,true,true,0);assertEquals(24000000L,first.coreEnd-first.coreStart);assertTrue(first.decodeEnd-first.decodeStart<=32000000L);
+  for(double reserve:new double[]{0,39,40,119,120,300}){WatchWindows next=WatchWindows.forWatch(first.coreEnd,end,true,false,reserve);assertEquals(first.coreEnd,next.coreStart);assertEquals((reserve<40?32:reserve<120?64:120)*1000000L,next.coreEnd-next.coreStart);assertEquals(4000000L,next.coreStart-next.decodeStart);}
+ }
  @Test public void longPlaybackUsesContiguousBoundedCoresWithContext(){
   for(boolean cloud:new boolean[]{false,true})for(long origin:new long[]{0,1250000,632500000})for(long duration:new long[]{1,3999999,(cloud?120:52)*1000000L-1,(cloud?120:52)*1000000L+1,(cloud?120:52)*1000000L+3000000,7200123456L}){
    long end=origin+duration,next=origin,core=(cloud?120:52)*1000000L;int windows=0;

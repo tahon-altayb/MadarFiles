@@ -9,7 +9,7 @@ import android.widget.Toast;
 /** Public Android "Open with" entry point. Never accepts internal file-path extras. */
 public class OpenMediaActivity extends Activity {
  @Override public void onCreate(Bundle state){super.onCreate(state);try{
-  Intent incoming=getIntent();Uri uri=incoming.getData();
+  Intent incoming=getIntent();Uri uri=ExternalMedia.uri(incoming);
   if(!Intent.ACTION_VIEW.equals(incoming.getAction())||uri==null||!ExternalMedia.supported(uri))throw new IllegalArgumentException("اختر ملفًا أو رابط فيديو صالحًا");
   if("http".equalsIgnoreCase(uri.getScheme())&&!android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(uri.getHost()))throw new IllegalArgumentException("هذا المصدر يستخدم HTTP غير مشفّر؛ استخدم رابط HTTPS أو ملفًا محفوظًا");
   Intent player=new Intent(this,PlayerActivity.class).setDataAndType(uri,ExternalMedia.mime(incoming)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);

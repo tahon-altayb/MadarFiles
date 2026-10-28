@@ -17,6 +17,10 @@ import java.util.concurrent.atomic.*;
 @androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 final class RemoteWatchAudio {
  static AudioPipeline.Decoded decode(Context c,Uri uri,Map<String,String> headers,String mime,long startUs,long endUs,AtomicBoolean cancel)throws Exception{
+  return decode(c,new MediaHttp.Session(uri,headers),mime,startUs,endUs,cancel);
+ }
+ static AudioPipeline.Decoded decode(Context c,MediaHttp.Session session,String mime,long startUs,long endUs,AtomicBoolean cancel)throws Exception{
+  Uri uri=session.uri;Map<String,String> headers=session.headersFor(uri);
   String path=uri.getPath()==null?"":uri.getPath().toLowerCase(java.util.Locale.ROOT);
   if(!MimeTypes.APPLICATION_M3U8.equals(mime)&&!MimeTypes.APPLICATION_MPD.equals(mime)&&!path.endsWith(".m3u8")&&!path.endsWith(".mpd")){
    // Progressive files need no intermediate AAC encoding/muxer. Some servers
@@ -27,8 +31,7 @@ final class RemoteWatchAudio {
   HandlerThread thread=new HandlerThread("madar-watch-network");thread.start();Handler handler=new Handler(thread.getLooper());CountDownLatch done=new CountDownLatch(1);AtomicReference<Exception> failure=new AtomicReference<>();AtomicReference<Transformer> running=new AtomicReference<>();
   try{
    handler.post(()->{try{
-    MusicSeparator.check(cancel);DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers).setConnectTimeoutMs(20000).setReadTimeoutMs(30000);
-    DefaultMediaSourceFactory sources=new DefaultMediaSourceFactory(new DefaultDataSource.Factory(c,http));
+    MusicSeparator.check(cancel);DefaultMediaSourceFactory sources=new DefaultMediaSourceFactory(session.factory(c));
     ExoPlayerAssetLoader.Factory loader=new ExoPlayerAssetLoader.Factory(c,new DefaultDecoderFactory.Builder(c).build(),Clock.DEFAULT,sources);
     Transformer transformer=new Transformer.Builder(c).setAssetLoaderFactory(loader).setAudioMimeType(MimeTypes.AUDIO_AAC).addListener(new Transformer.Listener(){
      @Override public void onCompleted(Composition composition,ExportResult result){done.countDown();}

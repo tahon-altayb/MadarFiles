@@ -6,6 +6,7 @@ import java.io.*;
 import java.nio.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 final class AudioPipeline {
  static final class Decoded {File pcm;int sampleRate;long offsetUs;Decoded(File f,int r,long o){pcm=f;sampleRate=r;offsetUs=o;}}
  static int track(MediaExtractor ex,String prefix){for(int i=0;i<ex.getTrackCount();i++)if(ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME).startsWith(prefix))return i;return -1;}
@@ -14,11 +15,11 @@ final class AudioPipeline {
   if(startUs<0||endUs<=startUs)throw new IOException("حدود فك الصوت غير صالحة");return decodeInternal(c,source,startUs,endUs,true,cancel,progress);
  }
  static Decoded decodeRemoteRange(Context c,android.net.Uri uri,java.util.Map<String,String> headers,long startUs,long endUs,AtomicBoolean cancel)throws Exception{
-  if(startUs<0||endUs<=startUs)throw new IOException("حدود فك الصوت غير صالحة");return decodeInput(c,ex->ex.setDataSource(uri.toString(),headers),startUs,endUs,true,cancel,(p,m)->{});
+  if(startUs<0||endUs<=startUs)throw new IOException("حدود فك الصوت غير صالحة");try{return decodeInput(c,ex->ex.setDataSource(uri.toString(),headers),startUs,endUs,true,cancel,(p,m)->{});}catch(java.util.concurrent.CancellationException stopped){throw stopped;}catch(Exception platform){ColabProbe.check(cancel);File pcm=File.createTempFile("madar_remote_soft_",".pcm",c.getCacheDir());try{androidx.media3.decoder.ffmpeg.FfmpegPcm.Result result=androidx.media3.decoder.ffmpeg.FfmpegPcm.decodeRemote(uri,headers,pcm,startUs,endUs,cancel);return new Decoded(pcm,result.rate,result.offsetUs);}catch(Exception fallback){pcm.delete();fallback.addSuppressed(platform);throw fallback;}}
  }
  interface Input {void open(MediaExtractor extractor)throws IOException;}
  private static Decoded decodeInternal(Context c,File source,long startUs,long endUs,boolean exact,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
-  return decodeInput(c,ex->ex.setDataSource(source.getAbsolutePath()),startUs,endUs,exact,cancel,progress);
+  try{return decodeInput(c,ex->ex.setDataSource(source.getAbsolutePath()),startUs,endUs,exact,cancel,progress);}catch(java.util.concurrent.CancellationException stopped){throw stopped;}catch(Exception platform){ColabProbe.check(cancel);progress.update(3,"فك الصوت بالبديل البرمجي");File pcm=File.createTempFile("madar_decode_soft_",".pcm",c.getCacheDir());try{androidx.media3.decoder.ffmpeg.FfmpegPcm.Result result=androidx.media3.decoder.ffmpeg.FfmpegPcm.decode(source,pcm,startUs,endUs,exact,cancel);return new Decoded(pcm,result.rate,result.offsetUs);}catch(Exception fallback){pcm.delete();fallback.addSuppressed(platform);throw fallback;}}
  }
  private static Decoded decodeInput(Context c,Input source,long startUs,long endUs,boolean exact,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
   MediaExtractor ex=new MediaExtractor();MediaCodec codec=null;File raw=File.createTempFile("madar_decode_",".pcm",c.getCacheDir());
