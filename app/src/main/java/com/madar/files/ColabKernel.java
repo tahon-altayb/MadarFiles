@@ -42,16 +42,18 @@ final class ColabKernel {
   final AtomicBoolean opened=new AtomicBoolean();final AtomicReference<String> transport=new AtomicReference<>("");
   volatile WebSocket socket;volatile boolean abandoned;
  }
- /** One channel is opened before upload, then used once. Never replay a queued execute request. */
+ /** Reuse healthy channels; reconnect before the next command, never replay a queued request. */
  static final class Session implements AutoCloseable {
   final OkHttpClient client;final Requests requests;final AtomicBoolean cancel;final Events events;final Policy policy;
-  final AtomicReference<String> result=new AtomicReference<>();volatile String executionId="";volatile boolean closed;boolean executed,completed;int attempts;Attempt active;
+  final AtomicReference<String> result=new AtomicReference<>();volatile String executionId="";volatile boolean closed;boolean executed,completed,connectionRequested;Attempt active;
   Session(OkHttpClient client,Requests requests,AtomicBoolean cancel,Events events,Policy policy)throws Exception{this.client=client;this.requests=requests;this.cancel=cancel;this.events=events;this.policy=policy;connect();}
   private void pause(long ms)throws Exception{long end=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(ms);while(System.nanoTime()<end){ColabProbe.check(cancel);if(closed)throw new IOException("Colab · WS_CLOSED");Thread.sleep(Math.min(50,Math.max(1,ms)));}}
   private void connect()throws Exception{
    String failure="WS_CONNECT_TIMEOUT";
-   while(attempts<policy.attempts){ColabProbe.check(cancel);events.record("WS_ATTEMPT_"+(++attempts));
-    Request original=requests.get(attempts>1);String origin=original.url().scheme()+"://"+original.url().host()+(original.url().port()==80||original.url().port()==443?"":":"+original.url().port());
+   // Retry budget belongs to this connection, not the lifetime of the GPU session.
+   // Every later connection refreshes credentials and checks the same saved kernel.
+   for(int attempt=1;attempt<=policy.attempts;attempt++){ColabProbe.check(cancel);events.record("WS_ATTEMPT_"+attempt);
+    boolean refresh=connectionRequested;connectionRequested=true;Request original=requests.get(refresh);String origin=original.url().scheme()+"://"+original.url().host()+(original.url().port()==80||original.url().port()==443?"":":"+original.url().port());
     Request request=original.newBuilder().header("Origin",origin).header("X-Colab-Client-Agent","madarfiles").build();
     Attempt a=new Attempt();active=a;
     OkHttpClient channelClient=client.newBuilder().readTimeout(Math.max(1000,policy.connectMs+5000),TimeUnit.MILLISECONDS).callTimeout(Math.max(1000,policy.connectMs+10000),TimeUnit.MILLISECONDS).pingInterval(20,TimeUnit.SECONDS).build();
@@ -69,7 +71,7 @@ final class ColabKernel {
      ColabProbe.check(cancel);if(a.opened.get()&&a.transport.get().isEmpty()){events.record("WS_OPEN");return;}
      failure=a.transport.get().isEmpty()?"WS_CONNECT_TIMEOUT":a.transport.get();events.record(failure);
     }catch(Exception e){abandon(a);throw e;}
-    abandon(a);if(!retryable(failure)||attempts>=policy.attempts)throw new IOException("Colab · "+failure);events.record("WS_RETRY");pause(policy.retryMs);
+    abandon(a);if(!retryable(failure)||attempt>=policy.attempts)throw new IOException("Colab · "+failure);events.record("WS_RETRY");pause(policy.retryMs);
    }throw new IOException("Colab · "+failure);
   }
   private void abandon(Attempt a){synchronized(a){a.abandoned=true;if(a.socket!=null)a.socket.cancel();}}

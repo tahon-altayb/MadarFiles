@@ -109,4 +109,46 @@ public class ColabKernelTest {
   assertEquals("Warmup must never be sent twice after the mobile socket drops",1,commands.get());assertEquals(2,connections.get());assertTrue(polls.get()>=4);assertTrue(events.toString(),events.contains("REST_CONTINUES"));assertTrue(events.toString(),events.contains("WS_NETWORK")||events.contains("WS_CLOSED"));
  }
 
+ private MockResponse droppedCommand(java.util.List<String> commands){return new MockResponse().withWebSocketUpgrade(new WebSocketListener(){@Override public void onMessage(WebSocket socket,String message){try{commands.add(new JSONObject(message).getJSONObject("content").getString("code"));}catch(Exception ignored){}socket.close(1000,"fixture disconnect");}});}
+ private ColabKernel.Poll completedAfterDrop(java.util.List<String> commands,java.util.List<String> events,int count){return ()->commands.size()==count&&java.util.Collections.frequency(events,"REST_CONTINUES")>=count;}
+
+ @Test(timeout=15000) public void repeatedWindowDisconnectsEachGetFreshBudgetAndNeverReplayCommands()throws Exception{
+  java.util.List<String> commands=new java.util.concurrent.CopyOnWriteArrayList<>(),events=new java.util.concurrent.CopyOnWriteArrayList<>();java.util.List<Boolean> refreshes=new java.util.ArrayList<>();
+  for(int i=0;i<5;i++)server.enqueue(droppedCommand(commands));
+  try(ColabKernel.Session session=new ColabKernel.Session(client,refresh->{refreshes.add(refresh);return request();},new AtomicBoolean(),events::add,fast())){
+   for(int i=0;i<5;i++){String code=i==0?"start_worker_once":"window_"+i;ColabKernel.Poll poll=completedAfterDrop(commands,events,i+1);if(i==0)session.execute(code,poll);else session.executeNext(code,poll);}
+  }
+  assertEquals(java.util.Arrays.asList("start_worker_once","window_1","window_2","window_3","window_4"),commands);
+  assertEquals(java.util.Arrays.asList(false,true,true,true,true),refreshes);assertEquals(5,server.getRequestCount());assertEquals(5,java.util.Collections.frequency(events,"WS_ATTEMPT_1"));assertFalse(events.contains("WS_CONNECT_TIMEOUT"));assertFalse(events.contains("WS_RETRY"));
+ }
+
+ @Test(timeout=15000) public void transientHandshakeRetriesAreRenewedForEveryWindow()throws Exception{
+  java.util.List<String> commands=new java.util.concurrent.CopyOnWriteArrayList<>(),events=new java.util.concurrent.CopyOnWriteArrayList<>();AtomicInteger requests=new AtomicInteger();
+  for(int i=0;i<4;i++){server.enqueue(new MockResponse().setResponseCode(503));server.enqueue(droppedCommand(commands));}
+  try(ColabKernel.Session session=new ColabKernel.Session(client,refresh->{assertEquals(requests.get()>0,refresh);requests.incrementAndGet();return request();},new AtomicBoolean(),events::add,fast())){
+   for(int i=0;i<4;i++){if(i==0)session.execute("warmup",completedAfterDrop(commands,events,1));else session.executeNext("window_"+i,completedAfterDrop(commands,events,i+1));}
+  }
+  assertEquals(java.util.Arrays.asList("warmup","window_1","window_2","window_3"),commands);assertEquals(8,requests.get());assertEquals(8,server.getRequestCount());assertEquals(4,java.util.Collections.frequency(events,"WS_RETRY"));assertEquals(4,java.util.Collections.frequency(events,"WS_ATTEMPT_2"));
+ }
+
+ @Test(timeout=15000) public void laterWindowStillStopsAfterItsOwnTwoFailedHandshakes()throws Exception{
+  java.util.List<String> commands=new java.util.concurrent.CopyOnWriteArrayList<>(),events=new java.util.concurrent.CopyOnWriteArrayList<>();AtomicInteger requests=new AtomicInteger();
+  server.enqueue(droppedCommand(commands));server.enqueue(droppedCommand(commands));server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+  try(ColabKernel.Session session=new ColabKernel.Session(client,refresh->{requests.incrementAndGet();return request();},new AtomicBoolean(),events::add,fast())){
+   session.execute("warmup",completedAfterDrop(commands,events,1));session.executeNext("window_1",completedAfterDrop(commands,events,2));
+   try{session.executeNext("window_never_sent",()->false);fail();}catch(java.io.IOException expected){assertEquals("Colab · WS_CONNECT_TIMEOUT",expected.getMessage());}
+  }
+  assertEquals(java.util.Arrays.asList("warmup","window_1"),commands);assertEquals(4,requests.get());assertEquals(3,java.util.Collections.frequency(events,"WS_ATTEMPT_1"));assertEquals(1,java.util.Collections.frequency(events,"WS_ATTEMPT_2"));
+ }
+
+ @Test(timeout=15000) public void laterWindowReconnectRemainsCancelable()throws Exception{
+  java.util.List<String> commands=new java.util.concurrent.CopyOnWriteArrayList<>(),events=new java.util.concurrent.CopyOnWriteArrayList<>();AtomicInteger requests=new AtomicInteger();AtomicBoolean cancel=new AtomicBoolean();ScheduledExecutorService timer=Executors.newSingleThreadScheduledExecutor();
+  server.enqueue(droppedCommand(commands));server.enqueue(droppedCommand(commands));server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+  try{try(ColabKernel.Session session=new ColabKernel.Session(client,refresh->{if(requests.incrementAndGet()==3)timer.schedule(()->cancel.set(true),200,TimeUnit.MILLISECONDS);return request();},cancel,events::add,new ColabKernel.Policy(90000,20,200,3000,10,2))){
+   session.execute("warmup",completedAfterDrop(commands,events,1));session.executeNext("window_1",completedAfterDrop(commands,events,2));
+   long begin=System.nanoTime();try{session.executeNext("cancelled_window",()->false);fail();}catch(CancellationException expected){assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-begin)<5000);}
+  }}finally{timer.shutdownNow();}
+  assertEquals(3,requests.get());assertEquals(java.util.Arrays.asList("warmup","window_1"),commands);
+ }
+
 }
