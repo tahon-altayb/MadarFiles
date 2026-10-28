@@ -47,7 +47,7 @@ public class PlayerSourceTest {
     }
     if(r.getPath().startsWith("/get_video")){cookie.set("native=yes".equals(r.getHeader("Cookie")));referer.set(r.getHeader("Referer")!=null&&r.getHeader("Referer").contains("/episode"));if(!cookie.get()||!referer.get())return new MockResponse().setResponseCode(403);return bytes(media,"video/mp4",r);}
     return new MockResponse().setResponseCode(404);
-   }});server.start(java.net.InetAddress.getByName("127.0.0.1"),0);PlayerActivity activity=open(server.url("/episode").toString());
+   }});server.start(java.net.InetAddress.getByName("127.0.0.1"),0);PlayerActivity activity=open(server.url("/episode").newBuilder().host("127.0.0.1").build().toString());
    try{playing(activity,35000);assertTrue("Chromium transport must fail in the fixture",browserFailures.get()>0);assertTrue("Full HTML must be recovered through native HTTP",nativePages.get()>0);assertTrue(cookie.get());assertTrue(referer.get());PlayerInput input=(PlayerInput)field(activity,"input");assertEquals("/get_video",input.uri.getPath());}finally{instrumentation.runOnMainSync(activity::finish);}
   }
  }
