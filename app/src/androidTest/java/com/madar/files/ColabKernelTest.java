@@ -86,4 +86,15 @@ public class ColabKernelTest {
   try{try{ColabKernel.open(client,refresh->request(),cancel,event->{});fail();}catch(CancellationException expected){}}finally{timer.shutdownNow();}
  }
 
+ @Test(timeout=15000) public void warmupAndAudioWindowsReuseOneSocketWithoutReplayingOrAcceptingOldReplies()throws Exception{
+  AtomicInteger messages=new AtomicInteger();java.util.List<String> ids=new java.util.concurrent.CopyOnWriteArrayList<>();AtomicReference<String> previous=new AtomicReference<>();
+  server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener(){@Override public void onMessage(WebSocket socket,String message){try{messages.incrementAndGet();String old=previous.getAndSet(message);if(old!=null)socket.send(reply(old,"error").toString());ids.add(new JSONObject(message).getJSONObject("header").getString("msg_id"));socket.send(reply(message,"ok").toString());}catch(Exception e){socket.cancel();}}}));
+  try(ColabKernel.Session session=new ColabKernel.Session(client,refresh->request(),new AtomicBoolean(),event->{},fast())){
+   try{session.executeNext("too_soon",()->false);fail();}catch(java.io.IOException expected){}
+   session.execute("start_persistent_worker",()->false);session.executeNext("first_audio_window",()->false);session.executeNext("second_audio_window",()->false);
+   try{session.execute("duplicate",()->false);fail();}catch(java.io.IOException expected){}
+  }
+  assertEquals(1,server.getRequestCount());assertEquals(3,messages.get());assertEquals(3,new java.util.HashSet<>(ids).size());
+ }
+
 }

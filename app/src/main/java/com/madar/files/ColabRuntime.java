@@ -68,7 +68,7 @@ final class ColabRuntime implements AutoCloseable {
     long pause=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(System.nanoTime()<pause){ColabProbe.check(cancel);Thread.sleep(50);}operation=cloud("GET","v1/"+name,null,cancel);
    }
    JSONObject error=operation.optJSONObject("error");if(error!=null){int code=error.optInt("code");journal().edit().clear().commit();runtime="";if((code==8||code==9||code==14)&&i+1<Math.min(2,specs.size())){progress.update(12,"المورد غير متاح؛ تجربة GPU بديل مرة واحدة");continue;}throw new IOException("لم يمنح Colab موردًا للمعالجة ("+code+"). راجع توفر الموارد ورصيد وحدات الحساب.");}
-   ColabProbe.check(cancel);refresh();if(music)settings.edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return;
+   ColabProbe.check(cancel);progress.update(13,"تم تخصيص GPU · قراءة بيانات اتصال المحرك");refresh();if(music)settings.edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return;
   }
  }
  /** Only resume an assignment that is still pending: no previous kernel could have started. */
@@ -85,7 +85,7 @@ final class ColabRuntime implements AutoCloseable {
    long pause=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(System.nanoTime()<pause){ColabProbe.check(cancel);Thread.sleep(50);}state=cloud("GET","v1/"+operation,null,cancel);
   }while(!state.optBoolean("done"));
   if(state.has("error")){journal().edit().clear().commit();runtime="";return false;}
-  ColabProbe.check(cancel);refresh();context.getSharedPreferences("colab_connection",0).edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return true;
+  ColabProbe.check(cancel);progress.update(13,"اكتمل طلب GPU السابق · قراءة بيانات اتصال المحرك");refresh();context.getSharedPreferences("colab_connection",0).edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return true;
  }
  void refresh()throws Exception{
   JSONObject value=cloud("GET","v1beta/"+runtime,null,cancel);if(!runtime.equals(value.optString("name")))throw new IOException("Colab · RUNTIME_ID_MISMATCH");JSONObject info=value.getJSONObject("connectionInfo");base=runtimeUrl(info.getString("url"));proxyToken=info.getString("token");if(proxyToken.isEmpty()||proxyToken.length()>16384||proxyToken.matches("(?s).*\\s.*"))throw new IOException("Colab · RUNTIME_TOKEN_INVALID");long remaining;try{remaining=java.time.Instant.parse(info.getString("expireTime")).toEpochMilli()-System.currentTimeMillis();}catch(Exception e){throw new IOException("Colab · RUNTIME_EXPIRY_INVALID");}if(remaining<=0)throw new IOException("Colab · RUNTIME_TOKEN_EXPIRED");refreshAt=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(Math.max(1000,Math.min(240000,remaining-30000)));
@@ -118,9 +118,10 @@ final class ColabRuntime implements AutoCloseable {
   validateRuntimePath(path);if(base==null||System.nanoTime()>refreshAt)refresh();
   return new Request.Builder().url(base.resolve(path)).header("X-Colab-Runtime-Proxy-Token",proxyToken).header("X-Colab-Client-Agent","madarfiles");
  }
- JSONObject jupyter(String method,String path,JSONObject data,int maximum)throws Exception{
+ JSONObject jupyter(String method,String path,JSONObject data,int maximum)throws Exception{return jupyter(method,path,data,maximum,100000);}
+ JSONObject jupyter(String method,String path,JSONObject data,int maximum,long timeoutMs)throws Exception{
   // Replay only reads and PUT of the exact same owned content. Never replay kernel/runtime creation.
-  for(int attempt=0;;attempt++)try{return request(runtimeRequest(path),method,data,cancel,maximum);}catch(IOException e){
+  for(int attempt=0;;attempt++)try{return request(runtimeRequest(path),method,data,cancel,maximum,timeoutMs);}catch(IOException e){
    if(attempt>0||!(method.equals("GET")||method.equals("PUT")))throw e;
    if(e instanceof HttpFailure){int status=((HttpFailure)e).status;if(status==401||status==403)refresh();else if(status!=429&&status!=500&&status!=502&&status!=503&&status!=504)throw e;}
    else if(!(e instanceof NetworkFailure))throw e;
@@ -128,7 +129,8 @@ final class ColabRuntime implements AutoCloseable {
   }
  }
  void put(String path,String content,String format)throws Exception{jupyter("PUT",contentPath(path,null),new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}
- String getText(String path,int max)throws Exception{return jupyter("GET",contentPath(path,"text"),null,max).getString("content");}
+ String getText(String path,int max)throws Exception{return getText(path,max,100000);}
+ String getText(String path,int max,long timeoutMs)throws Exception{return jupyter("GET",contentPath(path,"text"),null,max,timeoutMs).getString("content");}
  byte[] getBinary(String path,int maximum)throws Exception{
   JSONObject file=jupyter("GET",contentPath(path,"base64"),null,maximum);
   if(!file.optString("format").equals("base64")||!(file.opt("content") instanceof String))throw new ProtocolFailure("Colab · MUSIC_OUTPUT_FORMAT");

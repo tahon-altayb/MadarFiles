@@ -24,8 +24,15 @@ if 'SERVICE_FOLDER' in globals():
     if root is None or job.parent != root.parent or not re.fullmatch(re.escape(root.name) + r'_b[0-9]+', job.name):
         raise ValueError('MUSIC_JOB_PATH')
     if '_madar_music_service' not in globals() or _madar_music_service.poll() is not None:
-        _madar_music_log = (root / 'worker.log').open('ab')
-        _madar_music_service = subprocess.Popen([sys.executable, str(root / 'music_worker.py'), str(root), '--serve'], stdout=_madar_music_log, stderr=_madar_music_log)
+        try:
+            failed = json.loads((root / 'progress.json').read_text())
+        except (OSError, ValueError):
+            failed = {}
+        code = failed.get('error', 'MUSIC_PROCESS_EXIT')
+        if not isinstance(code, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}', code):
+            code = 'MUSIC_PROCESS_EXIT'
+        (job / 'progress.json').write_text(json.dumps(dict(stage='failed', progress=0, error=code)))
+        raise RuntimeError(code)
     command = root / 'command.tmp'
     command.write_text(json.dumps(dict(folder=str(job))))
     command.replace(root / 'command.json')

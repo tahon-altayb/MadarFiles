@@ -101,6 +101,44 @@ def run():
                 if '_madar_music_log' in state:state['_madar_music_log'].close()
                 os.chdir(previous)
 
+    def test_cold_worker_failure_is_reported_without_waiting_for_an_audio_job(self):
+        import subprocess
+        worker=(ROOT/'app/src/main/assets/colab/music_worker.py').read_text()
+        injection="\ndef prepare():\n    status('model_load',38)\n    raise ValueError('MUSIC_GPU_PROVIDER')\n"
+        worker=worker.replace("if __name__ == '__main__':",injection+"\nif __name__ == '__main__':")
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/('madar_'+'b'*32);root.mkdir()
+            script=root/'music_worker.py';script.write_text(worker)
+            process=subprocess.run([__import__('sys').executable,str(script),str(root),'--serve'],capture_output=True,timeout=5)
+            self.assertNotEqual(process.returncode,0)
+            result=json.loads((root/'progress.json').read_text())
+            self.assertEqual(result['stage'],'failed');self.assertEqual(result['last_stage'],'model_load');self.assertEqual(result['error'],'MUSIC_GPU_PROVIDER')
+
+    def test_install_heartbeat_tracks_absolute_stage_path_while_working_directory_changes(self):
+        import threading
+        previous=Path.cwd()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);job=root/'other';job.mkdir();os.chdir(root)
+            stop=threading.Event();thread=threading.Thread(target=w.heartbeat,args=(stop,.01))
+            try:
+                w.status('install',28);start=json.loads((root/'progress.json').read_text())['heartbeat'];thread.start();os.chdir(job)
+                time.sleep(.05)
+                state=json.loads((root/'progress.json').read_text());self.assertGreater(state['heartbeat'],start);self.assertEqual(state['stage'],'install');self.assertFalse((job/'progress.json').exists())
+            finally:stop.set();thread.join(timeout=2);os.chdir(previous)
+
+    def test_lost_warm_worker_fails_promptly_without_restarting_model_install(self):
+        previous=Path.cwd()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/('madar_'+'c'*32);root.mkdir();(root/'music_worker.py').write_text('raise AssertionError("must not restart")')
+            (root/'progress.json').write_text(json.dumps(dict(stage='failed',error='MUSIC_GPU_UNAVAILABLE')))
+            job=root.parent/(root.name+'_b0');job.mkdir();(job/'request.json').write_text('{}');os.chdir(root)
+            try:
+                with self.assertRaisesRegex(RuntimeError,'MUSIC_GPU_UNAVAILABLE'):
+                    exec((ROOT/'app/src/main/assets/colab/music_bootstrap.py').read_text(),{'SERVICE_FOLDER':root.name,'JOB_FOLDER':job.name})
+                self.assertEqual(json.loads((job/'progress.json').read_text())['error'],'MUSIC_GPU_UNAVAILABLE')
+                self.assertFalse((root/'worker.log').exists())
+            finally:os.chdir(previous)
+
     def test_bounded_lossless_wire_rejects_corruption_truncation_trailing_and_expansion(self):
         raw=b'abcd'*512
         good=zlib.compress(raw,level=1)

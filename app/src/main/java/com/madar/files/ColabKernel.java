@@ -45,7 +45,7 @@ final class ColabKernel {
  /** One channel is opened before upload, then used once. Never replay a queued execute request. */
  static final class Session implements AutoCloseable {
   final OkHttpClient client;final Requests requests;final AtomicBoolean cancel;final Events events;final Policy policy;
-  final AtomicReference<String> result=new AtomicReference<>();volatile String executionId="";volatile boolean closed;boolean executed;int attempts;Attempt active;
+  final AtomicReference<String> result=new AtomicReference<>();volatile String executionId="";volatile boolean closed;boolean executed,completed;int attempts;Attempt active;
   Session(OkHttpClient client,Requests requests,AtomicBoolean cancel,Events events,Policy policy)throws Exception{this.client=client;this.requests=requests;this.cancel=cancel;this.events=events;this.policy=policy;connect();}
   private void pause(long ms)throws Exception{long end=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(ms);while(System.nanoTime()<end){ColabProbe.check(cancel);if(closed)throw new IOException("Colab · WS_CLOSED");Thread.sleep(Math.min(50,Math.max(1,ms)));}}
   private void connect()throws Exception{
@@ -57,7 +57,7 @@ final class ColabKernel {
     OkHttpClient channelClient=client.newBuilder().readTimeout(Math.max(1000,policy.connectMs+5000),TimeUnit.MILLISECONDS).callTimeout(Math.max(1000,policy.connectMs+10000),TimeUnit.MILLISECONDS).pingInterval(20,TimeUnit.SECONDS).build();
     WebSocket socket=channelClient.newWebSocket(request,new WebSocketListener(){
      @Override public void onOpen(WebSocket ws,Response response){synchronized(a){if(a.abandoned||closed||cancel.get()){ws.cancel();return;}a.socket=ws;a.opened.set(true);}}
-     private void receive(JSONObject message){try{String value=reply(executionId,message);if(value!=null)result.set(value);}catch(Exception ignored){}}
+     private void receive(JSONObject message){synchronized(Session.this){try{String value=reply(executionId,message);if(value!=null)result.set(value);}catch(Exception ignored){}}}
      @Override public void onMessage(WebSocket ws,String text){if(text.length()>1024*1024){a.transport.set("WS_FRAME_SIZE");ws.cancel();return;}try{receive(new JSONObject(text));}catch(Exception e){a.transport.set("WS_FRAME_FORMAT");ws.cancel();}}
      @Override public void onMessage(WebSocket ws,ByteString bytes){try{receive(decode(bytes));}catch(Exception e){a.transport.set("WS_FRAME_FORMAT");ws.cancel();}}
      @Override public void onFailure(WebSocket ws,Throwable error,Response response){a.transport.compareAndSet("",response==null?networkCode(error):"WS_HTTP_"+response.code());}
@@ -73,16 +73,20 @@ final class ColabKernel {
    }throw new IOException("Colab · "+failure);
   }
   private void abandon(Attempt a){synchronized(a){a.abandoned=true;if(a.socket!=null)a.socket.cancel();}}
+  void executeNext(String code,Poll poll)throws Exception{
+   if(!executed||!completed)throw new IOException("Colab · EXECUTION_ALREADY_SENT");
+   executed=false;completed=false;execute(code,poll);
+  }
   void execute(String code,Poll poll)throws Exception{
    ColabProbe.check(cancel);if(executed)throw new IOException("Colab · EXECUTION_ALREADY_SENT");
    if(active==null||!active.transport.get().isEmpty()){if(active!=null)abandon(active);connect();}
-   Attempt a=active;executionId=UUID.randomUUID().toString();String payload=message(executionId,UUID.randomUUID().toString(),code).toString();
+   Attempt a=active;String nextId=UUID.randomUUID().toString();String payload=message(nextId,UUID.randomUUID().toString(),code).toString();synchronized(this){executionId=nextId;result.set(null);}
    synchronized(a){if(closed||a.abandoned||!a.transport.get().isEmpty())throw new IOException("Colab · WS_LOST_BEFORE_EXECUTION");executed=true;if(!a.socket.send(payload))throw new IOException("Colab · WS_SEND");}
    events.record("EXECUTION_QUEUED");long begin=System.nanoTime(),deadline=begin+TimeUnit.MILLISECONDS.toNanos(policy.processMs),nextPoll=begin,lastRest=begin;boolean seen=false,reportedDisconnect=false;
-   while(true){ColabProbe.check(cancel);if(closed)throw new IOException("Colab · WS_CLOSED");String reply=result.get();if("OK".equals(reply))return;
-    if(reply!=null){try{if(poll.finished())return;}catch(ColabRuntime.HttpFailure e){if(e.status!=404)throw e;}throw new IOException("Colab · "+reply);}
+   while(true){ColabProbe.check(cancel);if(closed)throw new IOException("Colab · WS_CLOSED");String reply=result.get();if("OK".equals(reply)){completed=true;return;}
+    if(reply!=null){try{if(poll.finished()){completed=true;return;}}catch(ColabRuntime.HttpFailure e){if(e.status!=404)throw e;}throw new IOException("Colab · "+reply);}
     long now=System.nanoTime();if(now>deadline)throw new IOException("Colab · PROCESS_TIMEOUT");
-    if(now>=nextPoll){nextPoll=now+TimeUnit.MILLISECONDS.toNanos(policy.pollMs);try{if(poll.finished())return;seen=true;lastRest=System.nanoTime();}
+    if(now>=nextPoll){nextPoll=now+TimeUnit.MILLISECONDS.toNanos(policy.pollMs);try{if(poll.finished()){completed=true;return;}seen=true;lastRest=System.nanoTime();}
      catch(ColabRuntime.HttpFailure e){if(e.status==404){if(now-begin>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw new IOException("Colab · WORKER_NOT_STARTED");}
       else if(e.status==429||e.status>=500){if(System.nanoTime()-lastRest>TimeUnit.MILLISECONDS.toNanos(policy.initialMs))throw new IOException("Colab · PROGRESS_HTTP_"+e.status);events.record("PROGRESS_RETRY");}
       else throw new IOException("Colab · PROGRESS_HTTP_"+e.status);}

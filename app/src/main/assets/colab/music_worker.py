@@ -10,6 +10,12 @@ import time
 import shutil
 import re
 import zlib
+import threading
+
+_STATUS_LOCK = threading.RLock()
+_STATUS_PATH = None
+_STATUS = {}
+_HEARTBEAT = 0
 
 ENGINE = None
 GPU_FREE_BEFORE = None
@@ -30,12 +36,36 @@ def write_json(path, value):
 
 
 def status(stage, progress, parts=None, frames=None, packs=None):
+    global _STATUS_PATH, _STATUS, _HEARTBEAT
     value = dict(stage=stage, progress=progress)
     if parts is not None:
         value.update(chunks=parts, frames=frames, sample_rate=RATE, channels=2, model_sha256=MODEL_SHA)
     if packs is not None:
         value['packs'] = packs
-    write_json('progress.json', value)
+    with _STATUS_LOCK:
+        _HEARTBEAT += 1
+        value['heartbeat'] = _HEARTBEAT
+        _STATUS_PATH = Path('progress.json').resolve()
+        _STATUS = value
+        write_json(_STATUS_PATH, value)
+
+
+def heartbeat(stop, interval=2):
+    global _HEARTBEAT
+    while not stop.wait(interval):
+        with _STATUS_LOCK:
+            if _STATUS_PATH is not None and _STATUS.get('stage') not in ('failed', 'done'):
+                _HEARTBEAT += 1
+                _STATUS['heartbeat'] = _HEARTBEAT
+                write_json(_STATUS_PATH, _STATUS)
+
+
+def report_failure(error):
+    code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', str(error)) else type(error).__name__
+    with _STATUS_LOCK:
+        previous = _STATUS.get('stage', 'bootstrap')
+        path = _STATUS_PATH or Path('progress.json').resolve()
+        write_json(path, dict(stage='failed', last_stage=previous, progress=0, error=code))
 
 
 def validate_request(req):
@@ -63,11 +93,18 @@ def prepare():
         cuda = 13 if major >= 13 else 12
         version = f'1.13.8+cuda{cuda}.cudnn9.onnxruntime1.28.2'
         status('install', 28)
-        with open('install.log', 'wb') as log:
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
-                            f'sherpa-onnx=={version}', 'numpy==2.2.6',
-                            '-f', 'https://k2-fsa.github.io/sherpa/onnx/cuda.html'],
-                           stdout=log, stderr=log, check=True, timeout=600)
+        from importlib.metadata import PackageNotFoundError, version as installed_version
+        try:
+            installed = installed_version('sherpa-onnx') == version and installed_version('numpy') == '2.2.6'
+        except PackageNotFoundError:
+            installed = False
+        if not installed:
+            with open('install.log', 'wb') as log:
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
+                                '--only-binary=:all:', '--timeout', '20', '--retries', '2',
+                                f'sherpa-onnx=={version}', 'numpy==2.2.6',
+                                '-f', 'https://k2-fsa.github.io/sherpa/onnx/cuda.html'],
+                               stdout=log, stderr=log, check=True, timeout=600)
         # Importing torch first loads the CUDA/cuDNN libraries used by this runtime.
         import sherpa_onnx
         from importlib.metadata import version as installed_version
@@ -205,14 +242,10 @@ def run():
 def run_job(folder):
     os.chdir(folder)
     try:
+        status('bootstrap', 27)
         run()
     except Exception as error:
-        code = str(error) if isinstance(error, ValueError) and str(error).isupper() else type(error).__name__
-        try:
-            previous = json.loads(Path('progress.json').read_text('utf-8')).get('stage', 'install')
-        except (OSError, ValueError):
-            previous = 'install'
-        write_json('progress.json', dict(stage='failed', last_stage=previous, progress=0, error=code))
+        report_failure(error)
         raise
 
 
@@ -241,7 +274,17 @@ def serve(root):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 3 and sys.argv[2] == '--serve':
-        serve(sys.argv[1])
-    else:
-        run_job(Path(sys.argv[1]).resolve())
+    stop = threading.Event()
+    thread = threading.Thread(target=heartbeat, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        if len(sys.argv) == 3 and sys.argv[2] == '--serve':
+            serve(sys.argv[1])
+        else:
+            run_job(Path(sys.argv[1]).resolve())
+    except Exception as error:
+        report_failure(error)
+        raise
+    finally:
+        stop.set()
+        thread.join(timeout=3)
