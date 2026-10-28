@@ -97,4 +97,16 @@ public class ColabKernelTest {
   assertEquals(1,server.getRequestCount());assertEquals(3,messages.get());assertEquals(3,new java.util.HashSet<>(ids).size());
  }
 
+ @Test(timeout=15000) public void cellularDropAfterWarmupQueuedCompletesFromWorkerStateAndKeepsTheKernel()throws Exception{
+  AtomicInteger commands=new AtomicInteger(),polls=new AtomicInteger(),connections=new AtomicInteger();java.util.List<String> events=new java.util.concurrent.CopyOnWriteArrayList<>();
+  server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener(){@Override public void onMessage(WebSocket socket,String message){commands.incrementAndGet();socket.cancel();}}));
+  server.enqueue(success());
+  MusicStartup startup=new MusicStartup(()->new JSONObject().put("stage",polls.incrementAndGet()<4||!events.contains("REST_CONTINUES")?"install":"ready").put("progress",38).put("heartbeat",polls.get()),new AtomicBoolean(),(p,m)->{},null,android.os.SystemClock::elapsedRealtime);
+  try(ColabKernel.Session session=new ColabKernel.Session(client,refresh->{connections.incrementAndGet();return request();},new AtomicBoolean(),events::add,fast())){
+   session.execute("start_owned_worker_once",startup::poll);startup.awaitReady();
+   session.executeNext("next_audio_window",()->false);
+  }
+  assertEquals("Warmup must never be sent twice after the mobile socket drops",1,commands.get());assertEquals(2,connections.get());assertTrue(polls.get()>=4);assertTrue(events.toString(),events.contains("REST_CONTINUES"));assertTrue(events.toString(),events.contains("WS_NETWORK")||events.contains("WS_CLOSED"));
+ }
+
 }
