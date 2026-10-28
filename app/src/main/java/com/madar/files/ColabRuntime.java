@@ -46,7 +46,7 @@ final class ColabRuntime implements AutoCloseable {
  static boolean ownName(String name){return name!=null&&name.matches("runtimes/madar-[a-f0-9-]{36}");}
  private android.content.SharedPreferences journal(){return context.getSharedPreferences("colab_owned_runtime",0);}
  void create(MusicSeparator.Progress progress)throws Exception {
-  cleanupPrevious();List<JSONObject> specs=candidates(cloud("GET","v1beta/runtimespecs",null,cancel));if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
+  MusicGpuSession.beforeRuntime(this);cleanupPrevious();List<JSONObject> specs=candidates(cloud("GET","v1beta/runtimespecs",null,cancel));if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
   for(int i=0;i<Math.min(2,specs.size());i++){
    ColabProbe.check(cancel);JSONObject spec=specs.get(i);String id="madar-"+UUID.randomUUID();runtime="runtimes/"+id;
    if(!journal().edit().putString("name",runtime).putString("project",grant.project).putString("requestId",UUID.randomUUID().toString()).putString("spec",spec.toString()).remove("operation").commit())throw new IOException("تعذر حفظ حالة جلسة Colab");

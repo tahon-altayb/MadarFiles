@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 
@@ -57,7 +58,7 @@ class MusicTest(unittest.TestCase):
         worker = (ROOT/'app/src/main/assets/colab/music_worker.py').read_text()
         injection = '''
 def prepare():
-    pass
+    write_json("warm.json",dict(pid=os.getpid()))
 def run():
     write_json('result.json', dict(pid=os.getpid()))
     status('done', 97)
@@ -70,6 +71,10 @@ def run():
             os.chdir(root)
             state={'SERVICE_FOLDER':root.name}
             try:
+                exec((ROOT/'app/src/main/assets/colab/music_warmup.py').read_text(),state)
+                deadline=time.monotonic()+5
+                while not (root/'warm.json').exists() and time.monotonic()<deadline:time.sleep(.02)
+                warmed=json.loads((root/'warm.json').read_text())['pid']
                 pids=[]
                 for i in range(2):
                     job=root.parent/(root.name+'_b'+str(i));job.mkdir();(job/'request.json').write_text('{}')
@@ -77,6 +82,7 @@ def run():
                     exec(bootstrap,state)
                     pids.append(json.loads((job/'result.json').read_text())['pid'])
                 self.assertEqual(pids[0],pids[1])
+                self.assertEqual(pids[0],warmed)
                 self.assertFalse((root.parent/(root.name+'_b0')).exists())
             finally:
                 process=state.get('_madar_music_service')

@@ -26,13 +26,14 @@ final class MediaResolver implements AutoCloseable {
     @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return !ExternalMedia.network(request.getUrl());}
     @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){Uri uri=request.getUrl();if(isAd(uri))return new WebResourceResponse("text/plain","utf-8",new java.io.ByteArrayInputStream(new byte[0]));if(ExternalMedia.network(uri)&&MediaHttp.looksPlayable(uri)){Map<String,String> headers=new HashMap<>(request.getRequestHeaders());main.post(()->candidate(uri,headers));}return null;}
     @Override public void onPageFinished(WebView view,String url){inspect();}
-    @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame()){if(streamtape(source.uri)&&!alternateTried&&!"streamtape.com".equals(source.uri.getHost())){alternateTried=true;Uri alternate=embed(source.uri).buildUpon().authority("streamtape.com").build();view.loadUrl(alternate.toString());}else fail("تعذرت قراءة صفحة المصدر؛ أعد اختيار السيرفر");}}
+    @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame()){if(streamtape(source.uri)&&!alternateTried&&!"streamtape.com".equals(source.uri.getHost())){alternateTried=true;Uri alternate=embed(source.uri).buildUpon().authority("streamtape.com").build();view.loadUrl(alternate.toString());}else fail("تعذرت قراءة صفحة المصدر · WebView "+error.getErrorCode()+"؛ أعد اختيار السيرفر");}}
     @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,android.net.http.SslError error){handler.cancel();fail("تعذر التحقق من شهادة المصدر الآمنة");}
    });
    web.setDownloadListener((url,userAgent,contentDisposition,mimetype,length)->candidate(Uri.parse(url),Collections.singletonMap("User-Agent",userAgent)));
    Uri page=streamtape(source.uri)?embed(source.uri):source.uri;web.loadUrl(page.toString(),source.http.headersFor(page));main.postDelayed(()->fail("انتهت مهلة تجهيز المصدر؛ أعد المحاولة أو اختر سيرفرًا آخر"),60000);main.postDelayed(poll,800);main.postDelayed(this::showPage,2000);
   }catch(Exception error){fail("تعذر تجهيز صفحة الوسائط على الجهاز");}
  }
+ static boolean providerPage(Uri uri){return streamtape(uri)&&!uri.getPathSegments().isEmpty()&&java.util.Arrays.asList("e","v").contains(uri.getPathSegments().get(0));}
  static boolean streamtape(Uri uri){return uri.getHost()!=null&&java.util.Arrays.asList("streamtape.to","streamtape.com").contains(uri.getHost().toLowerCase(java.util.Locale.ROOT));}
  private static Uri embed(Uri uri){java.util.List<String> p=uri.getPathSegments();if(p.size()>=2&&(p.get(0).equals("v")||p.get(0).equals("e"))&&p.get(1).matches("[A-Za-z0-9]+"))return uri.buildUpon().path("/e/"+p.get(1)).build();return uri;}
  private static boolean isAd(Uri uri){String host=uri.getHost();if(host==null)return false;for(String domain:new String[]{"doubleclick.net","googlesyndication.com","googleadservices.com","adnxs.com"})if(host.equals(domain)||host.endsWith("."+domain))return true;return false;}

@@ -6,6 +6,7 @@ final class MediaFailure {
  static String describe(Throwable error,boolean audio){
   for(Throwable cause=error;cause!=null;cause=cause.getCause()){
    if(cause instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException){int code=((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)cause).responseCode;return code==401||code==403?"رفض السيرفر طلب الوسائط؛ قد يكون الرابط منتهيًا أو يتطلب ترويسات من التطبيق المصدر ("+code+")":code==404||code==410?"رابط الوسائط غير متاح أو انتهت صلاحيته ("+code+")":"تعذر الاتصال بسيرفر الوسائط (HTTP "+code+")";}
+   if(cause instanceof java.net.UnknownServiceException&&cause.getMessage()!=null&&cause.getMessage().toLowerCase(java.util.Locale.ROOT).contains("cleartext"))return "المصدر حوّل الاتصال إلى HTTP غير مشفّر؛ اختر سيرفر HTTPS";
    if(cause instanceof java.net.SocketTimeoutException)return "انتهت مهلة قراءة الوسائط من السيرفر؛ أعد المحاولة";
    if(cause instanceof java.net.UnknownHostException)return "تعذر الوصول إلى عنوان سيرفر الوسائط";
    if(cause instanceof javax.net.ssl.SSLException)return "تعذر الاتصال المشفّر بسيرفر الوسائط";
