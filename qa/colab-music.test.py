@@ -174,6 +174,47 @@ def run():
                     result=json.loads((job/'progress.json').read_text());self.assertEqual(result['exit_code'],code);self.assertEqual(result['error'],'NATIVE_ABORT' if code<0 else 'PROCESS_EXIT')
                 finally:os.chdir(previous)
 
+    def test_private_launcher_installs_once_and_execs_with_child_only_environment(self):
+        from unittest.mock import patch
+        import importlib.util,sys
+        spec=importlib.util.spec_from_file_location('music_launch',ROOT/'app/src/main/assets/colab/music_launch.py');launcher=importlib.util.module_from_spec(spec);spec.loader.exec_module(launcher)
+        calls=[];executions=[];previous=Path.cwd()
+        class Executed(BaseException):pass
+        def install(command,**kwargs):
+            calls.append(command);target=Path(command[command.index('--target')+1])/'nvidia/cudnn/lib';target.mkdir(parents=True)
+            for name in ['libcudnn.so.9','libcudnn_engines_precompiled.so.9']:(target/name).write_bytes(b'fixture')
+        def execute(binary,args,env):executions.append((binary,args,env));raise Executed()
+        fake=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True),version=SimpleNamespace(cuda='13.0'))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/('madar_'+'f'*32);root.mkdir();(root/'music_worker.py').write_text((ROOT/'app/src/main/assets/colab/music_worker.py').read_text())
+            original=os.environ.get('CUDNN_LIB_CONFIG')
+            try:
+                with patch.dict(sys.modules,{'torch':fake}),patch.object(launcher.subprocess,'run',side_effect=install),patch.object(launcher.os,'execve',side_effect=execute):
+                    for i in range(2):
+                        with self.assertRaises(Executed):launcher.launch(root)
+                self.assertEqual(len(calls),1);self.assertIn('nvidia-cudnn-cu13==9.13.0.50',calls[0]);self.assertIn('--no-deps',calls[0]);self.assertEqual(len(executions),2)
+                for binary,args,env in executions:
+                    self.assertEqual(env['CUDNN_LIB_CONFIG'],'FULL');self.assertTrue(env['MADAR_CUDNN_LIB'].endswith('/nvidia/cudnn/lib/libcudnn.so.9'));self.assertTrue(env['LD_LIBRARY_PATH'].startswith(str(root.parent/'madar_cudnn_9130050')));self.assertEqual(args[-1],'--serve')
+                self.assertEqual(os.environ.get('CUDNN_LIB_CONFIG'),original)
+            finally:os.chdir(previous)
+
+    def test_ready_preflight_runs_full_context_and_requires_gpu_allocation(self):
+        import numpy as np
+        from unittest.mock import patch
+        previous=Path.cwd();shapes=[]
+        fake=SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda:None,mem_get_info=lambda:(16*1024*1024,64*1024*1024)))
+        def process(sample_rate,samples):shapes.append(samples.shape);return SimpleNamespace(sample_rate=sample_rate,stems=[SimpleNamespace(data=samples),None])
+        with tempfile.TemporaryDirectory() as directory:
+            os.chdir(directory)
+            try:
+                w.ENGINE=SimpleNamespace(process=process);w.GPU_FREE_BEFORE=32*1024*1024;w.GPU_VERIFIED=False
+                with patch.dict(__import__('sys').modules,{'torch':fake}):w.verify_gpu_inference()
+                self.assertEqual(shapes,[(2,6*w.RATE)]);self.assertTrue(w.GPU_VERIFIED)
+                w.GPU_VERIFIED=False;w.GPU_FREE_BEFORE=16*1024*1024
+                with patch.dict(__import__('sys').modules,{'torch':fake}),self.assertRaisesRegex(ValueError,'MUSIC_GPU_PROVIDER'):w.verify_gpu_inference()
+                self.assertFalse(w.GPU_VERIFIED)
+            finally:w.ENGINE=None;w.GPU_VERIFIED=False;os.chdir(previous)
+
     def test_bounded_lossless_wire_rejects_corruption_truncation_trailing_and_expansion(self):
         raw=b'abcd'*512
         good=zlib.compress(raw,level=1)

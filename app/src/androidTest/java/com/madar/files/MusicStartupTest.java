@@ -55,4 +55,10 @@ public class MusicStartupTest {
   }finally{cancel.set(true);session.cancel.set(true);session.dispose();server.close();context.getSharedPreferences("colab_owned_runtime",0).edit().clear().commit();}
  }
 
+ @Test public void privateDependenciesAndActualInferenceCheckCannotBeMistakenForReady()throws Exception{
+  AtomicLong clock=new AtomicLong();AtomicReference<JSONObject> state=new AtomicReference<>();List<String> messages=new ArrayList<>();MusicStartup startup=new MusicStartup(()->state.get(),new AtomicBoolean(),(p,m)->messages.add(m),null,clock::get);
+  for(String stage:new String[]{"gpu_dependencies","gpu_inference_check","ready"}){clock.addAndGet(1000);state.set(new JSONObject().put("stage",stage).put("heartbeat",clock.get()));assertEquals(stage.equals("ready"),startup.poll());}
+  assertTrue(messages.get(0).contains("cuDNN"));assertTrue(messages.get(1).contains("الفصل الفعلي"));
+ }
+
 }

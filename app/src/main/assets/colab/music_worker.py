@@ -17,6 +17,15 @@ _STATUS_PATH = None
 _STATUS = {}
 _HEARTBEAT = 0
 
+def load_private_cudnn():
+    global _cudnn
+    if os.environ.get('MADAR_CUDNN_LIB'):
+        import ctypes
+        _cudnn = ctypes.CDLL(os.environ['MADAR_CUDNN_LIB'], mode=ctypes.RTLD_GLOBAL)
+        _cudnn.cudnnGetVersion.restype = ctypes.c_size_t
+        if _cudnn.cudnnGetVersion() != 91300:
+            raise ValueError('MUSIC_CUDNN_VERSION')
+
 ENGINE = None
 GPU_FREE_BEFORE = None
 GPU_VERIFIED = False
@@ -62,6 +71,8 @@ def heartbeat(stop, interval=2):
 
 def report_failure(error):
     code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', str(error)) else type(error).__name__
+    if isinstance(error, RuntimeError) and ('CUDNN Frontend' in str(error) or 'HEURISTIC_QUERY_FAILED' in str(error)):
+        code = 'MUSIC_CUDNN_CONV'
     with _STATUS_LOCK:
         previous = _STATUS.get('stage', 'bootstrap')
         path = _STATUS_PATH or Path('progress.json').resolve()
@@ -86,6 +97,7 @@ def prepare():
     global ENGINE, GPU_FREE_BEFORE, GPU_VERIFIED
     if ENGINE is None:
         status('gpu_check', 27)
+        load_private_cudnn()
         import torch
         if not torch.cuda.is_available() or not torch.version.cuda:
             raise ValueError('MUSIC_GPU_UNAVAILABLE')
@@ -139,7 +151,27 @@ def prepare():
         if not config.validate():
             raise ValueError('MODEL_CONFIG')
         ENGINE = sherpa_onnx.OfflineSourceSeparation(config)
+        verify_gpu_inference()
         status('ready', 38)
+
+
+def verify_gpu_inference():
+    global GPU_VERIFIED
+    status('gpu_inference_check', 38)
+    import numpy as np
+    import torch
+    # Same maximum context length as a real core. Never publish this synthetic audio.
+    samples = np.zeros((2, 6 * RATE), dtype=np.float32)
+    output = ENGINE.process(sample_rate=RATE, samples=samples)
+    if output.sample_rate != RATE or len(output.stems) != 2:
+        raise ValueError('MUSIC_OUTPUT_FORMAT')
+    vocals = output.stems[0].data
+    if vocals.ndim != 2 or vocals.shape[0] != 2 or vocals.shape[1] < samples.shape[1] or not np.isfinite(vocals).all():
+        raise ValueError('MUSIC_OUTPUT_LENGTH')
+    torch.cuda.synchronize()
+    if GPU_FREE_BEFORE - torch.cuda.mem_get_info()[0] < 8 * 1024 * 1024:
+        raise ValueError('MUSIC_GPU_PROVIDER')
+    GPU_VERIFIED = True
 
 
 def read_wire(part, name, expected):

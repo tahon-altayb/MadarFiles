@@ -19,9 +19,9 @@ final class MusicStartup {
   try{state=reader.read();}catch(ColabRuntime.HttpFailure error){if(error.status!=404)throw error;if(now.getAsLong()-began>30000)throw new IOException("Colab · MUSIC_START_TIMEOUT");return false;}
   long at=now.getAsLong();String stage=state.optString("stage");
   if(stage.equals("failed")){String code=workerError(state.optString("error"));String previous=state.optString("last_stage");if(diagnostic!=null&&ColabDiagnostics.stageKnown(previous))diagnostic.record("STAGE_"+previous.toUpperCase(java.util.Locale.ROOT));throw new IOException("Colab · "+code);}
-  if(!java.util.Arrays.asList("bootstrap","gpu_check","install","model_download","model_load","ready").contains(stage))throw new IOException("Colab · RESPONSE_SCHEMA");
+  if(!java.util.Arrays.asList("bootstrap","gpu_dependencies","gpu_inference_check","gpu_check","install","model_download","model_load","ready").contains(stage))throw new IOException("Colab · RESPONSE_SCHEMA");
   watch.update(state,at);seen=true;if(diagnostic!=null)diagnostic.record("STAGE_"+stage.toUpperCase(java.util.Locale.ROOT));
-  String message;switch(stage){case "gpu_check":message="التحقق من توفر CUDA على GPU";break;case "install":message="تثبيت محرك الفصل المسرّع على جلسة GPU";break;case "model_download":message="تنزيل نموذج UVR إلى جلسة GPU";break;case "model_load":message="تحميل نموذج UVR على GPU";break;case "ready":message="GPU ونموذج الفصل جاهزان";break;default:message="بدء محرك الفصل على GPU";}
+  String message;switch(stage){case "gpu_dependencies":message="تجهيز cuDNN المتوافق مع GPU · مرة واحدة للجلسة";break;case "gpu_inference_check":message="اختبار الفصل الفعلي على GPU قبل رفع الصوت";break;case "gpu_check":message="التحقق من توفر CUDA على GPU";break;case "install":message="تثبيت محرك الفصل المسرّع على جلسة GPU";break;case "model_download":message="تنزيل نموذج UVR إلى جلسة GPU";break;case "model_load":message="تحميل نموذج UVR على GPU";break;case "ready":message="GPU ونموذج الفصل جاهزان";break;default:message="بدء محرك الفصل على GPU";}
   progress.update(Math.max(27,Math.min(38,state.optInt("progress",27))),message+" · مضى "+Math.max(0,(at-began)/1000)+" ثانية");ready=stage.equals("ready");if(ready&&diagnostic!=null)diagnostic.record("MUSIC_READY");return ready;
  }
  static String workerError(String code){

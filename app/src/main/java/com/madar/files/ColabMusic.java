@@ -67,7 +67,7 @@ final class ColabMusic {
    status.update(13,"GPU مخصص · انتظار استجابة محرك التنفيذ");diagnostic.record("JUPYTER_CONNECT");
    while(true){ColabProbe.check(cancel);try{runtime.jupyter("GET","api/kernelspecs",null,1024*1024);break;}catch(IOException e){if(!(e instanceof ColabRuntime.NetworkFailure)&&(!(e instanceof ColabRuntime.HttpFailure)||(((ColabRuntime.HttpFailure)e).status<500&&((ColabRuntime.HttpFailure)e).status!=404&&((ColabRuntime.HttpFailure)e).status!=429)))throw e;if(System.nanoTime()>ready)throw new IOException("Colab · JUPYTER_START_TIMEOUT");Thread.sleep(1000);}}
    status.update(14,"تجهيز ملفات محرك الفصل على جلسة GPU");
-   runtime.jupyter("PUT","api/contents/"+root,new JSONObject().put("type","directory"),1024*1024);runtime.put(root+"/music_worker.py",asset(context,"music_worker.py"),"text");
+   runtime.jupyter("PUT","api/contents/"+root,new JSONObject().put("type","directory"),1024*1024);runtime.put(root+"/music_worker.py",asset(context,"music_worker.py"),"text");runtime.put(root+"/music_launch.py",asset(context,"music_launch.py"),"text");
    diagnostic.record("JUPYTER_READY");status.update(15,"بدء نواة Python للفصل");diagnostic.record("KERNEL_CREATE");
    String id=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",root),1024*1024).getString("id");if(!id.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرف نواة Colab غير صالح");kernel=id;
    status.update(16,"الاتصال بنواة Python على GPU");diagnostic.record("KERNEL_CONNECT");channel=runtime.openKernel(kernel,diagnostic::record);

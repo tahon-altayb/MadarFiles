@@ -13,4 +13,6 @@ if root is None:
     raise FileNotFoundError('MADAR_JOB_FILES')
 if '_madar_music_service' not in globals() or _madar_music_service.poll() is not None:
     _madar_music_log = (root / 'worker.log').open('ab')
-    _madar_music_service = subprocess.Popen([sys.executable, str(root / 'music_worker.py'), str(root), '--serve'], stdout=_madar_music_log, stderr=_madar_music_log)
+    launcher = root / 'music_launch.py'
+    command = [sys.executable, str(launcher), str(root)] if launcher.is_file() else [sys.executable, str(root / 'music_worker.py'), str(root), '--serve']
+    _madar_music_service = subprocess.Popen(command, stdout=_madar_music_log, stderr=_madar_music_log)
