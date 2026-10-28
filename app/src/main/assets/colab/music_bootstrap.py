@@ -44,11 +44,24 @@ if 'SERVICE_FOLDER' in globals():
             state = {}
         if state.get('stage') in ('done', 'failed'):
             break
-        if _madar_music_service.poll() is not None or time.monotonic() > deadline:
-            code = 'MUSIC_PROCESS_EXIT' if _madar_music_service.poll() is not None else 'MUSIC_TIMEOUT'
-            if _madar_music_service.poll() is None:
+        exit_code = _madar_music_service.poll()
+        if exit_code is not None or time.monotonic() > deadline:
+            # The child may publish its precise failure between the read above and poll().
+            # Re-read after observing exit; never replace a verified terminal state.
+            try:
+                terminal = json.loads((job / 'progress.json').read_text())
+            except (OSError, ValueError):
+                terminal = {}
+            if terminal.get('stage') in ('done', 'failed'):
+                break
+            code = 'MUSIC_TIMEOUT' if exit_code is None else 'NATIVE_ABORT' if exit_code < 0 else 'PROCESS_EXIT'
+            if exit_code is None:
                 _madar_music_service.kill()
-            (job / 'progress.json').write_text(json.dumps(dict(stage='failed', progress=0, error=code)))
+                _madar_music_service.wait(timeout=5)
+            value = dict(stage='failed', last_stage=terminal.get('stage', 'bootstrap'), progress=0, error=code)
+            if type(exit_code) is int:
+                value['exit_code'] = exit_code
+            (job / 'progress.json').write_text(json.dumps(value))
             raise RuntimeError(code)
         time.sleep(.2)
 else:

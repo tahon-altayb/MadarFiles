@@ -139,6 +139,41 @@ def run():
                 self.assertFalse((root/'worker.log').exists())
             finally:os.chdir(previous)
 
+    def test_exit_race_preserves_precise_worker_failure(self):
+        previous=Path.cwd()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/('madar_'+'d'*32);root.mkdir();(root/'music_worker.py').write_text('')
+            job=root.parent/(root.name+'_b0');job.mkdir();(job/'request.json').write_text('{}');(job/'progress.json').write_text(json.dumps(dict(stage='bootstrap')))
+            class Process:
+                calls=0
+                def poll(self):
+                    self.calls+=1
+                    if self.calls==1:return None
+                    (job/'progress.json').write_text(json.dumps(dict(stage='failed',last_stage='bootstrap',error='UPLOAD_HASH')))
+                    return 1
+            os.chdir(root)
+            try:
+                exec((ROOT/'app/src/main/assets/colab/music_bootstrap.py').read_text(),{'SERVICE_FOLDER':root.name,'JOB_FOLDER':job.name,'_madar_music_service':Process()})
+                self.assertEqual(json.loads((job/'progress.json').read_text())['error'],'UPLOAD_HASH')
+            finally:os.chdir(previous)
+
+    def test_native_signal_is_distinguished_from_python_exit(self):
+        previous=Path.cwd()
+        for code in (-6,-9,-11,1):
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory)/('madar_'+'e'*32);root.mkdir();(root/'music_worker.py').write_text('')
+                job=root.parent/(root.name+'_b0');job.mkdir();(job/'request.json').write_text('{}');(job/'progress.json').write_text(json.dumps(dict(stage='bootstrap')))
+                class Process:
+                    calls=0
+                    def poll(self):
+                        self.calls+=1
+                        return None if self.calls==1 else code
+                os.chdir(root)
+                try:
+                    with self.assertRaises(RuntimeError):exec((ROOT/'app/src/main/assets/colab/music_bootstrap.py').read_text(),{'SERVICE_FOLDER':root.name,'JOB_FOLDER':job.name,'_madar_music_service':Process()})
+                    result=json.loads((job/'progress.json').read_text());self.assertEqual(result['exit_code'],code);self.assertEqual(result['error'],'NATIVE_ABORT' if code<0 else 'PROCESS_EXIT')
+                finally:os.chdir(previous)
+
     def test_bounded_lossless_wire_rejects_corruption_truncation_trailing_and_expansion(self):
         raw=b'abcd'*512
         good=zlib.compress(raw,level=1)
