@@ -52,7 +52,7 @@ final class ColabRuntime implements AutoCloseable {
  }
  void create(MusicSeparator.Progress progress)throws Exception {create(progress,false);}
  void create(MusicSeparator.Progress progress,boolean music)throws Exception {
-  ColabProbe.check(cancel);MusicGpuSession.beforeRuntime(this);if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
+  ColabProbe.check(cancel);MusicGpuSession.beforeRuntime(this);if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
   android.content.SharedPreferences settings=context.getSharedPreferences("colab_connection",0);
   List<JSONObject> specs=music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
   for(int i=0;i<Math.min(2,specs.size());i++){
@@ -70,6 +70,22 @@ final class ColabRuntime implements AutoCloseable {
    JSONObject error=operation.optJSONObject("error");if(error!=null){int code=error.optInt("code");journal().edit().clear().commit();runtime="";if((code==8||code==9||code==14)&&i+1<Math.min(2,specs.size())){progress.update(12,"المورد غير متاح؛ تجربة GPU بديل مرة واحدة");continue;}throw new IOException("لم يمنح Colab موردًا للمعالجة ("+code+"). راجع توفر الموارد ورصيد وحدات الحساب.");}
    ColabProbe.check(cancel);refresh();if(music)settings.edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return;
   }
+ }
+ /** Only resume an assignment that is still pending: no previous kernel could have started. */
+ private boolean resumePendingMusic(MusicSeparator.Progress progress)throws Exception{
+  String name=journal().getString("name",""),operation=journal().getString("operation","");
+  if(!ownName(name)||!grant.project.equals(journal().getString("project",""))||!operation.matches("operations/[A-Za-z0-9_./-]+"))return false;
+  JSONObject spec;try{spec=new JSONObject(journal().getString("spec",""));}catch(JSONException invalid){return false;}
+  if(!spec.optString("variant").equals("VARIANT_GPU")||!spec.optString("shape").equals("SHAPE_STANDARD")||!Arrays.asList("T4","L4","A100").contains(spec.optString("accelerator")))return false;
+  JSONObject state=cloud("GET","v1/"+operation,null,cancel);if(state.optBoolean("done"))return false;
+  runtime=name;long began=System.nanoTime(),deadline=began+TimeUnit.MINUTES.toNanos(5);
+  do{
+   ColabProbe.check(cancel);if(System.nanoTime()>deadline)throw new IOException("طلب GPU السابق لم يكتمل بعد · RUNTIME_PENDING_TIMEOUT");
+   progress.update(12,"استئناف طلب GPU السابق · "+spec.getString("accelerator")+" · مضى "+TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()-began)+" ثانية؛ لم يُطلب مورد آخر");
+   long pause=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(System.nanoTime()<pause){ColabProbe.check(cancel);Thread.sleep(50);}state=cloud("GET","v1/"+operation,null,cancel);
+  }while(!state.optBoolean("done"));
+  if(state.has("error")){journal().edit().clear().commit();runtime="";return false;}
+  ColabProbe.check(cancel);refresh();context.getSharedPreferences("colab_connection",0).edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return true;
  }
  void refresh()throws Exception{
   JSONObject value=cloud("GET","v1beta/"+runtime,null,cancel);if(!runtime.equals(value.optString("name")))throw new IOException("Colab · RUNTIME_ID_MISMATCH");JSONObject info=value.getJSONObject("connectionInfo");base=runtimeUrl(info.getString("url"));proxyToken=info.getString("token");if(proxyToken.isEmpty()||proxyToken.length()>16384||proxyToken.matches("(?s).*\\s.*"))throw new IOException("Colab · RUNTIME_TOKEN_INVALID");long remaining;try{remaining=java.time.Instant.parse(info.getString("expireTime")).toEpochMilli()-System.currentTimeMillis();}catch(Exception e){throw new IOException("Colab · RUNTIME_EXPIRY_INVALID");}if(remaining<=0)throw new IOException("Colab · RUNTIME_TOKEN_EXPIRED");refreshAt=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(Math.max(1000,Math.min(240000,remaining-30000)));
