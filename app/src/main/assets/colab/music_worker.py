@@ -28,10 +28,12 @@ def write_json(path, value):
     tmp.replace(p)
 
 
-def status(stage, progress, parts=None, frames=None):
+def status(stage, progress, parts=None, frames=None, packs=None):
     value = dict(stage=stage, progress=progress)
     if parts is not None:
         value.update(chunks=parts, frames=frames, sample_rate=RATE, channels=2, model_sha256=MODEL_SHA)
+    if packs is not None:
+        value['packs'] = packs
     write_json('progress.json', value)
 
 
@@ -49,9 +51,7 @@ def validate_request(req):
     return frames, chunks
 
 
-def run():
-    req = json.loads(Path('request.json').read_text('utf-8'))
-    frames, chunks = validate_request(req)
+def prepare():
     global ENGINE, GPU_FREE_BEFORE, GPU_VERIFIED
     if ENGINE is None:
         status('gpu_check', 27)
@@ -101,6 +101,13 @@ def run():
         if not config.validate():
             raise ValueError('MODEL_CONFIG')
         ENGINE = sherpa_onnx.OfflineSourceSeparation(config)
+
+
+def run():
+    global GPU_VERIFIED
+    req = json.loads(Path('request.json').read_text('utf-8'))
+    frames, chunks = validate_request(req)
+    prepare()
     import numpy as np
     inputs = req.get('inputs', chunks)
     stride = 4 * CORE if 'inputs' in req else CORE
@@ -122,7 +129,7 @@ def run():
             out.write(data)
             p.unlink()
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
-    parts = []
+    parts, packs, packed = [], [], bytearray()
     for i, start in enumerate(range(0, frames, CORE)):
         left, right = max(0, start - RATE), min(frames, start + CORE + RATE)
         samples = np.ascontiguousarray(source[left:right].T.astype(np.float32) / 32768)
@@ -148,10 +155,16 @@ def run():
         pcm = np.floor(np.clip(values, -1, 1) * 32767 + .5).astype('<i2').tobytes()
         Path(f'output_{i}.pcm').write_bytes(pcm)
         parts.append(dict(bytes=len(pcm), sha256=hashlib.sha256(pcm).hexdigest()))
-        status('separate', 40 + int(54 * min(frames, start + CORE) / frames), parts, frames)
+        packed.extend(pcm)
+        if (i + 1) % 4 == 0 or start + CORE >= frames:
+            data = bytes(packed)
+            Path(f'pack_{len(packs)}.pcm').write_bytes(data)
+            packs.append(dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
+            packed.clear()
+        status('separate', 40 + int(54 * min(frames, start + CORE) / frames), parts, frames, packs)
     write_json('result.json', dict(frames=frames, sample_rate=RATE, channels=2,
                                   model_sha256=MODEL_SHA, provider='cuda', chunks=parts))
-    status('done', 97, parts, frames)
+    status('done', 97, parts, frames, packs)
 
 
 def run_job(folder):
@@ -172,6 +185,8 @@ def serve(root):
     global CACHE
     root = Path(root).resolve()
     CACHE = root
+    os.chdir(root)
+    prepare()
     previous = None
     while True:
         command = root / 'command.json'

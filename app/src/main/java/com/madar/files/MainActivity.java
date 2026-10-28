@@ -231,13 +231,12 @@ public class MainActivity extends Activity {
         if(kind.equals("video")||kind.equals("audio")){
             if((o.optString("tool").equals("audio")||o.optString("tool").equals("music"))&&!info.optBoolean("hasAudio"))throw new IOException("الفيديو لا يحتوي على صوت");
             boolean cloudMusic=o.optString("tool").equals("music")&&o.optString("musicMode").equals("colab");
-            if(o.optString("tool").equals("music")&&!cloudMusic&&!o.optBoolean("sample",false)&&(info.optLong("duration",0)<=0||info.optLong("duration",0)>60000))throw new IOException("الفصل المحلي متاح حتى دقيقة؛ اختر الفصل السحابي للمقاطع الأطول.");
             if(cloudMusic||(o.optString("tool").equals("subtitles")||o.optString("tool").equals("translateReviewed"))&&o.optString("translationMode").equals("colab")){
                 boolean textOnly=o.optString("tool").equals("translateReviewed");
                 if(textOnly){if(!o.optBoolean("onlineTextConsent"))throw new IOException("وافق على إرسال النص إلى Colab أولًا");ColabSpeech.validateText(o.getJSONArray("cues"),o.getString("language"),o.getString("target"));}
                 if(!textOnly&&!o.optBoolean("onlineAudioConsent"))throw new IOException("وافق على رفع الصوت إلى Colab أولًا");
-                if(!textOnly&&!o.optBoolean("speechSample")&&!o.optBoolean("sample")&&info.optLong("duration")>600000)throw new IOException("معالجة Colab متاحة حتى 10 دقائق؛ ابدأ بعينة قصيرة");
-                if(!ColabCredentials.ready()){pendingColab=new JSONObject(o.toString());pendingColabSource=input.getAbsolutePath();working=true;startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("textOnly",textOnly).putExtra("musicOnly",cloudMusic),7202);return;}
+                if(!cloudMusic&&!textOnly&&!o.optBoolean("speechSample")&&!o.optBoolean("sample")&&info.optLong("duration")>600000)throw new IOException("معالجة Colab متاحة حتى 10 دقائق؛ ابدأ بعينة قصيرة");
+                if(!ColabCredentials.ready()&&!(cloudMusic&&MusicGpuSession.available(this))){pendingColab=new JSONObject(o.toString());pendingColabSource=input.getAbsolutePath();working=true;startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("textOnly",textOnly).putExtra("musicOnly",cloudMusic),7202);return;}
             }
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
             Intent service=new Intent(this,VideoExportService.class).putExtra("input",input.getAbsolutePath()).putExtra("options",o.toString()).putExtra("duration",info.getLong("duration")).putExtra("height",info.optInt("height",0));startForegroundService(service);

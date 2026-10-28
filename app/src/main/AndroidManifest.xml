@@ -97,6 +97,7 @@
             </intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="http"/><data android:scheme="https"/><data android:mimeType="application/octet-stream"/></intent-filter>
         </activity>
+        <service android:name=".MusicGpuService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".WatchMusicService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <activity android:name=".DriveAccessActivity" android:exported="false" />
         <service android:name=".FileProcessingService" android:exported="false" android:foregroundServiceType="dataSync" />

@@ -56,7 +56,7 @@ public class PlayerActivity extends Activity {
   long duration=player.getDuration();if(duration<=0||duration==C.TIME_UNSET){toast("انتظر تحميل المقطع أولًا");return;}
   position=pendingWatchPosition=Math.max(0,Math.min(player.getCurrentPosition(),duration-100));resume=player.getPlayWhenReady();cleanRequested=true;player.setVolume(0);player.pause();showCleanStatus("تجهيز الصوت المنظّف من "+stamp(position),true);musicButton.setText("الصوت المنظّف");
   boolean cloud=getSharedPreferences("player",0).getBoolean("watch_cloud",false);
-  if(cloud&&!ColabCredentials.ready()){startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("musicOnly",true),7204);return;}beginWatch();
+  if(cloud&&!ColabCredentials.ready()&&!MusicGpuSession.available(this)){startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("musicOnly",true),7204);return;}beginWatch();
  }
  private void beginWatch(){try{
   if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},84);

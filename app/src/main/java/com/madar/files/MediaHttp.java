@@ -14,7 +14,8 @@ import okhttp3.*;
 final class MediaHttp {
  // This browser UA is also used by ASD Player 4.3.26. It is a request format,
  // never an application/package identity or a substitute for authorization.
- static final String USER_AGENT="Mozilla/5.0 (Linux; Android 4.4.2; Nexus 4 Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.114 Mobile Safari/537.36";
+ static volatile String USER_AGENT="Mozilla/5.0 (Linux; Android 4.4.2; Nexus 4 Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.114 Mobile Safari/537.36";
+ static void browserAgent(Context c){try{USER_AGENT=android.webkit.WebSettings.getDefaultUserAgent(c);}catch(Exception ignored){}}
  static final class Jar implements CookieJar {
   private final List<Cookie> cookies=new ArrayList<>();
   @Override public synchronized void saveFromResponse(HttpUrl url,List<Cookie> incoming){for(Cookie value:incoming){cookies.removeIf(c->c.name().equals(value.name())&&c.domain().equals(value.domain())&&c.path().equals(value.path()));if(value.expiresAt()>System.currentTimeMillis())cookies.add(value);}while(cookies.size()>200)cookies.remove(0);}
@@ -25,7 +26,7 @@ final class MediaHttp {
   Session(Uri uri,Map<String,String> input){this.uri=uri;origin=HttpUrl.parse(uri.toString());Map<String,String> copy=new TreeMap<>(String.CASE_INSENSITIVE_ORDER);copy.putAll(input);copy.putIfAbsent("User-Agent",USER_AGENT);
    String cookie=copy.remove("Cookie");if(cookie!=null&&origin!=null)for(String part:cookie.split(";")){Cookie value=Cookie.parse(origin,part.trim()+"; Path=/"+(origin.isHttps()?"; Secure":""));if(value!=null)jar.saveFromResponse(origin,Collections.singletonList(value));}
    headers=Collections.unmodifiableMap(copy);
-   client=new OkHttpClient.Builder().cookieJar(jar).connectTimeout(15,TimeUnit.SECONDS).readTimeout(30,TimeUnit.SECONDS).followRedirects(true).followSslRedirects(true).addNetworkInterceptor(chain->{Request request=chain.request();if(origin!=null&&!sameOrigin(origin,request.url()))request=request.newBuilder().removeHeader("Authorization").removeHeader("Proxy-Authorization").build();return chain.proceed(request);}).build();
+   client=new OkHttpClient.Builder().protocols(java.util.Collections.singletonList(Protocol.HTTP_1_1)).cookieJar(jar).connectTimeout(15,TimeUnit.SECONDS).readTimeout(30,TimeUnit.SECONDS).followRedirects(true).followSslRedirects(true).addNetworkInterceptor(chain->{Request request=chain.request();if(origin!=null&&!sameOrigin(origin,request.url()))request=request.newBuilder().removeHeader("Authorization").removeHeader("Proxy-Authorization").build();return chain.proceed(request);}).build();
   }
   DataSource.Factory factory(Context c){return new DefaultDataSource.Factory(c,new OkHttpDataSource.Factory(client).setUserAgent(headers.get("User-Agent")).setDefaultRequestProperties(headers));}
   Map<String,String> headersFor(Uri target){Map<String,String> result=new TreeMap<>(String.CASE_INSENSITIVE_ORDER);result.putAll(headers);HttpUrl url=HttpUrl.parse(target.toString());if(url!=null){if(origin!=null&&!sameOrigin(origin,url)){result.remove("Authorization");result.remove("Proxy-Authorization");}StringBuilder value=new StringBuilder();for(Cookie cookie:jar.loadForRequest(url)){if(value.length()>0)value.append("; ");value.append(cookie.name()).append('=').append(cookie.value());}if(value.length()>0)result.put("Cookie",value.toString());}return Collections.unmodifiableMap(result);}

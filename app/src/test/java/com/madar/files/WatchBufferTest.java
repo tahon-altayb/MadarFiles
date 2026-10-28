@@ -2,6 +2,8 @@ package com.madar.files;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class WatchBufferTest {
+ @Test public void oneSampleContextTailsNeverPoisonThroughputOrInventYearsOfWaiting(){WatchBuffer b=new WatchBuffer(1500,true);b.commit(4,0);b.commit(8,1000);b.commit(12,2000);b.completeCycle(24,12);double before=b.speed(2000);b.commit(12+1.0/44100,4000);b.commit(16,5000);b.commit(20,6000);assertTrue(b.speed(6000)>.5);assertTrue(b.waitSeconds(0,20,1,6000)<3600);assertTrue(before>1);}
+
  @Test public void shortFirstWindowStartsSoonerWithoutLosingReserveAtLaterBoundaries(){
   for(double rate:new double[]{.5,1,2,4,8}){
    WatchBuffer budget=new WatchBuffer(600,true);double ready=0,played=0;boolean playing=false;int stops=0;long next=0;WatchWindows window=null;double chunkAt=0,cycleAt=0,decoded=0;long base=0;boolean first=true;double began=-1;

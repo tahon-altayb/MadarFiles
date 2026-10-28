@@ -40,6 +40,10 @@ class MusicTest(unittest.TestCase):
                 actual = b''.join(Path(f'output_{i}.pcm').read_bytes() for i in range(len(chunks)))
                 expected = np.floor(np.frombuffer(source,dtype='<i2').astype(np.float32)/32768*32767+.5).astype('<i2').tobytes()
                 self.assertEqual(actual,expected)
+                state=json.loads(Path('progress.json').read_text())
+                packed=b''.join(Path(f'pack_{i}.pcm').read_bytes() for i in range(len(state['packs'])))
+                self.assertEqual(packed,actual)
+                self.assertTrue(all(hashlib.sha256(Path(f'pack_{i}.pcm').read_bytes()).hexdigest()==v['sha256'] for i,v in enumerate(state['packs'])))
                 self.assertTrue(all(n[0]==2 and n[1]<=6*w.RATE for n in calls))
                 self.assertEqual(json.loads(Path('progress.json').read_text())['stage'],'done')
             finally:
@@ -52,6 +56,8 @@ class MusicTest(unittest.TestCase):
         # Exercise the production serve loop and bootstrap, substituting only inference.
         worker = (ROOT/'app/src/main/assets/colab/music_worker.py').read_text()
         injection = '''
+def prepare():
+    pass
 def run():
     write_json('result.json', dict(pid=os.getpid()))
     status('done', 97)

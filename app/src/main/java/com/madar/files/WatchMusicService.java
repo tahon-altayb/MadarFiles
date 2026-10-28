@@ -24,7 +24,7 @@ public class WatchMusicService extends Service {
  static synchronized Job start(Context c,Uri uri,File file,String identity,String title,java.util.Map<String,String> headers,String mime,long positionMs,long durationMs,boolean cloud,MediaHttp.Session http)throws Exception{
   if(busy())throw new IOException("انتظر انتهاء المعالجة الحالية أو أوقفها أولًا");
   if(durationMs<=0||positionMs<0||positionMs>=durationMs)throw new IOException("انتظر تحميل مدة المقطع أو اختر موضعًا قبل نهايته");
-  if(cloud&&!ColabCredentials.ready())throw new IOException("اتصل بحساب Colab أولًا");
+  if(cloud&&!ColabCredentials.ready()&&!MusicGpuSession.available(c))throw new IOException("اتصل بحساب Colab أولًا");
   Job old=current;if(old!=null&&!old.clean.watching)dispose(old);if(old==null){File[] orphaned=c.getCacheDir().listFiles(f->f.getName().startsWith("madar_watch_input_")||f.getName().startsWith("madar_watch_clean_"));if(orphaned!=null)for(File orphan:orphaned)orphan.delete();}
   boolean owned=file==null;File source=owned?File.createTempFile("madar_watch_input_",".media",c.getCacheDir()):file;
   Job job=new Job(uri,source,owned,identity,title,headers,mime,positionMs*1000,durationMs*1000,cloud);if(http!=null)job.http=http;job.clean.buffer=new WatchBuffer((durationMs-positionMs)/1000.0,true);job.clean.waitForComplete=c.getSharedPreferences("player",0).getBoolean("watch_complete",false);current=job;starting=true;
@@ -54,7 +54,7 @@ public class WatchMusicService extends Service {
    if(job.ownsSource&&!ExternalMedia.network(job.uri)){update("تجهيز نسخة خاصة من المقطع · الأصل محفوظ");try(InputStream in=getContentResolver().openInputStream(job.uri);OutputStream out=new FileOutputStream(job.source)){if(in==null)throw new IOException("تعذر قراءة المقطع");byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1){MusicSeparator.check(job.cancel);if(job.source.getUsableSpace()<16L*1024*1024)throw new IOException("المساحة لا تكفي لتجهيز المقطع");out.write(b,0,n);}}job.sourceReady=true;}
    MusicSeparator.check(job.cancel);if(!ExternalMedia.network(job.uri))try(MediaMetadataRetriever metadata=new MediaMetadataRetriever()){metadata.setDataSource(job.source.getPath());if(!"yes".equals(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)))throw new IOException("المقطع لا يحتوي على صوت");}
    File aggregate=File.createTempFile("madar_watch_clean_",".pcm",getCacheDir());LiveSeparation.attach(job.clean,aggregate,job.startUs);
-   if(job.cloud){cloudSession=new ColabMusic.Session(this,grant,job.cancel,(p,m)->update(m));cloudSession.startWarmup();}
+   if(job.cloud){cloudSession=MusicGpuSession.acquire(this,grant,job.cancel,(p,m)->update(m));cloudSession.startWarmup();}
    try(OutputStream out=new FileOutputStream(aggregate)){
     for(long next=job.startUs;next<job.durationUs;){
      MusicSeparator.check(job.cancel);long cycleBegan=SystemClock.elapsedRealtime();WatchWindows window=WatchWindows.forWatch(next,job.durationUs,job.cloud,next==job.startUs,Math.max(0,job.clean.frames-job.clean.playedFrames)/44100.0);AudioPipeline.Decoded decoded=null;File processed=null;
@@ -73,7 +73,7 @@ public class WatchMusicService extends Service {
     }
    }
   }catch(java.util.concurrent.CancellationException cancelled){error="أوقفت إزالة الموسيقى";}catch(Exception|OutOfMemoryError|UnsatisfiedLinkError failure){error="تعذر تنظيف الصوت: "+(failure.getMessage()==null?"جرّب مقطعًا آخر":failure.getMessage());}
-  finally{if(cloudSession!=null){cloudSession.close();job.warning=cloudSession.warning;}LiveSeparation.end(job.clean,error);job.stage=error==null?"اكتمل تنظيف الصوت"+(job.warning.isEmpty()?"":" · "+job.warning):error;main.post(()->{main.removeCallbacksAndMessages(null);if(lock!=null&&lock.isHeld())lock.release();active=false;starting=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}
+  finally{if(cloudSession!=null){if(error!=null)cloudSession.healthy=false;cloudSession.close();job.warning=cloudSession.warning;}LiveSeparation.end(job.clean,error);job.stage=error==null?"اكتمل تنظيف الصوت"+(job.warning.isEmpty()?"":" · "+job.warning):error;main.post(()->{main.removeCallbacksAndMessages(null);if(lock!=null&&lock.isHeld())lock.release();active=false;starting=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();});}
  }
  /** Copy only complete new core frames; context is never duplicated at window boundaries. */
  static void appendPrefix(LiveSeparation.Session part,LiveSeparation.Session target,OutputStream out,long base,long skip,long count)throws IOException{

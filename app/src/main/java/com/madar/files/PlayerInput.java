@@ -14,6 +14,7 @@ final class PlayerInput {
  private PlayerInput(Uri uri,File file,String identity,String title,String key,java.util.Map<String,String> headers,String mime,MediaHttp.Session http){this.uri=uri;this.file=file;this.identity=identity;this.title=title;this.key=key;this.headers=headers;this.mime=mime;this.http=http;}
  PlayerInput resolved(MediaHttp.Probe media){return new PlayerInput(media.uri,null,identity,title,key,media.headers,media.mime);}
  static PlayerInput read(Context c,Intent intent)throws Exception{
+  MediaHttp.browserAgent(c);
   WatchMusicService.Job job=WatchMusicService.current;
   if(job!=null&&job.id.equals(intent.getStringExtra("watchJob")))return new PlayerInput(job.sourceReady?Uri.fromFile(job.source):job.uri,job.sourceReady?job.source:null,job.identity,job.title,job.ownsSource?key(job.identity):"position_"+job.source.getName(),job.headers,job.mime,job.http);
   Uri uri=ExternalMedia.uri(intent);File file=null;String title=intent.getStringExtra("title"),identity,bookmark;

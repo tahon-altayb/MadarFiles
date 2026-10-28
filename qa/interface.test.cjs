@@ -56,9 +56,9 @@ run('seekEdit(1.5)');assert.equal(run('state.selectedClip'),1);assert.equal(get(
 run('state.selectedClip=0; drawSegments()');get('liveVideo').currentTime=2.9;get('liveVideo').onplay();get('liveVideo').currentTime=3;get('liveVideo').ontimeupdate();assert.equal(run('state.selectedClip'),1);assert.equal(get('liveVideo').currentTime,0);
 console.log('PASS: reordered/duplicate clip split, edited-time seeking and sequence boundary playback');
 
-run("state.tool='music';state.source.duration=60001");const before=requests.length;run('runExport()');assert.equal(requests.length,before);assert.match(get('toast').textContent,/دقيقة/);
+run("state.tool='music';state.source.duration=60001");const before=requests.length;run('runExport()');assert.equal(requests.length,before+1);assert.equal(requests.at(-1).action,'export');
 run('state.source.duration=60000');run('runExport()');assert.equal(requests.at(-1).action,'export');
-console.log('PASS: local separation permits 60 seconds and blocks longer files');
+console.log('PASS: music export accepts complete files beyond one minute');
 
 run("openTool('editor'); state.segments=[[0,3]]; drawSegments()");
 get('liveVideo').currentTime=1;get('trimClipStart').onclick();assert.equal(run('state.segments[0][0]'),1);

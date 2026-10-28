@@ -49,7 +49,7 @@ public class VideoExportService extends Service {
             if(tool.equals("convert")&&o.optString("format").matches("mkv|mov|webm")){startContainer(input,o);return START_NOT_STICKY;}
             if(tool.equals("subtitles")||tool.equals("translateReviewed")){startSpeech(input,o);return START_NOT_STICKY;}
             if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
-            if(tool.equals("music")){startMusic(input,o);return START_NOT_STICKY;}
+            if(tool.equals("music")){startMusic(input,o,duration);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));if(previewDraft)media.setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0).setEndPositionMs(Math.min(duration,10000)).build());
             if(tool.equals("trim")){
                 double start=o.getDouble("start"),end=o.getDouble("end");if(previewDraft)end=Math.min(end,start+10);if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||end<=start||end*1000>duration+100)throw new IllegalArgumentException("حدود القص غير صالحة");
@@ -127,7 +127,7 @@ public class VideoExportService extends Service {
         MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
         musicWorker=new Thread(()->{File result=null;try{result=AudioEditor.render(this,input,options,musicCancel,callback);MusicSeparator.check(musicCancel);JSONObject data=FilesUtil.info(result).put("type","result");handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});}catch(java.util.concurrent.CancellationException e){if(result!=null)result.delete();handler.post(()->{musicWorker=null;finish("cancelled",null);});}catch(Exception|OutOfMemoryError e){handler.post(()->{musicWorker=null;if(musicCancel.get())finish("cancelled",null);else finish("error","تعذر تعديل الصوت: "+e.getMessage());});}},"madar-audio-edit");musicWorker.start();
     }
-    private void startMusic(File input,JSONObject options)throws Exception{
+    private void startMusic(File input,JSONObject options,long duration)throws Exception{
         cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:MusicSeparation");cpuLock.acquire(5L*60*60*1000);
         musicCancel.set(false);boolean sample=previewDraft||options.optBoolean("sample",false),audioOnly=options.optString("kind").equals("audio")||options.optString("musicOutput","video").equals("audio");long limitUs=sample?10000000L:0;
         output=FilesUtil.output(this,audioOnly?"m4a":"mp4");partial=new File(output.getAbsolutePath()+".partial");
@@ -136,12 +136,12 @@ public class VideoExportService extends Service {
         final LiveSeparation.Session live=options.optBoolean("watchWhileSeparating")?LiveSeparation.begin(input,options.optString("kind").equals("video")):null;
         if(live!=null)publish(new JSONObject().put("type","musicLiveReady").put("session",live.id));
         musicWorker=new Thread(()->{
-            AudioPipeline.Decoded decoded=null;File clean=null;boolean liveSuccess=false;
-            try{decoded=AudioPipeline.decode(this,input,limitUs,musicCancel,callback);String warning="";if(options.optString("musicMode").equals("colab")){if(!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");ColabMusic.Result cloud=ColabMusic.run(this,decoded,ColabCredentials.take(),musicCancel,callback,live);clean=cloud.pcm;warning=cloud.warning;}else clean=MusicSeparator.separate(this,decoded,musicCancel,callback,live);MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,decoded.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
+            File clean=null;boolean liveSuccess=false;
+            try{boolean cloud=options.optString("musicMode").equals("colab");if(cloud&&!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");MusicExport.Result separated=MusicExport.run(this,input,sample?Math.min(duration*1000,10000000L):duration*1000,cloud,musicCancel,callback,live);clean=separated.pcm;String warning=separated.warning;MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,separated.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
                 if(!partial.renameTo(output))throw new java.io.IOException("تعذر حفظ النتيجة");liveSuccess=true;JSONObject result=FilesUtil.info(output).put("type","result").put("warning",warning);handler.post(()->{if(!terminal){publish(result);musicWorker=null;finish("done",null);}});
             }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
             catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر فصل الموسيقى. "+(e.getMessage()==null?"جرّب عينة أقصر وتأكد من المساحة المتاحة.":e.getMessage()));});}
-            finally{if(live!=null)LiveSeparation.end(live,liveSuccess?null:"لم تكتمل المعالجة أو أوقفتها");if(decoded!=null)decoded.pcm.delete();if(clean!=null&&!LiveSeparation.retain(clean))clean.delete();}
+            finally{if(live!=null)LiveSeparation.end(live,liveSuccess?null:"لم تكتمل المعالجة أو أوقفتها");if(clean!=null&&!LiveSeparation.retain(clean))clean.delete();}
         },"madar-offline-separation");musicWorker.start();
     }
     private final Runnable progress=new Runnable(){@Override public void run(){if(!active||terminal||transformer==null)return;try{if(System.currentTimeMillis()-began>5L*60*60*1000){finish("error","توقف التصدير بعد تجاوز خمس ساعات");return;}ProgressHolder p=new ProgressHolder();int state=transformer.getProgress(p);int value=state==Transformer.PROGRESS_STATE_AVAILABLE?p.progress:-1;publish(new JSONObject().put("type","progress").put("progress",value));notifications.notify(7,notification(value));handler.postDelayed(this,750);}catch(Exception e){finish("error","تعذر متابعة التصدير");}}};

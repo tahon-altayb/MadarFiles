@@ -9,13 +9,15 @@ final class WatchBuffer {
  synchronized void commit(double ready,long now){
   if(firstAt<0){firstAt=lastAt=now;lastReady=ready;return;}
   double produced=ready-lastReady,seconds=(now-lastAt)/1000.0;
-  if(produced<=0||seconds<=0)return;
+  // Commit a measured audio quantum, not a sample-sized context tail.
+  // Tiny tails used to turn a 2 s REST round trip into a near-zero speed.
+  if(produced<3.999||seconds<=0)return;
   media+=produced;wall+=seconds;double ratio=seconds/produced;
   slowRatio=samples++==0?ratio:Math.max(ratio,slowRatio*.85+ratio*.15);
   gap=Math.max(gap,seconds);lastAt=now;lastReady=ready;
  }
  synchronized double speed(long now){
-  if(samples<2||media<8||wall<=0||(waitForCycle&&cycleRatio==0))return 0;
+  if(samples<(waitForCycle&&cycleRatio>0?1:2)||media<(waitForCycle&&cycleRatio>0?4:8)||wall<=0||(waitForCycle&&cycleRatio==0))return 0;
   // Include time spent decoding/uploading the next window, and use the slower
   // of the whole observed pipeline and recent batches, with a 20% margin.
   double stalled=Math.max(0,(now-lastAt)/1000.0);

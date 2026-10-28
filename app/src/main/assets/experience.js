@@ -122,9 +122,9 @@ function colabConnectionButton(){const button=document.createElement('button');b
 const colabHome=$('colabConnect');if(colabHome)colabHome.onclick=()=>native('colabConnect');
 const colabOpenTool=openTool;
 openTool=function(tool){colabOpenTool(tool);if(['music','subtitles'].includes(tool))$('form').append(colabConnectionButton());if(tool==='music'){
- const mode=document.createElement('select');mode.id='musicMode';mode.setAttribute('aria-label','مكان فصل الموسيقى');mode.innerHTML='<option value="local">على الجهاز · حتى دقيقة</option><option value="colab">سحابيًا · Colab · حتى 10 دقائق</option>';
- const label=document.createElement('label');const consent=document.createElement('input');consent.id='onlineAudioConsent';consent.type='checkbox';label.append(consent,document.createTextNode(' أوافق على رفع صوت هذا المقطع إلى جلستي في Colab؛ قد يستهلك وحدات الحساب. يحاول مدار إيقاف جلسته بعد المعالجة أو الإلغاء.'));
- const note=document.createElement('p');note.className='hint';note.textContent='الفصل السحابي يستخدم نفس نموذج UVR-MDX-NET-Voc_FT على معالج Colab. يُرفع الصوت فقط، ثم يُركّب الناتج على الفيديو في جهازك. يحتاج اتصالًا طوال المعالجة؛ لا يستخدم حصة Gemini.';
+ const mode=document.createElement('select');mode.id='musicMode';mode.setAttribute('aria-label','مكان فصل الموسيقى');mode.innerHTML='<option value="colab">GPU · Colab · المقطع كاملًا</option><option value="local">على الجهاز · المقطع كاملًا</option>';
+ const label=document.createElement('label');const consent=document.createElement('input');consent.id='onlineAudioConsent';consent.type='checkbox';label.append(consent,document.createTextNode(' أوافق على رفع صوت هذا المقطع إلى جلستي في Colab؛ قد يستهلك وحدات الحساب. تظل جلسة GPU جاهزة لإعادة الاستخدام 10 دقائق، ويمكن إيقافها من الإشعار.'));
+ const note=document.createElement('p');note.className='hint';note.textContent='الفصل السحابي يستخدم نفس نموذج UVR-MDX-NET-Voc_FT على GPU في Colab، على دفعات دون حد دقيقة أو عشر دقائق. يُرفع الصوت فقط، ثم يُركّب الناتج على الفيديو في جهازك. يحتاج اتصالًا طوال المعالجة؛ لا يستخدم حصة Gemini.';
  const update=()=>{label.hidden=note.hidden=mode.value!=='colab';consent.checked=false;$('toolKicker').textContent=mode.value==='colab'?'الفصل في جلستك السحابية':'على جهازك · دون رفع الصوت';};mode.onchange=update;$('form').prepend(mode);$('form').append(note,label);update();
 }};
 
