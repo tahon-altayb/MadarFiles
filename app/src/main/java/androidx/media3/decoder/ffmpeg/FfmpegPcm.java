@@ -14,7 +14,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class FfmpegPcm {
  public static final class Result {public final int rate;public final long offsetUs;Result(int r,long o){rate=r;offsetUs=o;}}
  public static Result decode(File source,File output,long startUs,long endUs,boolean exact,AtomicBoolean cancel)throws Exception{
-  return decodeInput(ex->ex.setDataSource(source.getPath()),output,startUs,endUs,exact,cancel);
+  try{return decodeInput(ex->ex.setDataSource(source.getPath()),output,startUs,endUs,exact,cancel);}catch(CancellationException stop){throw stop;}catch(Exception platform){
+   if(!FfmpegLibrary.isAvailable())throw platform;
+   try{long offset=decodeFile(source.getPath(),output.getPath(),exact?startUs:0,exact?endUs:Long.MAX_VALUE,cancel);return new Result(44100,offset);}catch(Exception nativeError){output.delete();nativeError.addSuppressed(platform);throw nativeError;}
+  }
  }
  public static Result decodeRemote(android.net.Uri uri,Map<String,String> headers,File output,long startUs,long endUs,AtomicBoolean cancel)throws Exception{
   return decodeInput(ex->ex.setDataSource(uri.toString(),headers),output,startUs,endUs,true,cancel);
@@ -36,4 +39,5 @@ public final class FfmpegPcm {
   }catch(Exception error){output.delete();throw error;}finally{if(decoder!=null)decoder.release();extractor.release();}
  }
  private FfmpegPcm(){}
+ private static native long decodeFile(String source,String output,long startUs,long endUs,AtomicBoolean cancel)throws IOException;
 }

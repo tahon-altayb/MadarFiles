@@ -15,6 +15,8 @@
 
 ## التحقق المطلوب
 
+اجتازت المحاولة الأولى اختبارات الاتصال المحوّل وملفات الارتباط وصفحة الفيديو الديناميكية وHLS ذي الرابط المبهم. كشف اختبار الصوت أن Android يتجاهل بعض مسارات MKV رغم نجاح تشغيلها عبر FFmpeg؛ أضيف قارئ FFmpeg محلي بديل لهذا المسار، ويعاد التحقق من المجموعة كاملة.
+
 اختبارات Android جديدة لترويسات الاتصال والتحويل وملفات الارتباط، وصفحة فيديو ديناميكية، وHLS برابط مبهم، وفك الصوت الفعلي عبر FFmpeg والفصل منه. تضاف إلى اختبارات المشغّل والفصل والأدوات السابقة. نتائج البناء النهائي ستسجّل هنا بعد اكتمالها.
 
 المراجع: [صيغ Media3](https://developer.android.com/media/media3/exoplayer/supported-formats)، [استكشاف الأخطاء](https://developer.android.com/media/media3/exoplayer/troubleshooting)، [مصدر امتداد FFmpeg الرسمي](https://github.com/androidx/media/tree/1.5.1/libraries/decoder_ffmpeg). تفاصيل مصدر وترخيص الملفات المضمنة في `app/src/main/assets/FFMPEG-MEDIA3-SOURCE.txt`.

@@ -24,6 +24,7 @@ target_link_options(madar_vision PRIVATE "-Wl,-z,max-page-size=16384")
 # Official Media3 audio JNI shares our existing FFmpeg build and shared library.
 add_library(swresample STATIC IMPORTED)
 set_target_properties(swresample PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor/ffmpeg-${ANDROID_ABI}/lib/libswresample.a")
-target_sources(madar_audio PRIVATE ffmpeg_jni.cc)
+target_sources(madar_audio PRIVATE ffmpeg_jni.cc pcm_file.cpp)
+target_compile_features(madar_audio PRIVATE cxx_std_17)
 target_link_libraries(madar_audio swresample avutil m)
 target_link_options(madar_audio PRIVATE "-Wl,--exclude-libs,ALL" "-Wl,-Bsymbolic")
