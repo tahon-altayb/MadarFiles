@@ -13,7 +13,7 @@ final class CleanAudioController implements AutoCloseable {
  interface Status {void show(String text,boolean waiting);}
  private final Context context;private final AudioManager manager;private final AudioFocusRequest focus;private boolean focused,hasFocusRequest;private final ExoPlayer video;private final LiveSeparation.Session session;private final Status status;
  private final Handler main=new Handler(Looper.getMainLooper());private final HandlerThread feederThread=new HandlerThread("madar-clean-audio",android.os.Process.THREAD_PRIORITY_AUDIO);private final Handler feeder;
- private final AudioTrack audio;private final Object audioLock=new Object();private RandomAccessFile input;private long cursor,baseFrame,pausedLimit;private volatile boolean closed;private boolean wanted,adjusting,rebuffered;private volatile boolean playing,feedAllowed;private float volume=1,speed=1,pitch=1;private volatile String failure="";private long lastUi,lastSync,driftSince,refillAfter;
+ private final AudioTrack audio;private final Object audioLock=new Object();private RandomAccessFile input;private long cursor,baseFrame,pausedLimit;private volatile boolean closed;private boolean wanted,adjusting,rebuffered,reserveApproved;private volatile boolean playing,feedAllowed;private float volume=1,speed=1,pitch=1;private volatile String failure="";private long lastUi,lastSync,driftSince,refillAfter;
  private final java.util.ArrayDeque<Boolean> ownPlayChanges=new java.util.ArrayDeque<>();private final java.util.ArrayDeque<Long> ownSeeks=new java.util.ArrayDeque<>();
  // Diagnostics used by the native continuity regression tests (no source audio is recorded).
  int resetCount,syncSeekCount;private long lastPlayed;
@@ -37,7 +37,7 @@ final class CleanAudioController implements AutoCloseable {
  private void seekVideo(long target){if(video.getCurrentPosition()==target)return;ownSeeks.addLast(target);video.seekTo(target);}
  private void setVideoPlaying(boolean value){if(video.getPlayWhenReady()==value)return;ownPlayChanges.addLast(value);video.setPlayWhenReady(value);}
  private void pause(){feedAllowed=false;adjusting=true;try{setVideoPlaying(false);synchronized(audioLock){if(playing){playedLocked();pausedLimit=cursor;refillAfter=SystemClock.elapsedRealtime()+100;}audio.pause();playing=false;}}finally{adjusting=false;}}
- void move(long positionMs){pause();synchronized(audioLock){audio.flush();resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,Math.min(session.ready(),positionMs/1000.0));cursor=Math.max(0,Math.min(session.frames,Math.round((at-start)*44100)));baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
+ void move(long positionMs){pause();synchronized(audioLock){audio.flush();resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,Math.min(session.ready(),positionMs/1000.0));cursor=Math.max(0,Math.min(session.frames,Math.round((at-start)*44100)));baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;reserveApproved=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
  private final BroadcastReceiver noisy=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent intent){if(!closed)setWanted(false);}};
  private void requestFocus(){if(hasFocusRequest)return;hasFocusRequest=true;focused=manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;if(!focused){hasFocusRequest=false;wanted=false;failure="الصوت مشغول بتطبيق آخر؛ اضغط تشغيل للمحاولة";}}
  void setWanted(boolean value){if(closed)return;wanted=value;if(value){failure="";requestFocus();}else{pause();if(hasFocusRequest)manager.abandonAudioFocusRequest(focus);hasFocusRequest=false;focused=false;}}
@@ -61,14 +61,16 @@ final class CleanAudioController implements AutoCloseable {
   if(playing&&(video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE))pause();
   long queued;synchronized(audioLock){queued=cursor-frames;}
   double reserve=session.waitForComplete?Double.POSITIVE_INFINITY:session.buffer==null?(rebuffered?8:3)*Math.max(1,speed):session.buffer.required(frames/44100.0,speed,now);
-  if(wanted&&focused&&!playing&&video.getPlaybackState()==Player.STATE_READY&&ready>played&&now>=refillAfter&&((ready-played>=reserve)||session.done)){
+  // A transport/manual pause retains the reserve already approved for queued PCM.
+  // Only actual PCM exhaustion or a user seek requires a fresh reserve.
+  if(wanted&&focused&&!playing&&video.getPlaybackState()==Player.STATE_READY&&ready>played&&now>=refillAfter&&((ready-played>=reserve)||session.done||(!session.waitForComplete&&reserveApproved&&queued>0))){
    // Only arm prefill when resuming is intended; never submit a tiny refill
    // into the final hardware quantum of a paused/starved AudioTrack.
    feedAllowed=true;
-   if(queued>0&&(queued>=Math.min(8820,session.frames-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
+   if(queued>0&&(queued>=Math.min(8820,session.frames-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;reserveApproved=true;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
   }
   if(playing){
-   if(frames>=session.frames){pause();rebuffered=true;if(session.done)wanted=false;}
+   if(frames>=session.frames){reserveApproved=false;pause();rebuffered=true;if(session.done)wanted=false;}
    else if(video.getPlaybackState()==Player.STATE_READY&&now-lastSync>1500&&Math.abs(video.getCurrentPosition()/1000.0-played)>.25){if(driftSince==0)driftSince=now;else if(now-driftSince>=350){syncSeekCount++;seekVideo(Math.round(played*1000));lastSync=now;driftSince=0;}}
    else driftSince=0;
   }
