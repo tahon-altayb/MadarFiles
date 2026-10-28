@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+import zlib
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,8 +32,14 @@ class MusicTest(unittest.TestCase):
                 chunks = [source[i:i+w.CORE*4] for i in range(0,len(source),w.CORE*4)]
                 packs = [source[i:i+4*w.CORE*4] for i in range(0,len(source),4*w.CORE*4)]
                 manifest = lambda items:[dict(bytes=len(x),sha256=hashlib.sha256(x).hexdigest()) for x in items]
-                Path('request.json').write_text(json.dumps(dict(frames=frames,chunks=manifest(chunks),inputs=manifest(packs))))
-                for i, pack in enumerate(packs):Path(f'input_{i}.pcm').write_bytes(pack)
+                inputs = manifest(packs)
+                for i, pack in enumerate(packs):
+                    if i == 0:
+                        encoded=zlib.compress(pack,level=1)
+                        inputs[i].update(wire_encoding='zlib',wire_bytes=len(encoded),wire_sha256=hashlib.sha256(encoded).hexdigest())
+                        Path(f'input_{i}.pcm.zlib').write_bytes(encoded)
+                    else:Path(f'input_{i}.pcm').write_bytes(pack)
+                Path('request.json').write_text(json.dumps(dict(frames=frames,chunks=manifest(chunks),inputs=inputs)))
                 w.ENGINE = SimpleNamespace(process=process)
                 w.GPU_VERIFIED = True
                 w.run()
@@ -44,6 +51,10 @@ class MusicTest(unittest.TestCase):
                 state=json.loads(Path('progress.json').read_text())
                 packed=b''.join(Path(f'pack_{i}.pcm').read_bytes() for i in range(len(state['packs'])))
                 self.assertEqual(packed,actual)
+                wire=b''.join(zlib.decompress(Path(f'pack_{i}.pcm.zlib').read_bytes()) if v.get('wire_encoding')=='zlib' else Path(f'pack_{i}.pcm').read_bytes() for i,v in enumerate(state['packs']))
+                self.assertEqual(wire,actual)
+                self.assertEqual(result['packs'],state['packs'])
+                self.assertTrue(any(v.get('wire_encoding')=='zlib' for v in state['packs']))
                 self.assertTrue(all(hashlib.sha256(Path(f'pack_{i}.pcm').read_bytes()).hexdigest()==v['sha256'] for i,v in enumerate(state['packs'])))
                 self.assertTrue(all(n[0]==2 and n[1]<=6*w.RATE for n in calls))
                 self.assertEqual(json.loads(Path('progress.json').read_text())['stage'],'done')
@@ -89,6 +100,20 @@ def run():
                 if process is not None:process.terminate();process.wait(timeout=5)
                 if '_madar_music_log' in state:state['_madar_music_log'].close()
                 os.chdir(previous)
+
+    def test_bounded_lossless_wire_rejects_corruption_truncation_trailing_and_expansion(self):
+        raw=b'abcd'*512
+        good=zlib.compress(raw,level=1)
+        cases=[(good[:-2],len(raw)),(good+b'garbage',len(raw)),(zlib.compress(b'x'*1000000),1024)]
+        with tempfile.TemporaryDirectory() as directory:
+            for i,(wire,expected) in enumerate(cases):
+                name=str(Path(directory)/f'input_{i}.pcm')
+                Path(name+'.zlib').write_bytes(wire)
+                part=dict(bytes=expected,sha256=hashlib.sha256(raw).hexdigest(),wire_encoding='zlib',wire_bytes=len(wire),wire_sha256=hashlib.sha256(wire).hexdigest())
+                with self.assertRaises(ValueError):w.read_wire(part,name,expected)
+            name=str(Path(directory)/'bad.pcm');Path(name+'.zlib').write_bytes(good)
+            part=dict(bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest(),wire_encoding='zlib',wire_bytes=len(good),wire_sha256='0'*64)
+            with self.assertRaisesRegex(ValueError,'MUSIC_WIRE_HASH'):w.read_wire(part,name,len(raw))
 
     def test_invalid_request_fails_before_install_or_inference(self):
         for frames in (0,-1,601*w.RATE,True):

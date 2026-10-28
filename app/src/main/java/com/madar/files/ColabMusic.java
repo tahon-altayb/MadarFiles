@@ -22,6 +22,9 @@ final class ColabMusic {
    JSONObject manifest=ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536));JSONArray chunks=manifest.optJSONArray("chunks");
    if(total<=0||total>600L*RATE||count!=(total+CORE-1)/CORE||chunks==null||manifest.optLong("frames",-1)!=total||manifest.optInt("sample_rate")!=RATE||manifest.optInt("channels")!=2||!MODEL_SHA.equals(manifest.optString("model_sha256"))||chunks.length()!=count)throw new IOException("Colab · MUSIC_RESULT_SCHEMA");
    try(OutputStream out=new BufferedOutputStream(new FileOutputStream(output))){
+    JSONArray packs=manifest.optJSONArray("packs");
+    if(packs!=null){if(packs.length()!=(total+4L*CORE-1)/(4L*CORE))throw new IOException("Colab · MUSIC_PACK_SCHEMA");for(int i=0;i<packs.length();i++){ColabProbe.check(cancel);out.write(fetchPack(runtime,folder,chunks,packs.getJSONObject(i),i,total));progress.update(97,"استرجاع الصوت المفصول دون فقد · "+(i+1)+" / "+packs.length());}}
+    else {
     for(int i=0;i<count;i++){
      ColabProbe.check(cancel);JSONObject part=chunks.optJSONObject(i);long expected=Math.min(CORE,total-(long)i*CORE)*4;
      if(part==null||part.optLong("bytes",-1)!=expected||!part.optString("sha256").matches("[a-f0-9]{64}"))throw new IOException("Colab · MUSIC_RESULT_SCHEMA");
@@ -30,10 +33,17 @@ final class ColabMusic {
      if(!sha(data).equals(part.getString("sha256")))throw new IOException("Colab · MUSIC_OUTPUT_HASH");
      out.write(data);progress.update(97,"استرجاع الصوت المفصول · "+(i+1)+" / "+count);
     }
+    }
    }
    if(output.length()!=total*4)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
    complete=true;
   }finally{if(!complete)output.delete();}
+ }
+ static byte[] fetchPack(ColabRuntime runtime,String folder,JSONArray chunks,JSONObject pack,int index,long total)throws Exception{
+  int expected=(int)(Math.min(4L*CORE,total-4L*CORE*index)*4);int count=(int)((total+CORE-1)/CORE),end=Math.min(count,(index+1)*4);
+  if(expected<=0||pack.optLong("bytes",-1)!=expected||!pack.optString("sha256").matches("[a-f0-9]{64}")||end>chunks.length())throw new IOException("Colab · MUSIC_PACK_SCHEMA");
+  byte[] bytes=MusicWire.fetch(runtime,folder+"/pack_"+index+".pcm",pack,expected);
+  for(int k=index*4;k<end;k++){int from=(k-index*4)*CORE*4,to=Math.min(bytes.length,from+CORE*4);JSONObject part=chunks.getJSONObject(k);if(part.optLong("bytes")!=to-from||!sha(java.util.Arrays.copyOfRange(bytes,from,to)).equals(part.optString("sha256")))throw new IOException("Colab · MUSIC_OUTPUT_HASH");}return bytes;
  }
  static Result run(Context c,AudioPipeline.Decoded audio,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception {return run(c,audio,grant,cancel,progress,null);}
  static Result run(Context c,AudioPipeline.Decoded audio,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception {
@@ -62,7 +72,7 @@ final class ColabMusic {
     boolean cold=batch==0;long initialAt=android.os.SystemClock.elapsedRealtime();awaitReady();lastColdStartMs=cold?android.os.SystemClock.elapsedRealtime()-initialAt:0;if(channel!=null)channel.close();channel=runtime.openKernel(kernel,diagnostic::record);String folder=root+"_b"+(batch++);runtime.jupyter("PUT","api/contents/"+folder,new JSONObject().put("type","directory"),1024*1024);
     JSONArray parts=new JSONArray(),inputs=new JSONArray();diagnostic.record("UPLOAD_AUDIO");
     // Four PCM cores per authenticated PUT: bounded memory, 75% fewer requests.
-    for(long start=0;start<total;start+=4L*CORE){ColabProbe.check(cancel);int keep=(int)Math.min(4L*CORE,total-start);float[] samples=MusicSeparator.readResampled(input,audio.sampleRate,start,keep,frames);byte[] data=new byte[keep*4];for(int i=0;i<samples.length;i++){int n=Math.max(-32768,Math.min(32767,Math.round(samples[i]*32768)));data[2*i]=(byte)n;data[2*i+1]=(byte)(n>>8);}for(int at=0;at<data.length;at+=CORE*4){byte[] core=java.util.Arrays.copyOfRange(data,at,Math.min(data.length,at+CORE*4));parts.put(new JSONObject().put("bytes",core.length).put("sha256",sha(core)));}int index=inputs.length();inputs.put(new JSONObject().put("bytes",data.length).put("sha256",sha(data)));runtime.put(folder+"/input_"+index+".pcm",Base64.encodeToString(data,Base64.NO_WRAP),"base64");progress.update(17+(int)(9*(start+keep)/total),"رفع الصوت إلى Colab · "+((start+keep)/RATE)+" / "+(total/RATE)+" ثانية");}
+    for(long start=0;start<total;start+=4L*CORE){ColabProbe.check(cancel);int keep=(int)Math.min(4L*CORE,total-start);float[] samples=MusicSeparator.readResampled(input,audio.sampleRate,start,keep,frames);byte[] data=new byte[keep*4];for(int i=0;i<samples.length;i++){int n=Math.max(-32768,Math.min(32767,Math.round(samples[i]*32768)));data[2*i]=(byte)n;data[2*i+1]=(byte)(n>>8);}for(int at=0;at<data.length;at+=CORE*4){byte[] core=java.util.Arrays.copyOfRange(data,at,Math.min(data.length,at+CORE*4));parts.put(new JSONObject().put("bytes",core.length).put("sha256",sha(core)));}int index=inputs.length();MusicWire.Packed wire=MusicWire.encode(data);inputs.put(wire.metadata);runtime.put(folder+"/input_"+index+".pcm"+(wire.compressed?".zlib":""),Base64.encodeToString(wire.data,Base64.NO_WRAP),"base64");progress.update(17+(int)(9*(start+keep)/total),"رفع الصوت إلى Colab · "+((start+keep)/RATE)+" / "+(total/RATE)+" ثانية");}
     runtime.put(folder+"/request.json",new JSONObject().put("frames",total).put("chunks",parts).put("inputs",inputs).toString(),"text");diagnostic.record("UPLOAD_COMPLETE");
     long submittedAt=android.os.SystemClock.elapsedRealtime();final boolean[] warmMeasured={false};
     ColabKernel.Poll poll=()->{
@@ -71,7 +81,7 @@ final class ColabMusic {
      if(live!=null&&state.has("chunks")){
       JSONArray chunks=state.getJSONArray("chunks");if(cold&&!warmMeasured[0]&&chunks.length()>0){lastColdStartMs+=android.os.SystemClock.elapsedRealtime()-submittedAt;warmMeasured[0]=true;}if(state.optLong("frames")!=total||state.optInt("sample_rate")!=RATE||state.optInt("channels")!=2||!MODEL_SHA.equals(state.optString("model_sha256"))||chunks.length()>parts.length())throw new IOException("Colab · MUSIC_PREFIX_SCHEMA");
       JSONArray packs=state.optJSONArray("packs");
-      if(packs!=null){while(packed[0]<packs.length()){int index=packed[0];JSONObject pack=packs.getJSONObject(index);long expected=Math.min(4L*CORE,total-4L*CORE*index)*4;if(expected<=0||pack.optLong("bytes")!=expected||!pack.optString("sha256").matches("[a-f0-9]{64}"))throw new IOException("Colab · MUSIC_PACK_SCHEMA");byte[] bytes=runtime.getBinary(folder+"/pack_"+index+".pcm",8*1024*1024);if(bytes.length!=expected||!sha(bytes).equals(pack.getString("sha256")))throw new IOException("Colab · MUSIC_PACK_HASH");int end=Math.min(parts.length(),(index+1)*4);if(end>chunks.length())throw new IOException("Colab · MUSIC_PACK_SCHEMA");for(int k=index*4;k<end;k++){int from=(k-index*4)*CORE*4,to=(int)Math.min(bytes.length,from+CORE*4);JSONObject part=chunks.getJSONObject(k);if(part.optLong("bytes")!=to-from||!sha(java.util.Arrays.copyOfRange(bytes,from,to)).equals(part.optString("sha256")))throw new IOException("Colab · MUSIC_OUTPUT_HASH");}try(OutputStream append=new FileOutputStream(output,true)){append.write(bytes);append.flush();}fetched[0]=end;packed[0]++;LiveSeparation.publish(live,output.length()/4);progress.update(80,"استرجاع الصوت المفصول · دفعات مجمّعة");}}
+      if(packs!=null){while(packed[0]<packs.length()){int index=packed[0];JSONObject pack=packs.getJSONObject(index);byte[] bytes=fetchPack(runtime,folder,chunks,pack,index,total);int end=Math.min(parts.length(),(index+1)*4);try(OutputStream append=new FileOutputStream(output,true)){append.write(bytes);append.flush();}fetched[0]=end;packed[0]++;LiveSeparation.publish(live,output.length()/4);progress.update(80,"استرجاع الصوت المفصول · دفعات مجمّعة");}}
       else try(OutputStream append=new FileOutputStream(output,true)){while(fetched[0]<chunks.length()){int i=fetched[0];JSONObject part=chunks.getJSONObject(i);long expected=Math.min(CORE,total-(long)i*CORE)*4;if(part.optLong("bytes",-1)!=expected||!part.optString("sha256").matches("[a-f0-9]{64}"))throw new IOException("Colab · MUSIC_RESULT_SCHEMA");byte[] bytes=runtime.getBinary(folder+"/output_"+i+".pcm",2*1024*1024);if(bytes.length!=expected||!sha(bytes).equals(part.getString("sha256")))throw new IOException("Colab · MUSIC_OUTPUT_HASH");append.write(bytes);append.flush();fetched[0]++;LiveSeparation.publish(live,output.length()/4);progress.update(80,"استرجاع دفعات الصوت المفصول · "+fetched[0]+" / "+parts.length());}}
      }
      String message;switch(stage){case "ready":message="GPU والنموذج جاهزان · انتظار دفعة الصوت";break;case "install":message="تجهيز محرك الفصل المسرّع على GPU";break;case "gpu_check":message="التحقق من تسريع GPU للفصل";break;case "model_download":message="تنزيل نموذج UVR مرة واحدة للجلسة";break;case "model_load":message="تحميل نموذج الفصل على GPU";break;case "separate":message="فصل الموسيقى على GPU · نفس نموذج UVR";break;case "done":message="التحقق من الصوت المفصول";break;default:message="انتظار محرك الفصل السحابي";}

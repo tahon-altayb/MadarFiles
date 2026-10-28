@@ -45,6 +45,15 @@ public class ColabMusicTest {
   for(String path:paths){RecordedRequest request=server.takeRequest(2,TimeUnit.SECONDS);assertNotNull(request);assertEquals(path,request.getPath());assertEquals("GET",request.getMethod());assertEquals("PROXY_FIXTURE",request.getHeader("X-Colab-Runtime-Proxy-Token"));assertNull(request.getHeader("Authorization"));}
   assertEquals(3,server.getRequestCount());
  }
+ @Test(timeout=20000) public void compressedPacksDownloadThroughProductionAndPreserveEveryPcmByte()throws Exception{
+  byte[] first=pcm(ColabMusic.CORE),last=pcm(17);ByteArrayOutputStream original=new ByteArrayOutputStream();original.write(first);original.write(last);MusicWire.Packed packed=MusicWire.encode(original.toByteArray());assertTrue(packed.compressed);
+  text(manifest(first,last).put("packs",new JSONArray().put(packed.metadata)));json(binary(packed.data));fetch(ColabMusic.CORE+17,2);assertArrayEquals(original.toByteArray(),Files.readAllBytes(output.toPath()));
+  assertEquals(2,server.getRequestCount());server.takeRequest(2,TimeUnit.SECONDS);assertEquals("/qa/base/api/contents/"+folder+"/pack_0.pcm.zlib?content=1&format=base64",server.takeRequest(2,TimeUnit.SECONDS).getPath());
+ }
+ @Test(timeout=20000) public void corruptedCompressedAudioNeverPublishesAPartialResult()throws Exception{
+  byte[] raw=pcm(ColabMusic.CORE);MusicWire.Packed packed=MusicWire.encode(raw);assertTrue(packed.compressed);byte[] bad=packed.data.clone();bad[bad.length/2]^=1;
+  text(manifest(raw).put("packs",new JSONArray().put(packed.metadata)));json(binary(bad));try{fetch(ColabMusic.CORE,1);fail();}catch(IOException error){assertTrue(error.getMessage().contains("MUSIC_WIRE_HASH"));}assertFalse(output.exists());
+ }
  @Test(timeout=20000) public void transientDownloadRetriesOnlyReadAndKeepsValidatedBytes()throws Exception{
   byte[] data=pcm(31);text(manifest(data));server.enqueue(new MockResponse().setResponseCode(503));json(binary(data));fetch(31,1);assertArrayEquals(data,Files.readAllBytes(output.toPath()));assertEquals(3,server.getRequestCount());
  }

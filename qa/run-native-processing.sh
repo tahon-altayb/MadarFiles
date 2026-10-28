@@ -27,6 +27,15 @@ fi
 
 adb shell am force-stop com.madar.files || status=1
 adb logcat -c
+# Public model bytes are host-cached and SHA-verified; actual install validation and
+# inference still run on Android. A transient emulator DNS failure is not a model test.
+if [ -n "${MADAR_CI_AGENT_MODEL:-}" ]; then
+ [ -f "$MADAR_CI_AGENT_MODEL" ] || exit 1
+ adb push "$MADAR_CI_AGENT_MODEL" /data/local/tmp/madar-ci-agent.litertlm || exit $?
+ adb shell run-as com.madar.files mkdir -p files || exit $?
+ adb shell run-as com.madar.files cp /data/local/tmp/madar-ci-agent.litertlm files/agent-qwen3-1.7b.litertlm || exit $?
+ adb shell rm -f /data/local/tmp/madar-ci-agent.litertlm || exit $?
+fi
 adb logcat -v threadtime > phone-screenshots/local-agent-logcat.txt 2>&1 &
 logcat_pid=$!
 adb shell am instrument -w -r -e class com.madar.files.LocalAgentRuntimeTest com.madar.files.test/androidx.test.runner.AndroidJUnitRunner > phone-screenshots/local-agent-tests.txt 2>&1 || status=$?

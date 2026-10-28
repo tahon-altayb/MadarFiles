@@ -9,6 +9,7 @@ import urllib.request
 import time
 import shutil
 import re
+import zlib
 
 ENGINE = None
 GPU_FREE_BEFORE = None
@@ -104,6 +105,44 @@ def prepare():
         status('ready', 38)
 
 
+def read_wire(part, name, expected):
+    encoding = part.get('wire_encoding', 'pcm')
+    if encoding not in ('pcm', 'zlib'):
+        raise ValueError('MUSIC_WIRE_ENCODING')
+    size = part.get('wire_bytes') if encoding == 'zlib' else expected
+    if type(size) is not int or not 0 < size <= expected or (encoding == 'zlib' and size >= expected):
+        raise ValueError('MUSIC_WIRE_LENGTH')
+    path = Path(name + ('.zlib' if encoding == 'zlib' else ''))
+    if path.stat().st_size != size:
+        raise ValueError('MUSIC_WIRE_LENGTH')
+    data = path.read_bytes()
+    if encoding == 'zlib':
+        if hashlib.sha256(data).hexdigest() != part.get('wire_sha256'):
+            raise ValueError('MUSIC_WIRE_HASH')
+        try:
+            engine = zlib.decompressobj()
+            data = engine.decompress(data, expected + 1)
+            if len(data) != expected or not engine.eof or engine.unconsumed_tail or engine.unused_data:
+                raise ValueError('MUSIC_WIRE_LENGTH')
+        except zlib.error as error:
+            raise ValueError('MUSIC_WIRE_HASH') from error
+    if len(data) != expected or hashlib.sha256(data).hexdigest() != part.get('sha256'):
+        raise ValueError('UPLOAD_HASH')
+    path.unlink()
+    return data
+
+
+def write_pack(name, data):
+    # Keep raw files for legacy clients; announce compressed bytes only when smaller.
+    Path(name).write_bytes(data)
+    part = dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+    encoded = zlib.compress(data, level=1)
+    if len(encoded) + 512 < len(data):
+        Path(name + '.zlib').write_bytes(encoded)
+        part.update(wire_encoding='zlib', wire_bytes=len(encoded), wire_sha256=hashlib.sha256(encoded).hexdigest())
+    return part
+
+
 def run():
     global GPU_VERIFIED
     req = json.loads(Path('request.json').read_text('utf-8'))
@@ -118,17 +157,13 @@ def run():
         for i, part in enumerate(inputs):
             if not isinstance(part, dict) or part.get('bytes') != min(stride, frames-i*stride)*4:
                 raise ValueError('MUSIC_MANIFEST')
-            p = Path(f'input_{i}.pcm')
-            data = p.read_bytes()
-            if len(data) != part['bytes'] or hashlib.sha256(data).hexdigest() != part['sha256']:
-                raise ValueError('UPLOAD_HASH')
+            data = read_wire(part, f'input_{i}.pcm', min(stride, frames-i*stride)*4)
             for at in range(0, len(data), CORE*4):
                 index = (i*stride + at//4) // CORE
                 block = data[at:at+CORE*4]
                 if hashlib.sha256(block).hexdigest() != chunks[index]['sha256']:
                     raise ValueError('UPLOAD_HASH')
             out.write(data)
-            p.unlink()
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
     parts, packs, packed = [], [], bytearray()
     for i, start in enumerate(range(0, frames, CORE)):
@@ -159,12 +194,11 @@ def run():
         packed.extend(pcm)
         if (i + 1) % 4 == 0 or start + CORE >= frames:
             data = bytes(packed)
-            Path(f'pack_{len(packs)}.pcm').write_bytes(data)
-            packs.append(dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
+            packs.append(write_pack(f'pack_{len(packs)}.pcm', data))
             packed.clear()
         status('separate', 40 + int(54 * min(frames, start + CORE) / frames), parts, frames, packs)
     write_json('result.json', dict(frames=frames, sample_rate=RATE, channels=2,
-                                  model_sha256=MODEL_SHA, provider='cuda', chunks=parts))
+                                  model_sha256=MODEL_SHA, provider='cuda', chunks=parts, packs=packs))
     status('done', 97, parts, frames, packs)
 
 

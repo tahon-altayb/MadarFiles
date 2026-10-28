@@ -134,6 +134,14 @@ jobs:
         with:
           path: app/src/androidTest/assets/speech-reference-*.wav
           key: madar-public-speech-v1-${{ hashFiles('scripts/prepare_speech_references.py', 'app/src/androidTest/assets/speech-references.json') }}
+      - name: Cache public local-agent inference fixture
+        uses: actions/cache@v4
+        with:
+          path: .ci-models/agent-qwen3-1.7b.litertlm
+          key: madar-ci-agent-v1-${{ hashFiles('app/src/main/java/com/madar/files/LocalAgent.java') }}
+      - name: Stage verified local-agent fixture independently of emulator DNS
+        timeout-minutes: 12
+        run: python3 scripts/prepare_ci_agent.py
       - name: Validate interface
         run: |
           python3 -m pip install --disable-pip-version-check numpy==2.2.6
@@ -194,6 +202,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Device processing tests
         env:
+          MADAR_CI_AGENT_MODEL: ${{ github.workspace }}/.ci-models/agent-qwen3-1.7b.litertlm
           MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
           MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
