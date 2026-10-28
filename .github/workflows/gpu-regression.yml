@@ -1,0 +1,45 @@
+name: GPU startup transport regression
+on:
+  push:
+    branches: [fixes/gpu-startup-regression-20261028]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build isolated validation APK and production startup tests
+        run: gradle --no-daemon -PvalidationBuild=true :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify the actual initializer survives a dropped warmup socket
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install app/build/outputs/apk/debug/app-debug.apk
+            adb install app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -r -e class com.madar.files.MusicStartupTest com.madar.files.validation.test/androidx.test.runner.AndroidJUnitRunner > gpu-startup-result.txt
+            cat gpu-startup-result.txt
+            python3 -c 'from pathlib import Path; import re; s=Path("gpu-startup-result.txt").read_text(); assert re.search(r"OK\s*\(5 tests\)",s) and not re.search(r"INSTRUMENTATION_STATUS_CODE:\s*-\d+|INSTRUMENTATION_FAILED|FAILURES!!!",s), "Every production startup regression must pass"'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GPU-startup-regression
+          path: gpu-startup-result.txt
