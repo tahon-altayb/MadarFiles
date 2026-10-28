@@ -101,6 +101,7 @@ def prepare():
         if not config.validate():
             raise ValueError('MODEL_CONFIG')
         ENGINE = sherpa_onnx.OfflineSourceSeparation(config)
+        status('ready', 38)
 
 
 def run():
