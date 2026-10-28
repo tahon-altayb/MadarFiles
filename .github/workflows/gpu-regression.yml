@@ -9,8 +9,6 @@ jobs:
   startup:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      MADAR_VALIDATION_KEYSTORE: ${{ runner.temp }}/gpu-startup-debug.keystore
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -21,7 +19,10 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Create disposable key for isolated validation APK only
-        run: keytool -genkeypair -noprompt -keystore "$MADAR_VALIDATION_KEYSTORE" -storepass android -keypass android -alias androiddebugkey -dname "CN=Madar GPU validation" -keyalg RSA -keysize 2048 -validity 2
+        run: |
+          MADAR_VALIDATION_KEYSTORE="$RUNNER_TEMP/gpu-startup-debug.keystore"
+          echo "MADAR_VALIDATION_KEYSTORE=$MADAR_VALIDATION_KEYSTORE" >> "$GITHUB_ENV"
+          keytool -genkeypair -noprompt -keystore "$MADAR_VALIDATION_KEYSTORE" -storepass android -keypass android -alias androiddebugkey -dname "CN=Madar GPU validation" -keyalg RSA -keysize 2048 -validity 2
       - name: Build isolated validation APK and production startup tests
         run: gradle --no-daemon -PvalidationBuild=true :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Enable emulator acceleration
