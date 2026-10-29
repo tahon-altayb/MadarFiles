@@ -25,7 +25,7 @@ public class VideoExportService extends Service {
     private final java.util.concurrent.atomic.AtomicBoolean musicCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private Thread musicWorker;
     private PowerManager.WakeLock cpuLock;
-    private long began;
+    private int latestStartId;private long began;
     private String stageText="جارٍ التجهيز…";
     private NotificationManager notifications;
     @Override public void onCreate(){super.onCreate();notifications=getSystemService(NotificationManager.class);notifications.createNotificationChannel(new NotificationChannel("exports","تصدير الفيديو",NotificationManager.IMPORTANCE_LOW));}
@@ -35,8 +35,9 @@ public class VideoExportService extends Service {
         return new Notification.Builder(this,"exports").setSmallIcon(com.madar.files.R.drawable.ic_launcher).setContentTitle("مدار · معالجة الوسائط").setContentText(stageText).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setProgress(100,Math.max(0,progress),progress<0).addAction(new Notification.Action.Builder(null,"إلغاء",cancel).build()).build();
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
-        if(intent==null){stopSelf();return START_NOT_STICKY;}
-        if("cancel".equals(intent.getAction())){if(musicWorker!=null&&active){musicCancel.set(true);MusicGpuSession.cancelOwner(musicCancel);stageText="إلغاء المعالجة وإغلاق مهمتها…";notifications.notify(7,notification(-1));}else if(active)finish("cancelled",null);else stopSelf();return START_NOT_STICKY;}
+        latestStartId=startId;
+        if(intent==null){stopSelfResult(latestStartId);return START_NOT_STICKY;}
+        if("cancel".equals(intent.getAction())){if(musicWorker!=null&&active){musicCancel.set(true);MusicGpuSession.cancelOwner(musicCancel);stageText="إلغاء المعالجة وإغلاق مهمتها…";notifications.notify(7,notification(-1));}else if(active)finish("cancelled",null);else stopSelfResult(latestStartId);return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
         try{
             if(Build.VERSION.SDK_INT>=35)startForeground(7,notification(-1),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING);else startForeground(7,notification(-1),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
@@ -148,7 +149,7 @@ public class VideoExportService extends Service {
     private void publish(JSONObject o){if(previewDraft&&o.optString("type").equals("result")){try{File original=FilesUtil.resolve(this,o.getString("name"));String name=original.getName();File draft=File.createTempFile("madar_preview_",name.substring(name.lastIndexOf('.')),getCacheDir());if(!draft.delete()||!original.renameTo(draft))throw new java.io.IOException("تعذر تجهيز المعاينة");o=FilesUtil.info(draft).put("type","draftResult");}catch(Exception e){try{o=new JSONObject().put("type","error").put("message","تعذر تجهيز المعاينة المعالجة");}catch(Exception ignored){}}}try{o.put("at",System.currentTimeMillis());}catch(org.json.JSONException ignored){}lastEvent=o.toString();if(java.util.Arrays.asList("result","text","subtitles","driveShared").contains(o.optString("type")))WorkNotifications.complete(this,740);sendBroadcast(new Intent(EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
     private void finish(String type,String message){
         if(terminal)return;terminal=true;musicCancel.set(true);handler.removeCallbacksAndMessages(null);if(transformer!=null){transformer.cancel();transformer=null;}if(!type.equals("done")){if(partial!=null)partial.delete();try{JSONObject event=new JSONObject().put("type",type);if(message!=null)event.put("message",message);publish(event);}catch(Exception ignored){}}
-        if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();active=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
+        if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();active=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(latestStartId);
     }
     @Override public void onTimeout(int startId,int fgsType){finish("error","أوقف النظام المعالجة بعد انتهاء الوقت المتاح؛ جرّب فيديو أقصر");}
     @Override public void onDestroy(){if(active&&!terminal)finish("error","توقفت معالجة الفيديو");super.onDestroy();}
