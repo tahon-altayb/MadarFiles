@@ -2,9 +2,10 @@ package com.madar.files;
 
 /** A measured production budget, in media seconds. No device/server speed is assumed. */
 final class WatchBuffer {
- private final double duration;private final boolean waitForCycle;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;
+ private final double duration;private final boolean waitForCycle;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;private double plannedGap;
  WatchBuffer(double duration){this(duration,false);}
  WatchBuffer(double duration,boolean waitForCycle){this.duration=Math.max(0,duration);this.waitForCycle=waitForCycle;}
+ synchronized void planGap(double seconds){plannedGap=Double.isFinite(seconds)?Math.max(0,seconds):0;}
  synchronized void completeCycle(double seconds,double elapsed){if(seconds>0&&elapsed>0)cycleRatio=cycleRatio==0?elapsed/seconds:.6*cycleRatio+.4*elapsed/seconds;}
  synchronized void commit(double ready,long now){
   if(firstAt<0){firstAt=lastAt=now;lastReady=ready;return;}
@@ -26,7 +27,7 @@ final class WatchBuffer {
  synchronized double required(double played,double playbackSpeed,long now){
   double remaining=Math.max(0,duration-played),rate=speed(now),s=Math.max(.25,playbackSpeed);
   if(rate==0)return remaining; // Measure first; never start from an arbitrary tiny prefix.
-  double safety=Math.max(20*s,Math.min(120,gap*1.5)*s);
+  double safety=Math.max(Math.max(20*s,Math.min(120,gap*1.5)*s),plannedGap*1.25*s);
   return Math.min(remaining,Math.max(safety,remaining*(1-rate/s)+safety));
  }
  synchronized long waitSeconds(double played,double ready,double playbackSpeed,long now){

@@ -56,10 +56,12 @@ public class WatchMusicService extends Service {
    File aggregate=File.createTempFile("madar_watch_clean_",".pcm",getCacheDir());LiveSeparation.attach(job.clean,aggregate,job.startUs);
    if(job.cloud){cloudSession=MusicGpuSession.acquire(this,grant,job.cancel,(p,m)->update(m));cloudSession.startWarmup();}
    try(OutputStream out=new FileOutputStream(aggregate)){
-    for(long next=job.startUs;next<job.durationUs;){
-     MusicSeparator.check(job.cancel);long cycleBegan=SystemClock.elapsedRealtime();WatchWindows window=WatchWindows.forWatch(next,job.durationUs,job.cloud,next==job.startUs,Math.max(0,job.clean.frames-job.clean.playedFrames)/44100.0);AudioPipeline.Decoded decoded=null;File processed=null;
+    int windowIndex=0;double transferSecondsPerMedia=0;for(long next=job.startUs;next<job.durationUs;){
+     MusicSeparator.check(job.cancel);long cycleBegan=SystemClock.elapsedRealtime();WatchWindows window=WatchWindows.forWatch(next,job.durationUs,job.cloud,windowIndex);AudioPipeline.Decoded decoded=null;File processed=null;
      try{
+      if(job.clean.buffer!=null)job.clean.buffer.planGap(transferSecondsPerMedia*(window.decodeEnd-window.decodeStart)/1e6);long decodeAt=SystemClock.elapsedRealtime();
       update("فك الصوت من موضع المشاهدة");decoded=ExternalMedia.network(job.uri)?RemoteWatchAudio.decode(this,job.http,job.mime,window.decodeStart,window.decodeEnd,job.cancel):AudioPipeline.decodeRange(this,job.source,window.decodeStart,window.decodeEnd,job.cancel,(p,m)->update(m));
+      long decodeMs=SystemClock.elapsedRealtime()-decodeAt;if(job.cloud)cloudSession.diagnostic.measure("DECODE",decodeMs,decoded.pcm.length(),decoded.pcm.length()/4);
       long skip=Math.max(0,Math.round((window.coreStart-decoded.offsetUs)*44100.0/1000000)),count=Math.round((window.coreEnd-window.coreStart)*44100.0/1000000),base=job.clean.frames;
       if(base==0)job.clean.offsetUs=decoded.offsetUs+Math.round(skip*1000000.0/44100);
       LiveSeparation.Session part=new LiveSeparation.Session(job.source,true);
@@ -68,7 +70,9 @@ public class WatchMusicService extends Service {
       appendPrefix(part,job.clean,out,base,skip,count);MusicSeparator.check(job.cancel);
       if(job.clean.frames==base)throw new IOException("لم يُنتج الفصل صوتًا قابلًا للمشاهدة");
       if(window.coreEnd<job.durationUs&&job.clean.frames-base<count)throw new IOException("جزء الصوت غير مكتمل");
-      if(job.clean.buffer!=null)job.clean.buffer.completeCycle((job.clean.frames-base)/44100.0,Math.max(1,SystemClock.elapsedRealtime()-cycleBegan-(job.cloud?cloudSession.lastColdStartMs:0))/1000.0);next=window.coreEnd;
+      long cycleMs=SystemClock.elapsedRealtime()-cycleBegan-(job.cloud?cloudSession.lastColdStartMs:0);
+      if(job.cloud){cycleMs=Math.max(cycleMs,decodeMs+cloudSession.lastUploadMs+cloudSession.lastProcessMs);transferSecondsPerMedia=(decodeMs+cloudSession.lastUploadMs)/1000.0/((window.decodeEnd-window.decodeStart)/1e6);}
+      if(job.clean.buffer!=null)job.clean.buffer.completeCycle((job.clean.frames-base)/44100.0,Math.max(1,cycleMs)/1000.0);next=window.coreEnd;windowIndex++;
      }finally{if(decoded!=null)decoded.pcm.delete();if(processed!=null)processed.delete();}
     }
    }

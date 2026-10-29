@@ -5,7 +5,7 @@ import java.util.zip.*;
 import org.json.JSONObject;
 /** Lossless, bounded PCM transport. Hashes cover both the wire bytes and original samples. */
 final class MusicWire {
- static final int MAX_BYTES=16*44100*4;
+ static final int MAX_BYTES=32*44100*4;
  static final class Packed {final byte[] data;final JSONObject metadata;final boolean compressed;Packed(byte[] d,JSONObject m,boolean z){data=d;metadata=m;compressed=z;}}
  static Packed encode(byte[] pcm)throws Exception{
   if(pcm.length<=0||pcm.length>MAX_BYTES)throw new IOException("Colab · MUSIC_WIRE_LENGTH");

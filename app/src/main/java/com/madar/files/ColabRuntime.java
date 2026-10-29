@@ -87,7 +87,7 @@ final class ColabRuntime implements AutoCloseable {
   if(state.has("error")){journal().edit().clear().commit();runtime="";return false;}
   ColabProbe.check(cancel);progress.update(13,"اكتمل طلب GPU السابق · قراءة بيانات اتصال المحرك");refresh();context.getSharedPreferences("colab_connection",0).edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return true;
  }
- void refresh()throws Exception{
+ synchronized void refresh()throws Exception{
   JSONObject value=cloud("GET","v1beta/"+runtime,null,cancel);if(!runtime.equals(value.optString("name")))throw new IOException("Colab · RUNTIME_ID_MISMATCH");JSONObject info=value.getJSONObject("connectionInfo");base=runtimeUrl(info.getString("url"));proxyToken=info.getString("token");if(proxyToken.isEmpty()||proxyToken.length()>16384||proxyToken.matches("(?s).*\\s.*"))throw new IOException("Colab · RUNTIME_TOKEN_INVALID");long remaining;try{remaining=java.time.Instant.parse(info.getString("expireTime")).toEpochMilli()-System.currentTimeMillis();}catch(Exception e){throw new IOException("Colab · RUNTIME_EXPIRY_INVALID");}if(remaining<=0)throw new IOException("Colab · RUNTIME_TOKEN_EXPIRED");refreshAt=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(Math.max(1000,Math.min(240000,remaining-30000)));
  }
  static HttpUrl runtimeUrl(String value)throws IOException{
@@ -114,9 +114,9 @@ final class ColabRuntime implements AutoCloseable {
   }
   throw new ProtocolFailure("Colab · JUPYTER_PATH_INVALID");
  }
- Request.Builder runtimeRequest(String path)throws Exception{
+ synchronized Request.Builder runtimeRequest(String path)throws Exception{
   validateRuntimePath(path);if(base==null||System.nanoTime()>refreshAt)refresh();
-  return new Request.Builder().url(base.resolve(path)).header("X-Colab-Runtime-Proxy-Token",proxyToken).header("X-Colab-Client-Agent","madarfiles");
+  return new Request.Builder().url(base.resolve(path)).header("Cache-Control","no-cache").header("X-Colab-Runtime-Proxy-Token",proxyToken).header("X-Colab-Client-Agent","madarfiles");
  }
  JSONObject jupyter(String method,String path,JSONObject data,int maximum)throws Exception{return jupyter(method,path,data,maximum,100000);}
  JSONObject jupyter(String method,String path,JSONObject data,int maximum,long timeoutMs)throws Exception{

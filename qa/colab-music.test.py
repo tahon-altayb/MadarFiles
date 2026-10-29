@@ -17,6 +17,92 @@ spec.loader.exec_module(w)
 
 
 class MusicTest(unittest.TestCase):
+    def test_v2_single_long_job_has_bounded_manifests_and_identical_pcm(self):
+        import numpy as np
+        from unittest.mock import patch
+        previous = Path.cwd()
+        calls = []
+        def process(sample_rate, samples):
+            calls.append(samples.shape)
+            return SimpleNamespace(sample_rate=sample_rate, stems=[SimpleNamespace(data=samples), None])
+        # Smaller sample rate is a protocol fixture, not a GPU throughput test.
+        with tempfile.TemporaryDirectory() as directory, patch.object(w, 'RATE', 64), patch.object(w, 'CORE', 256):
+            os.chdir(directory)
+            try:
+                frames = 601 * w.RATE + 17
+                source = (np.arange(frames * 2, dtype=np.int32) % 16000 - 8000).astype('<i2').tobytes()
+                inputs = []
+                for i, at in enumerate(range(0, len(source), 32*w.RATE*4)):
+                    raw = source[at:at+32*w.RATE*4]
+                    inputs.append(w.write_pack(f'input_{i}.pcm', raw))
+                Path('request.json').write_text(json.dumps(dict(protocol=2, frames=frames, inputs=inputs)))
+                w.ENGINE = SimpleNamespace(process=process);w.GPU_VERIFIED = True;w._PROTOCOL = 2
+                w.run()
+                result = json.loads(Path('result.json').read_text())
+                state = json.loads(Path('progress.json').read_text())
+                self.assertEqual(result['completed_frames'], frames)
+                self.assertEqual(state['stage'], 'done')
+                self.assertLess(len(Path('progress.json').read_bytes()), 6000)
+                self.assertLess(len(result['recent_packs']), 9)
+                self.assertNotIn('chunks', result);self.assertNotIn('packs', result)
+                actual = bytearray()
+                for i in range(result['pack_count']):
+                    raw = Path(f'pack_{i}.pcm').read_bytes()
+                    meta = json.loads(Path(f'pack_{i}.json').read_text())
+                    self.assertEqual(meta['index'], i);self.assertEqual(meta['sha256'], hashlib.sha256(raw).hexdigest())
+                    self.assertLessEqual(len(raw), 16*w.RATE*4);actual.extend(raw)
+                expected = np.floor(np.frombuffer(source,dtype='<i2').astype(np.float32)/32768*32767+.5).astype('<i2').tobytes()
+                self.assertEqual(actual, expected)
+                self.assertTrue(all(n[0]==2 and n[1]<=6*w.RATE for n in calls))
+                self.assertFalse(Path('input.pcm').exists())
+            finally:
+                w.ENGINE=None;w.GPU_VERIFIED=False;w._PROTOCOL=1;os.chdir(previous)
+
+    def test_rest_submissions_execute_once_without_any_kernel_command_per_window(self):
+        import subprocess, sys
+        worker = (ROOT/'app/src/main/assets/colab/music_worker.py').read_text()
+        injection = '''
+def prepare():
+    global GPU_VERIFIED
+    GPU_VERIFIED = True
+    write_json('warm.json', dict(pid=os.getpid()))
+def run():
+    with (CACHE/'calls.txt').open('a') as out:
+        out.write(Path.cwd().name+' '+str(os.getpid())+chr(10))
+    time.sleep(.1)
+    write_json('result.json', dict(pid=os.getpid()))
+    status('done',97)
+'''
+        worker=worker.replace("if __name__ == '__main__':",injection+"\nif __name__ == '__main__':").replace('args=(stop,)', 'args=(stop,.02)')
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/('madar_'+'7'*32);root.mkdir();script=root/'music_worker.py';script.write_text(worker)
+            process=subprocess.Popen([sys.executable,str(script),str(root),'--serve'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            def wait_file(path):
+                deadline=time.monotonic()+5
+                while not path.exists():
+                    if process.poll() is not None:raise AssertionError(process.communicate()[1].decode())
+                    if time.monotonic()>deadline:raise AssertionError('worker did not publish '+str(path))
+                    time.sleep(.01)
+            try:
+                wait_file(root/'warm.json');pid=json.loads((root/'warm.json').read_text())['pid']
+                for i in range(5):
+                    job=root.parent/(root.name+'_b'+str(i));job.mkdir();(job/'request.json').write_text('{"protocol":2}')
+                    marker=job/'submit.json';marker.write_text('{') # interrupted/in-flight PUT is never executable
+                    time.sleep(.03)
+                    for retry in range(3):
+                        w.write_json(marker,dict(protocol=2,service=root.name,job=job.name));time.sleep(.01)
+                    wait_file(job/'result.json')
+                    self.assertEqual(json.loads((job/'result.json').read_text())['pid'],pid)
+                    if i==0: # Late retry of an already completed request.
+                        w.write_json(marker,dict(protocol=2,service=root.name,job=job.name))
+                time.sleep(.1)
+                calls=(root/'calls.txt').read_text().splitlines();self.assertEqual(len(calls),5);self.assertEqual(len(set(calls)),5)
+                beat=json.loads((root/'service.json').read_text())['heartbeat'];time.sleep(.1)
+                service=json.loads((root/'service.json').read_text());self.assertGreater(service['heartbeat'],beat);self.assertEqual(service['stage'],'ready');self.assertEqual(service['next_batch'],5)
+                self.assertEqual(process.poll(),None)
+            finally:
+                process.terminate();process.communicate(timeout=5)
+
     def test_real_pcm_window_trimming_and_batched_input_hashes(self):
         import numpy as np
         previous = Path.cwd()
@@ -189,7 +275,7 @@ def run():
             root=Path(directory)/('madar_'+'f'*32);root.mkdir();(root/'music_worker.py').write_text((ROOT/'app/src/main/assets/colab/music_worker.py').read_text())
             original=os.environ.get('CUDNN_LIB_CONFIG')
             try:
-                with patch.dict(sys.modules,{'torch':fake}),patch.object(launcher.subprocess,'run',side_effect=install),patch.object(launcher.os,'execve',side_effect=execute):
+                with patch.object(launcher,'cuda_major',return_value=13),patch.object(launcher.subprocess,'run',side_effect=install),patch.object(launcher.os,'execve',side_effect=execute):
                     for i in range(2):
                         with self.assertRaises(Executed):launcher.launch(root)
                 self.assertEqual(len(calls),1);self.assertIn('nvidia-cudnn-cu13==9.13.0.50',calls[0]);self.assertIn('--no-deps',calls[0]);self.assertEqual(len(executions),2)
@@ -197,6 +283,12 @@ def run():
                     self.assertEqual(env['CUDNN_LIB_CONFIG'],'FULL');self.assertTrue(env['MADAR_CUDNN_LIB'].endswith('/nvidia/cudnn/lib/libcudnn.so.9'));self.assertTrue(env['LD_LIBRARY_PATH'].startswith(str(root.parent/'madar_cudnn_9130050')));self.assertEqual(args[-1],'--serve')
                 self.assertEqual(os.environ.get('CUDNN_LIB_CONFIG'),original)
             finally:os.chdir(previous)
+
+    def test_launcher_detects_cuda_from_wheel_metadata_without_loading_torch(self):
+        from unittest.mock import patch
+        spec=importlib.util.spec_from_file_location('music_launch',ROOT/'app/src/main/assets/colab/music_launch.py');launcher=importlib.util.module_from_spec(spec);spec.loader.exec_module(launcher)
+        for wheel,expected in [('2.11.0+cu130',13),('2.10.0+cu128',12),('2.11.0+cpu',0)]:
+            with patch('importlib.metadata.version',return_value=wheel):self.assertEqual(launcher.cuda_major(),expected)
 
     def test_ready_preflight_runs_full_context_and_requires_gpu_allocation(self):
         import numpy as np

@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class MusicExport {
  static final class Result {File pcm;long offsetUs;String warning="";}
  static Result run(Context c,File input,long endUs,boolean cloud,AtomicBoolean cancel,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
-  if(endUs<=0)throw new IOException("مدة المقطع غير معروفة");Result result=new Result();result.pcm=File.createTempFile("madar_export_clean_",".pcm",c.getCacheDir());
+  if(endUs<=0)throw new IOException("مدة المقطع غير معروفة");if(cloud)return runCloud(c,input,endUs,cancel,progress,live);Result result=new Result();result.pcm=File.createTempFile("madar_export_clean_",".pcm",c.getCacheDir());
   LiveSeparation.Session target=live==null?new LiveSeparation.Session(input,false):live;target.buffer=new WatchBuffer(endUs/1e6,true);LiveSeparation.attach(target,result.pcm,0);ColabMusic.Session gpu=null;boolean success=false;
   try(OutputStream out=new BufferedOutputStream(new FileOutputStream(result.pcm))){
    if(cloud){gpu=MusicGpuSession.acquire(c,ColabCredentials.take(),cancel,progress);gpu.startWarmup();}
@@ -21,6 +21,16 @@ final class MusicExport {
    }
    success=true;return result;
   }finally{if(gpu!=null){if(!success)gpu.healthy=false;gpu.close();result.warning=gpu.warning;}if(!success)result.pcm.delete();}
+ }
+ private static Result runCloud(Context c,File input,long endUs,AtomicBoolean cancel,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
+  long expected=Math.round(endUs/1e6*44100)*4;
+  if(expected<=0||expected>Long.MAX_VALUE/3||c.getCacheDir().getUsableSpace()<expected*3+32L*1024*1024)throw new IOException("المساحة لا تكفي لتجهيز الملف كاملًا دون فقد");
+  ColabMusic.Session gpu=null;AudioPipeline.Decoded decoded=null;boolean complete=false;Result result=new Result();
+  try{
+   gpu=MusicGpuSession.acquire(c,ColabCredentials.take(),cancel,progress);gpu.startWarmup();
+   long began=android.os.SystemClock.elapsedRealtime();decoded=AudioPipeline.decode(c,input,endUs,cancel,progress);gpu.diagnostic.measure("DECODE",android.os.SystemClock.elapsedRealtime()-began,decoded.pcm.length(),decoded.pcm.length()/4);
+   if(live!=null)live.buffer=new WatchBuffer(endUs/1e6);ColabMusic.Result clean=gpu.run(decoded,progress,live);result.pcm=clean.pcm;result.offsetUs=decoded.offsetUs;complete=true;return result;
+  }finally{if(decoded!=null)decoded.pcm.delete();if(gpu!=null){if(!complete)gpu.healthy=false;gpu.close();result.warning=gpu.warning;}}
  }
  private MusicExport(){}
 }

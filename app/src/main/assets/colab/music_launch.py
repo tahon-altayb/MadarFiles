@@ -12,6 +12,25 @@ import uuid
 
 PIN = '9.13.0.50'
 
+def cuda_major():
+    # Reading wheel metadata avoids importing torch/CUDA twice in fresh processes.
+    from importlib.metadata import version
+    wheel = version('torch')
+    match = re.search(r'\+cu(\d{2,3})', wheel)
+    if match:
+        return int(match.group(1)[:2])
+    if '+cpu' in wheel:
+        return 0
+    spec = importlib.util.find_spec('torch')
+    if spec is not None and spec.origin:
+        text = Path(spec.origin).with_name('version.py').read_text()
+        match = re.search(r"(?m)^cuda(?:\s*:[^=\n]+)?\s*=\s*['\"](\d+)", text)
+        if match:
+            return int(match.group(1))
+        if re.search(r'(?m)^cuda(?:\s*:[^=\n]+)?\s*=\s*None', text):
+            return 0
+    raise ValueError('MUSIC_GPU_WHEEL')
+
 def launch(root):
     root = Path(root).resolve()
     if not re.fullmatch(r'madar_[a-f0-9]{32}', root.name):
@@ -25,13 +44,11 @@ def launch(root):
     thread.start()
     try:
         worker.status('gpu_check', 27)
-        import torch
-        if not torch.cuda.is_available():
-            raise ValueError('MUSIC_GPU_UNAVAILABLE')
+        major = cuda_major()
         env = os.environ.copy()
         env['CUDNN_LIB_CONFIG'] = 'FULL'
         env.pop('MADAR_CUDNN_LIB', None)
-        if str(torch.version.cuda).split('.')[0] == '13':
+        if major == 13:
             worker.status('gpu_dependencies', 28)
             cache = root.parent/'madar_cudnn_9130050'
             libs = cache/'nvidia/cudnn/lib'
@@ -48,7 +65,7 @@ def launch(root):
                     if staging.exists():shutil.rmtree(staging)
             env['MADAR_CUDNN_LIB'] = str(libs/'libcudnn.so.9')
             env['LD_LIBRARY_PATH'] = str(libs)+os.pathsep+env.get('LD_LIBRARY_PATH', '')
-        # exec discards the launcher's torch/cuDNN mappings. The child imports only
+        # No torch import in the launcher. The clean worker imports only
         # after the pinned native library has been preloaded by music_worker.py.
         stop.set();thread.join(timeout=3)
         os.execve(sys.executable, [sys.executable, str(root/'music_worker.py'), str(root), '--serve'], env)

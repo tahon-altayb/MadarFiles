@@ -16,6 +16,11 @@ _STATUS_LOCK = threading.RLock()
 _STATUS_PATH = None
 _STATUS = {}
 _HEARTBEAT = 0
+_PROTOCOL = 1
+_SERVICE_ROOT = None
+_SERVICE_ERROR = None
+_ACTIVE_JOB = ""
+_NEXT_BATCH = 0
 
 def load_private_cudnn():
     global _cudnn
@@ -44,9 +49,13 @@ def write_json(path, value):
     tmp.replace(p)
 
 
-def status(stage, progress, parts=None, frames=None, packs=None):
+def status(stage, progress, parts=None, frames=None, packs=None, extra=None):
     global _STATUS_PATH, _STATUS, _HEARTBEAT
     value = dict(stage=stage, progress=progress)
+    if _PROTOCOL == 2:
+        value.update(job=Path.cwd().name, protocol=2)
+    if extra is not None:
+        value.update(extra)
     if parts is not None:
         value.update(chunks=parts, frames=frames, sample_rate=RATE, channels=2, model_sha256=MODEL_SHA)
     if packs is not None:
@@ -59,6 +68,16 @@ def status(stage, progress, parts=None, frames=None, packs=None):
         write_json(_STATUS_PATH, value)
 
 
+def service_state():
+    if _SERVICE_ROOT is not None:
+        value = dict(protocol=2, heartbeat=_HEARTBEAT, next_batch=_NEXT_BATCH,
+                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED else 'bootstrap',
+                     active_job=_ACTIVE_JOB)
+        if _SERVICE_ERROR:
+            value['error'] = _SERVICE_ERROR
+        write_json(_SERVICE_ROOT / 'service.json', value)
+
+
 def heartbeat(stop, interval=2):
     global _HEARTBEAT
     while not stop.wait(interval):
@@ -67,16 +86,25 @@ def heartbeat(stop, interval=2):
                 _HEARTBEAT += 1
                 _STATUS['heartbeat'] = _HEARTBEAT
                 write_json(_STATUS_PATH, _STATUS)
+            if _SERVICE_ROOT is not None:
+                _HEARTBEAT += 1
+                service_state()
 
 
 def report_failure(error):
+    global _SERVICE_ERROR
     code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', str(error)) else type(error).__name__
     if isinstance(error, RuntimeError) and ('CUDNN Frontend' in str(error) or 'HEURISTIC_QUERY_FAILED' in str(error)):
         code = 'MUSIC_CUDNN_CONV'
     with _STATUS_LOCK:
         previous = _STATUS.get('stage', 'bootstrap')
         path = _STATUS_PATH or Path('progress.json').resolve()
-        write_json(path, dict(stage='failed', last_stage=previous, progress=0, error=code))
+        value = dict(stage='failed', last_stage=previous, progress=0, error=code)
+        if _PROTOCOL == 2:
+            value['job'] = Path.cwd().name
+        write_json(path, value)
+        _SERVICE_ERROR = code
+        service_state()
 
 
 def validate_request(req):
@@ -215,6 +243,8 @@ def write_pack(name, data):
 def run():
     global GPU_VERIFIED
     req = json.loads(Path('request.json').read_text('utf-8'))
+    if req.get('protocol') == 2:
+        return run_v2(req)
     frames, chunks = validate_request(req)
     prepare()
     import numpy as np
@@ -272,7 +302,9 @@ def run():
 
 
 def run_job(folder):
+    global _PROTOCOL
     os.chdir(folder)
+    _PROTOCOL = json.loads(Path('request.json').read_text('utf-8')).get('protocol', 1)
     try:
         status('bootstrap', 27)
         run()
@@ -281,28 +313,122 @@ def run_job(folder):
         raise
 
 
+def run_v2(req):
+    # One job for any duration. Only 32 s input / 16 s output packs and 6 s
+    # inference contexts are resident; status and result manifests stay bounded.
+    import numpy as np
+    frames = req.get('frames')
+    stride = 32 * RATE
+    output_stride = 16 * RATE
+    inputs = req.get('inputs')
+    if type(frames) is not int or frames <= 0:
+        raise ValueError('MUSIC_DURATION')
+    if not isinstance(inputs, list) or len(inputs) != (frames + stride - 1) // stride:
+        raise ValueError('MUSIC_MANIFEST')
+    prepare()
+    with open('input.pcm', 'wb') as out:
+        for i, part in enumerate(inputs):
+            expected = min(stride, frames - i * stride) * 4
+            if not isinstance(part, dict) or part.get('bytes') != expected:
+                raise ValueError('MUSIC_MANIFEST')
+            if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
+                raise ValueError('MUSIC_DISK')
+            out.write(read_wire(part, f'input_{i}.pcm', expected))
+    source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
+    recent, packed, count = [], bytearray(), 0
+    began = time.monotonic()
+    gpu_ms = 0
+    for start in range(0, frames, CORE):
+        left, right = max(0, start - RATE), min(frames, start + CORE + RATE)
+        samples = np.ascontiguousarray(source[left:right].T.astype(np.float32) / 32768)
+        infer_at = time.monotonic()
+        output = ENGINE.process(sample_rate=RATE, samples=samples)
+        gpu_ms += (time.monotonic() - infer_at) * 1000
+        if output.sample_rate != RATE or len(output.stems) != 2:
+            raise ValueError('MUSIC_OUTPUT_FORMAT')
+        vocals = output.stems[0].data
+        keep, offset = min(CORE, frames - start), start - left
+        if vocals.ndim != 2 or vocals.shape[0] != 2 or vocals.shape[1] < offset + keep:
+            raise ValueError('MUSIC_OUTPUT_LENGTH')
+        values = vocals[:, offset:offset + keep].T
+        if not np.isfinite(values).all():
+            raise ValueError('MUSIC_OUTPUT_FINITE')
+        packed.extend(np.floor(np.clip(values, -1, 1) * 32767 + .5).astype('<i2').tobytes())
+        if len(packed) == output_stride * 4 or start + CORE >= frames:
+            if shutil.disk_usage('.').free < len(packed) * 3 + 16 * 1024 * 1024:
+                raise ValueError('MUSIC_DISK')
+            meta = write_pack(f'pack_{count}.pcm', bytes(packed))
+            meta['index'] = count
+            write_json(f'pack_{count}.json', meta)
+            recent.append(meta)
+            recent = recent[-8:]
+            count += 1
+            packed.clear()
+            complete = min(frames, start + CORE)
+            status('separate', 40 + int(54 * complete / frames), extra=dict(
+                frames=frames, completed_frames=complete, sample_rate=RATE, channels=2,
+                model_sha256=MODEL_SHA, pack_count=count, output_frames=output_stride,
+                recent_packs=recent, gpu_ms=round(gpu_ms), inference_ms=round((time.monotonic()-began)*1000)))
+    source._mmap.close()
+    Path('input.pcm').unlink()
+    manifest = dict(protocol=2, job=Path.cwd().name, frames=frames, completed_frames=frames,
+                    sample_rate=RATE, channels=2, model_sha256=MODEL_SHA, provider='cuda',
+                    pack_count=count, output_frames=output_stride, recent_packs=recent,
+                    gpu_ms=round(gpu_ms), inference_ms=round((time.monotonic()-began)*1000))
+    write_json('result.json', manifest)
+    status('done', 97, extra=manifest)
+
+
 def serve(root):
-    global CACHE
+    global CACHE, _SERVICE_ROOT, _ACTIVE_JOB, _NEXT_BATCH
     root = Path(root).resolve()
-    CACHE = root
+    CACHE = _SERVICE_ROOT = root
     os.chdir(root)
     prepare()
+    with _STATUS_LOCK:
+        service_state()
     previous = None
     while True:
-        command = root / 'command.json'
-        if not command.is_file():
+        job = root.parent / (root.name + '_b' + str(_NEXT_BATCH))
+        marker = job / 'submit.json'
+        legacy = root / 'command.json'
+        if marker.is_file():
+            try:
+                request = json.loads(marker.read_text('utf-8'))
+            except (OSError, ValueError):
+                # Contents PUT can be in flight; an incomplete marker isn't executable.
+                time.sleep(.2)
+                continue
+            if request != dict(protocol=2, service=root.name, job=job.name):
+                raise ValueError('MUSIC_JOB_PATH')
+            try:
+                terminal = json.loads((job / 'progress.json').read_text('utf-8'))
+            except (OSError, ValueError):
+                terminal = {}
+            if terminal.get('stage') in ('done', 'failed'):
+                _NEXT_BATCH += 1
+                continue
+            write_json(job / 'accepted.json', dict(job=job.name, protocol=2))
+            _NEXT_BATCH += 1
+        elif legacy.is_file():
+            request = json.loads(legacy.read_text('utf-8'))
+            job = Path(request['folder']).resolve()
+            legacy.unlink()
+        else:
             time.sleep(.2)
             continue
-        request = json.loads(command.read_text('utf-8'))
-        folder = Path(request['folder']).resolve()
-        if folder.parent != root.parent or not re.fullmatch(re.escape(root.name) + r'_b[0-9]+', folder.name):
+        if job.parent != root.parent or not re.fullmatch(re.escape(root.name) + r'_b[0-9]+', job.name):
             raise ValueError('MUSIC_JOB_PATH')
-        command.unlink()
-        # The caller sends the next command only after verifying the last result.
-        if previous is not None and previous != folder:
-            shutil.rmtree(previous)
-        run_job(folder)
-        previous = folder
+        if previous is not None and previous != job:
+            shutil.rmtree(previous, ignore_errors=True)
+        _ACTIVE_JOB = job.name
+        with _STATUS_LOCK:
+            service_state()
+        run_job(job)
+        _ACTIVE_JOB = ''
+        with _STATUS_LOCK:
+            service_state()
+        previous = job
 
 
 if __name__ == '__main__':
