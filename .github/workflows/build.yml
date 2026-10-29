@@ -1,7 +1,7 @@
 name: Build MadarFiles APK
 on:
   push:
-    branches: [main, master, fixes/usability-arabic-20261021, fixes/translation-20261021, development/gemini-studio-20261026]
+    branches: [main, master, fixes/usability-arabic-20261021, fixes/translation-20261021, development/gemini-studio-20261026, fixes/player-seek-background-20261030]
   workflow_dispatch:
 permissions:
   contents: read
@@ -183,9 +183,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 46 --version-name 1.9.11 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 47 --version-name 1.9.12 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.11.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.12.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -236,8 +236,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.11-APK
-          path: MadarFiles-1.9.11.apk
+          name: MadarFiles-1.9.12-APK
+          path: MadarFiles-1.9.12.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports

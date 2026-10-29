@@ -64,4 +64,44 @@ public class PlayerLifecycleTest {
   try{PlaybackSession s=PlaybackSession.current;await(()->s.duration()>23000);MediaController system=controller();i.runOnMainSync(()->s.seekTo(Long.MAX_VALUE));await(()->s.player.getPlaybackState()==Player.STATE_ENDED);await(()->system.getPlaybackState().getState()==PlaybackState.STATE_STOPPED);i.runOnMainSync(()->assertFalse(s.wanted()));system.getTransportControls().play();await(()->s.position()>100&&s.position()<5000);
   }finally{i.runOnMainSync(a::finish);source.delete();}
  }
+ @Test public void homeAndBackKeepBackgroundMediaWithoutAutomaticPip()throws Exception{
+  File source=source(),pcm=pcm();PlayerActivity a=start(source,live(source,pcm));
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>200);CleanAudioController clean=s.clean;MediaController system=controller();
+   i.runOnMainSync(()->{try{PictureInPictureParams params=(PictureInPictureParams)field(a,"miniParams");assertFalse(params.isAutoEnterEnabled());}catch(Exception e){throw new AssertionError(e);}});
+   for(boolean home:new boolean[]{true,false}){long[] before={0};i.runOnMainSync(()->{s.seekTo(1000);before[0]=s.position();});if(home)shell("input keyevent KEYCODE_HOME");else i.runOnMainSync(a::onBackPressed);
+    await(()->!a.hasWindowFocus());await(()->s.position()>before[0]+300);i.runOnMainSync(()->{assertFalse(a.isInPictureInPictureMode());assertFalse(a.isDestroyed());assertSame(clean,s.clean);assertFalse(s.closed);});
+    system.getTransportControls().pause();await(()->!s.wanted());system.getTransportControls().play();await(()->s.wanted());system.getSessionActivity().send();await(()->a.hasWindowFocus()&&!a.isInPictureInPictureMode());
+   }
+  }finally{i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+ @Test public void fiveAndTenSecondSeeksDoNotReapplyTheWholeEpisodeReserve()throws Exception{
+  File source=source(),pcm=pcm();LiveSeparation.Session live=LiveSeparation.begin(source,true);LiveSeparation.attach(live,pcm,0);LiveSeparation.publish(live,24*44100);PlayerActivity a=start(source,live);
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>200);CleanAudioController clean=s.clean;
+   i.runOnMainSync(()->{live.buffer=new WatchBuffer(1500,true);live.buffer.planGap(300);});
+   for(long at:new long[]{5000,10000,5000}){i.runOnMainSync(()->{s.seekTo(at);assertEquals(at,s.position(),2);});await(()->s.position()>at+200);i.runOnMainSync(()->{assertSame(clean,s.clean);assertFalse(live.done);assertEquals(0,s.player.getVolume(),0);});}
+   i.runOnMainSync(()->{s.setWanted(false);s.seekTo(10000);});Thread.sleep(350);i.runOnMainSync(()->{assertFalse(s.wanted());assertEquals(10000,s.position(),100);});
+  }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+ @Test public void seekBeyondReadyWaitsForOnlyItsPrefixAndNeverLeaksOriginalAudio()throws Exception{
+  File source=source(),pcm=pcm();LiveSeparation.Session live=LiveSeparation.begin(source,true);LiveSeparation.attach(live,pcm,0);LiveSeparation.publish(live,8*44100);PlayerActivity a=start(source,live);
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>200);i.runOnMainSync(()->{live.buffer=new WatchBuffer(1500,true);s.seekTo(12000);});Thread.sleep(300);i.runOnMainSync(()->{assertEquals(12000,s.position(),100);assertTrue(s.buffering());assertEquals(0,s.player.getVolume(),0);});LiveSeparation.publish(live,16*44100);await(()->s.position()>12200);i.runOnMainSync(()->assertFalse(live.done));
+  }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+ @Test public void explicitWaitForCompletionStillWaitsAfterASeek()throws Exception{
+  File source=source(),pcm=pcm();LiveSeparation.Session live=LiveSeparation.begin(source,true);LiveSeparation.attach(live,pcm,0);LiveSeparation.publish(live,24*44100);live.waitForComplete=true;PlayerActivity a=start(source,live);
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null);i.runOnMainSync(()->s.seekTo(5000));Thread.sleep(400);i.runOnMainSync(()->{assertTrue(s.buffering());assertEquals(5000,s.position(),100);assertEquals(0,s.player.getVolume(),0);});LiveSeparation.end(live,null);await(()->s.position()>5200);
+  }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+ @Test public void preparationBannerExpiresDespiteProgressAndCanBeRevealedByTouch()throws Exception{
+  File source=source(),pcm=pcm();LiveSeparation.Session live=LiveSeparation.begin(source,true);LiveSeparation.attach(live,pcm,0);live.waitForComplete=true;LiveSeparation.publish(live,8*44100);PlayerActivity a=start(source,live);
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null);android.widget.TextView banner=(android.widget.TextView)field(a,"cleanStatus");await(()->banner.getVisibility()==View.VISIBLE);await(()->banner.getVisibility()==View.GONE);i.runOnMainSync(()->{assertTrue(s.buffering());LiveSeparation.publish(live,16*44100);});Thread.sleep(500);i.runOnMainSync(()->{assertEquals(View.GONE,banner.getVisibility());try{java.lang.reflect.Method show=PlayerActivity.class.getDeclaredMethod("showControls",boolean.class);show.setAccessible(true);show.invoke(a,true);}catch(Exception e){throw new AssertionError(e);}assertEquals(View.VISIBLE,banner.getVisibility());});
+  }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+
+ @Test public void startingRemovalFiveOrTenSecondsIntoTheEpisodeStartsBeforeCompletion()throws Exception{
+  for(int offset:new int[]{5,10}){File source=File.createTempFile("lifecycle-offset-",".mp4",c.getCacheDir()),pcm=File.createTempFile("lifecycle-offset-",".pcm",c.getCacheDir());try(InputStream in=i.getContext().getAssets().open("music-long.mp4");OutputStream out=new FileOutputStream(source)){FilesUtil.copy(in,out);}try(RandomAccessFile out=new RandomAccessFile(pcm,"rw")){out.setLength(40L*44100*4);}LiveSeparation.Session live=LiveSeparation.begin(source,true);LiveSeparation.attach(live,pcm,offset*1000000L);live.buffer=new WatchBuffer(65-offset,true);live.buffer.planGap(180);LiveSeparation.publish(live,40L*44100);PlayerActivity a=start(source,live);
+   try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>offset*1000+200);i.runOnMainSync(()->{assertFalse(live.done);assertTrue(s.position()>=offset*1000);assertEquals(0,s.player.getVolume(),0);});}finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+  }
+ }
+
 }

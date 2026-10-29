@@ -3,28 +3,19 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 public class WatchBufferTest {
  @Test public void oneSampleContextTailsNeverPoisonThroughputOrInventYearsOfWaiting(){WatchBuffer b=new WatchBuffer(1500,true);b.commit(4,0);b.commit(8,1000);b.commit(12,2000);b.completeCycle(24,12);double before=b.speed(2000);b.commit(12+1.0/44100,4000);b.commit(16,5000);b.commit(20,6000);assertTrue(b.speed(6000)>.5);assertTrue(b.waitSeconds(0,20,1,6000)<3600);assertTrue(before>1);}
-
- @Test public void shortFirstWindowStartsSoonerWithoutLosingReserveAtLaterBoundaries(){
-  for(double rate:new double[]{.5,1,2,4,8}){
-   WatchBuffer budget=new WatchBuffer(600,true);double ready=0,played=0;boolean playing=false;int stops=0;long next=0;WatchWindows window=null;double chunkAt=0,cycleAt=0,decoded=0;long base=0;boolean first=true;int ordinal=0;double began=-1;
-   for(long ms=0;played<600&&ms<2400000;ms+=100){double now=ms/1000.0;
-    if(window==null&&next<600000000L){window=WatchWindows.forWatch(next,600000000L,true,ordinal++);base=Math.round(ready*44100);decoded=0;cycleAt=now;double seconds=(window.decodeEnd-window.decodeStart)/1e6;chunkAt=now+(first?30:0)+2+seconds/16+Math.min(4,seconds)/rate;}
-    if(window!=null&&now>=chunkAt){double seconds=(window.decodeEnd-window.decodeStart)/1e6;decoded=Math.min(seconds,decoded+4);double committed=Math.min((window.coreEnd-window.coreStart)/1e6,Math.max(0,decoded-(window.coreStart-window.decodeStart)/1e6));double changed=base/44100.0+committed;if(changed>ready){ready=changed;budget.commit(ready,ms);}if(decoded>=seconds){budget.completeCycle((window.coreEnd-window.coreStart)/1e6,now-cycleAt-(first?30:0));next=window.coreEnd;window=null;first=false;}else chunkAt+=Math.min(4,seconds-decoded)/rate;}
-    if(!playing&&ready-played+.000001>=budget.required(played,1,ms)){playing=true;if(began<0)began=now;}
-    if(playing){if(ready-played>=.09999||ready>=600)played=Math.min(600,played+.1);else{stops++;playing=false;}}
-   }
-   assertEquals("Repeated buffering at producer rate "+rate,0,stops);assertEquals(600,played,.01);if(rate>=4)assertTrue("Fast GPU should start before processing the old 120 s first window",began<55);
+ @Test public void automaticReserveNeverBecomesTheRemainingEpisode(){
+  for(double duration:new double[]{24,600,1500,7200})for(double speed:new double[]{.5,1,2}){
+   WatchBuffer b=new WatchBuffer(duration,true);b.commit(4,0);b.commit(8,10000);b.commit(12,20000);b.completeCycle(40,137);b.planGap(300);
+   assertTrue(b.required(0,speed,1000000)<=30*speed);assertTrue(b.required(0,speed,1000000)<=duration);
+   assertEquals(Math.min(2,30*speed),b.required(duration-2,speed,1000000),0);
   }
  }
- @Test public void growingUploadGapsAreBudgetedBeforeTheNextWindow(){
-  WatchBuffer budget=new WatchBuffer(1500,true);budget.commit(16,1000);budget.commit(32,2000);budget.commit(40,3000);budget.completeCycle(40,10);
-  budget.planGap(60);assertTrue(budget.required(0,1,3000)>=75);budget.planGap(120);assertTrue(budget.required(0,1,3000)>=150);assertTrue(budget.required(0,2,3000)>=300);
- }
- @Test public void neverInventsASpeedBeforeEnoughAudioIsMeasured(){WatchBuffer b=new WatchBuffer(3600);assertEquals(-1,b.waitSeconds(0,4,1,0));b.commit(4,100000);b.commit(8,101000);assertEquals(3600,b.required(0,1,101000),0);b.commit(12,102000);assertEquals(3.2,b.speed(102000),.001);assertTrue(b.required(0,1,102000)<=20);}
- @Test public void slowerThanPlaybackBudgetsTheWholeRemainingFilm(){WatchBuffer b=new WatchBuffer(3600);b.commit(4,0);b.commit(8,8000);b.commit(12,16000);assertEquals(.4,b.speed(16000),.001);assertTrue(b.required(0,1,16000)>2100);assertEquals(4336,b.waitSeconds(0,12,1,16000));assertTrue(b.required(1800,1,16000)<b.required(0,1,16000));}
- @Test public void decodeUploadGapsAndPlaybackSpeedIncreaseTheBudget(){WatchBuffer b=new WatchBuffer(3600);b.commit(4,0);b.commit(8,1000);b.commit(12,2000);double fast=b.required(0,1,2000);assertTrue(b.required(0,1,62000)>fast);b.commit(16,64000);assertTrue(b.required(0,1,64000)>fast);assertTrue(b.required(0,2,64000)>=b.required(0,1,64000));}
- @Test public void watchSessionsMeasureAWholePipelineCycleBeforeStarting(){WatchBuffer b=new WatchBuffer(3600,true);b.commit(4,0);b.commit(8,1000);b.commit(12,2000);assertEquals(0,b.speed(2000),0);b.completeCycle(120,180);assertTrue(b.speed(2000)<1);assertTrue(b.required(0,1,2000)>1600);}
- @Test public void measuredBudgetAvoidsRepeatedStallsInFastAndSlowProduction(){
-  for(double rate:new double[]{.25,.5,1,2,4}){WatchBuffer b=new WatchBuffer(600);double ready=0,played=0;boolean started=false;int stalls=0;for(long second=0;played<600&&second<10000;second++){double next=Math.min(600,Math.floor(second*rate/4)*4);if(next>ready){ready=next;b.commit(ready,second*1000);}if(!started&&ready-played>=b.required(played,1,second*1000))started=true;if(started){if(ready-played>=1)played++;else if(ready<600)stalls++;}}assertTrue(started);assertEquals("rate="+rate,0,stalls);assertEquals(600,played,0);}
+ @Test public void initialMeasurementHasABoundedReserveAndDoesNotInventSpeed(){WatchBuffer b=new WatchBuffer(3600);assertEquals(-1,b.waitSeconds(0,4,1,0));b.commit(4,100000);b.commit(8,101000);assertEquals(30,b.required(0,1,101000),0);b.commit(12,102000);assertEquals(3.2,b.speed(102000),.001);assertTrue(b.required(0,1,102000)<=20);}
+ @Test public void slowCellularLogWaitsForAPrefixRatherThanThirteenMinutes(){WatchBuffer b=new WatchBuffer(1500,true);b.commit(4,114000);b.commit(40,137000);b.completeCycle(40,100);b.planGap(118);assertEquals(30,b.required(0,1,245000),0);assertEquals(0,b.waitSeconds(0,40,1,245000));assertEquals(30,b.required(10,1,627000),0);}
+ @Test public void requestedSeekNeedsOnlyThreeSecondsAndHonorsSpeedAndEnd(){assertEquals(3,WatchBuffer.seekRequired(1200,1),0);assertEquals(6,WatchBuffer.seekRequired(1200,2),0);assertEquals(1,WatchBuffer.seekRequired(1,1),0);assertEquals(0,WatchBuffer.seekRequired(-1,1),0);assertEquals(3,WatchBuffer.seekRequired(Double.POSITIVE_INFINITY,1),0);}
+ @Test public void decodeUploadGapsAndPlaybackSpeedIncreaseOnlyTheBoundedBudget(){WatchBuffer b=new WatchBuffer(3600);b.commit(4,0);b.commit(8,1000);b.commit(12,2000);double fast=b.required(0,1,2000);assertTrue(b.required(0,1,62000)>fast);b.commit(16,64000);assertTrue(b.required(0,1,64000)>fast);assertTrue(b.required(0,2,64000)>=b.required(0,1,64000));assertTrue(b.required(0,2,64000)<=60);}
+ @Test public void watchSessionsStillMeasureTheWholePipelineSpeed(){WatchBuffer b=new WatchBuffer(3600,true);b.commit(4,0);b.commit(8,1000);b.commit(12,2000);assertEquals(0,b.speed(2000),0);b.completeCycle(120,180);assertTrue(b.speed(2000)<1);assertEquals(30,b.required(0,1,2000),0);}
+ @Test public void slowAndFastProductionBothMakeProgressWithBoundedAutomaticResumes(){
+  for(double rate:new double[]{.25,.5,1,2,4}){WatchBuffer b=new WatchBuffer(600);double ready=0,played=0;boolean playing=false;int resumes=0;for(long second=0;played<600&&second<10000;second++){double next=Math.min(600,Math.floor(second*rate/4)*4);if(next>ready){ready=next;b.commit(ready,second*1000);}if(!playing&&(ready>=600||ready-played>=b.required(played,1,second*1000))){playing=true;resumes++;}if(playing){if(ready-played>=1)played++;else playing=false;}}assertTrue(resumes>0);assertEquals("producer rate="+rate,600,played,0);}
  }
 }

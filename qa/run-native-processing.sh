@@ -18,7 +18,7 @@ python3 - <<'PYLIFECYCLE'
 from pathlib import Path
 import re
 log=Path('phone-screenshots/player-lifecycle-tests.txt').read_text(errors='replace')
-assert re.search(r'\bOK\s*\(6 tests\)',log), 'All six real player lifecycle tests must pass'
+assert re.search(r'\bOK\s*\(12 tests\)',log), 'All twelve real player lifecycle tests must pass'
 assert not re.search(r'INSTRUMENTATION_STATUS_CODE:\s*-\d+',log), 'Failed or skipped lifecycle tests'
 assert 'INSTRUMENTATION_FAILED' not in log and 'FAILURES!!!' not in log
 PYLIFECYCLE

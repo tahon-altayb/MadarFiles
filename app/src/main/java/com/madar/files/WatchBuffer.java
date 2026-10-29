@@ -26,10 +26,14 @@ final class WatchBuffer {
  }
  synchronized double required(double played,double playbackSpeed,long now){
   double remaining=Math.max(0,duration-played),rate=speed(now),s=Math.max(.25,playbackSpeed);
-  if(rate==0)return remaining; // Measure first; never start from an arbitrary tiny prefix.
+  // Automatic watching uses a rolling reserve, not a download of the whole film.
+  // Explicit waitForComplete is enforced separately by CleanAudioController.
+  double limit=Math.min(remaining,30*s);
+  if(rate==0)return limit;
   double safety=Math.max(Math.max(20*s,Math.min(120,gap*1.5)*s),plannedGap*1.25*s);
-  return Math.min(remaining,Math.max(safety,remaining*(1-rate/s)+safety));
+  return Math.min(limit,Math.max(safety,remaining*(1-rate/s)+safety));
  }
+ static double seekRequired(double remaining,double playbackSpeed){return Math.min(Math.max(0,remaining),3*Math.max(.25,playbackSpeed));}
  synchronized long waitSeconds(double played,double ready,double playbackSpeed,long now){
   double rate=speed(now);if(rate==0)return -1;
   // The reserve already contains the safety margin; estimate its fill time
