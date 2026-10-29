@@ -4,6 +4,28 @@ set -uo pipefail
 mkdir -p phone-screenshots || exit $?
 gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:installDebug :app:installDebugAndroidTest || exit $?
 status=0
+# Exercise lifecycle transitions first and in a fresh process. A fixture/lifecycle
+# failure must not spend another fifteen minutes running unrelated model tests.
+adb shell am force-stop com.madar.files || exit $?
+adb logcat -c
+adb logcat -v threadtime > phone-screenshots/player-lifecycle-logcat.txt 2>&1 &
+lifecycle_logcat_pid=$!
+adb shell am instrument -w -r -e class com.madar.files.PlayerLifecycleTest com.madar.files.test/androidx.test.runner.AndroidJUnitRunner > phone-screenshots/player-lifecycle-tests.txt 2>&1 || status=$?
+kill "$lifecycle_logcat_pid" 2>/dev/null || true
+wait "$lifecycle_logcat_pid" 2>/dev/null || true
+cat phone-screenshots/player-lifecycle-tests.txt
+python3 - <<'PYLIFECYCLE'
+from pathlib import Path
+import re
+log=Path('phone-screenshots/player-lifecycle-tests.txt').read_text(errors='replace')
+assert re.search(r'\bOK\s*\(6 tests\)',log), 'All six real player lifecycle tests must pass'
+assert not re.search(r'INSTRUMENTATION_STATUS_CODE:\s*-\d+',log), 'Failed or skipped lifecycle tests'
+assert 'INSTRUMENTATION_FAILED' not in log and 'FAILURES!!!' not in log
+PYLIFECYCLE
+if [ "$?" -ne 0 ] || [ "$status" -ne 0 ]; then
+ tail -n 350 phone-screenshots/player-lifecycle-logcat.txt
+ exit 1
+fi
 adb shell am force-stop com.madar.files || exit $?
 adb logcat -c
 adb logcat -v threadtime > phone-screenshots/player-source-logcat.txt 2>&1 &
@@ -74,5 +96,5 @@ if [ "$?" -ne 0 ]; then
  exit "$status"
 fi
 adb shell am force-stop com.madar.files || status=1
-gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest,com.madar.files.PlayerSourceTest || status=$?
+gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.madar.files.PlayerLifecycleTest,com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest,com.madar.files.PlayerSourceTest || status=$?
 exit "$status"
