@@ -94,7 +94,19 @@ public class PlayerLifecycleTest {
  }
  @Test public void preparationBannerExpiresDespiteProgressAndCanBeRevealedByTouch()throws Exception{
   File source=source(),pcm=pcm();LiveSeparation.Session live=LiveSeparation.begin(source,true);LiveSeparation.attach(live,pcm,0);live.waitForComplete=true;LiveSeparation.publish(live,8*44100);PlayerActivity a=start(source,live);
-  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null);android.widget.TextView banner=(android.widget.TextView)field(a,"cleanStatus");await(()->banner.getVisibility()==View.VISIBLE);await(()->banner.getVisibility()==View.GONE);i.runOnMainSync(()->{assertTrue(s.buffering());LiveSeparation.publish(live,16*44100);});Thread.sleep(500);i.runOnMainSync(()->{assertEquals(View.GONE,banner.getVisibility());try{java.lang.reflect.Method show=PlayerActivity.class.getDeclaredMethod("showControls",boolean.class);show.setAccessible(true);show.invoke(a,true);}catch(Exception e){throw new AssertionError(e);}assertEquals(View.VISIBLE,banner.getVisibility());});
+  try{
+   PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null);
+   android.widget.TextView banner=(android.widget.TextView)field(a,"cleanStatus");
+   await(()->banner.getVisibility()==View.VISIBLE);
+   // Repeated controller refreshes are not touches and cannot extend the timer.
+   i.runOnMainSync(()->{try{java.lang.reflect.Method show=PlayerActivity.class.getDeclaredMethod("showControls",boolean.class);show.setAccessible(true);for(int n=0;n<3;n++){show.invoke(a,false);show.invoke(a,true);}}catch(Exception e){throw new AssertionError(e);}});
+   await(()->banner.getVisibility()==View.GONE);
+   i.runOnMainSync(()->{assertTrue(s.buffering());LiveSeparation.publish(live,16*44100);});Thread.sleep(500);
+   i.runOnMainSync(()->{
+    assertEquals(View.GONE,banner.getVisibility());long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,80,200,0),up=MotionEvent.obtain(now,now+20,MotionEvent.ACTION_UP,80,200,0);
+    try{a.dispatchTouchEvent(down);a.dispatchTouchEvent(up);}finally{down.recycle();up.recycle();}
+    assertEquals(View.VISIBLE,banner.getVisibility());
+   });
   }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
  }
 
