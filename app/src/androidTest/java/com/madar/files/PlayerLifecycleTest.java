@@ -6,7 +6,7 @@ import android.media.MediaMetadata;
 import android.media.session.*;
 import android.os.*;
 import android.view.*;
-import android.widget.*;
+import android.widget.LinearLayout;
 import androidx.media3.common.Player;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.Test;
