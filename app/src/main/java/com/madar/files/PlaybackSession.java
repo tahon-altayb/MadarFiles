@@ -13,7 +13,7 @@ final class PlaybackSession implements AutoCloseable {
  static PlaybackSession current;
  final String id=java.util.UUID.randomUUID().toString();
  final Context context;final ExoPlayer player;final Player controls;private final androidx.media3.exoplayer.source.DefaultMediaSourceFactory sources;
- PlayerInput input;File subtitle;WatchMusicService.Job watchJob;LiveSeparation.Session cleanSession;
+ private String screenOwner;int displayMode;boolean locked;PlayerInput input;File subtitle;WatchMusicService.Job watchJob;LiveSeparation.Session cleanSession;
  CleanAudioController clean;boolean cleanRequested,legacyClean,closed;private boolean preparingWanted;
  float volume=1,speed=1,pitch=1;String status="",error="",decoder="";boolean waiting;
  interface Observer {void changed();}
@@ -25,12 +25,18 @@ final class PlaybackSession implements AutoCloseable {
  private PlaybackSession(Context c,PlayerInput input){
   context=c.getApplicationContext();this.input=input;
   sources=new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(input.http.factory(context),new androidx.media3.extractor.DefaultExtractorsFactory().setTsExtractorFlags(androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS|androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES));
-  player=new ExoPlayer.Builder(context).setRenderersFactory(new DefaultRenderersFactory(context).setExtensionRendererMode(context.getSharedPreferences("player",0).getBoolean("software_audio",false)?DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER:DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON).setEnableDecoderFallback(true)).setMediaSourceFactory(sources).build();
+  player=new ExoPlayer.Builder(context).setSeekBackIncrementMs(10000).setSeekForwardIncrementMs(10000).setRenderersFactory(new DefaultRenderersFactory(context).setExtensionRendererMode(context.getSharedPreferences("player",0).getBoolean("software_audio",false)?DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER:DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON).setEnableDecoderFallback(true)).setMediaSourceFactory(sources).build();
   player.setWakeMode(C.WAKE_MODE_LOCAL);player.setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),true);player.setHandleAudioBecomingNoisy(true);
   player.addAnalyticsListener(new androidx.media3.exoplayer.analytics.AnalyticsListener(){@Override public void onAudioDecoderInitialized(androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime t,String name,long at,long duration){decoder=name;}});
   player.addListener(new Player.Listener(){@Override public void onEvents(Player p,Player.Events events){changed();}@Override public void onPlayerError(PlaybackException failure){error=MediaFailure.describe(failure,false);changed();}});
   controls=new ForwardingPlayer(player){
    @Override public boolean getPlayWhenReady(){return wanted();}
+   @Override public long getCurrentPosition(){return position();}
+   @Override public long getContentPosition(){return position();}
+   @Override public void seekTo(long at){PlaybackSession.this.seekTo(at);}
+   @Override public void seekTo(int index,long at){if(index==0)PlaybackSession.this.seekTo(at);}
+   @Override public void seekBack(){PlaybackSession.this.seekTo(position()-10000);}
+   @Override public void seekForward(){PlaybackSession.this.seekTo(position()+10000);}
    @Override public int getPlaybackState(){return clean!=null&&clean.waiting()?Player.STATE_BUFFERING:super.getPlaybackState();}
    @Override public long getBufferedPosition(){return cleanRequested&&cleanSession!=null?Math.round(cleanSession.ready()*1000):super.getBufferedPosition();}
    @Override public long getTotalBufferedDuration(){return Math.max(0,getBufferedPosition()-getCurrentPosition());}
@@ -39,6 +45,8 @@ final class PlaybackSession implements AutoCloseable {
    @Override public void pause(){setWanted(false);}
   };
  }
+ void claimScreen(String owner){screenOwner=owner;}
+ boolean ownsScreen(String owner){return owner.equals(screenOwner);}
  void observe(Observer listener){observer=listener;if(listener!=null)listener.changed();}
  void unobserve(Observer listener){if(observer==listener)observer=null;}
  private void changed(){if(!closed&&observer!=null)observer.changed();}
@@ -52,7 +60,11 @@ final class PlaybackSession implements AutoCloseable {
   error="";player.setMediaItem(media.build());player.setPlaybackParameters(new PlaybackParameters(speed,pitch));player.seekTo(position);player.prepare();
   if(wasClean&&cleanSession!=null)useClean(cleanSession,watchJob,legacyClean,position,play);else player.setPlayWhenReady(play&&!wasClean);
  }
- boolean wanted(){return clean!=null?clean.wanted():cleanRequested?preparingWanted:player.getPlayWhenReady();}
+ boolean wanted(){return clean!=null?clean.wanted():cleanRequested?preparingWanted:player.getPlayWhenReady()&&player.getPlaybackState()!=Player.STATE_ENDED;}
+ long duration(){long n=player.getDuration();return n==C.TIME_UNSET||n<0?-1:n;}
+ boolean buffering(){return wanted()&&(cleanRequested?(clean==null||clean.waiting()):player.getPlaybackState()==Player.STATE_BUFFERING||player.getPlaybackState()==Player.STATE_IDLE||player.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE);}
+ long bufferedPosition(){long at=cleanRequested&&cleanSession!=null?Math.round(cleanSession.ready()*1000):player.getBufferedPosition();long duration=duration();return Math.max(0,duration>=0?Math.min(at,duration):at);}
+ void seekTo(long at){if(closed)return;long end=duration();at=Math.max(0,end>=0?Math.min(at,end):at);if(clean!=null)clean.move(at);else player.seekTo(at);changed();}
  long position(){return clean!=null?clean.positionMs():player.getCurrentPosition();}
  void setWanted(boolean value){if(closed)return;if(clean!=null){if(value&&cleanSession.done&&clean.playedFrames()>=cleanSession.frames)clean.move(cleanSession.offsetUs/1000);clean.setWanted(value);}else if(cleanRequested)preparingWanted=value;else{if(value&&player.getPlaybackState()==Player.STATE_ENDED)player.seekTo(0);player.setPlayWhenReady(value);}changed();}
  void useClean(LiveSeparation.Session source,WatchMusicService.Job job,boolean legacy,long position,boolean play){
