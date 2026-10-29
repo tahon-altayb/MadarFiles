@@ -11,6 +11,17 @@ final class MusicGpuSession {
  static boolean busy(){return busy||retiring!=null;}
  static boolean closing(){return retiring!=null;}
  static boolean held(){return idle!=null||busy();}
+ /** Cancellation is tied to its owner, so a delayed old export cannot cancel a new one. */
+ static synchronized void cancelOwner(AtomicBoolean owner){
+  if(active!=null&&active.callerCancel==owner){active.callerCancel.set(true);active.cancel.set(true);}
+  if(idle!=null&&idle.callerCancel==owner){ColabMusic.Session s=idle;idle=null;retireLocked(s);try{notifyState(s.context);}catch(RuntimeException ignored){}}
+ }
+ static void awaitCancelled(AtomicBoolean owner,MusicSeparator.Progress progress){
+  cancelOwner(owner);long last=0;boolean interrupted=false;
+  for(;;){synchronized(MusicGpuSession.class){if((active==null||active.callerCancel!=owner)&&(retiring==null||retiring.callerCancel!=owner))break;}
+   long now=SystemClock.elapsedRealtime();if(now-last>1000){last=now;progress.update(-1,"إلغاء الطلب وإغلاق جلسة Colab السابقة…");}try{Thread.sleep(100);}catch(InterruptedException stop){interrupted=true;}
+  }if(interrupted)Thread.currentThread().interrupt();
+ }
  static long generation(){return generation;}
  static long remainingIdle(){ColabMusic.Session s=idle;return s==null?0:Math.max(0,Math.min(IDLE_MS-(SystemClock.elapsedRealtime()-idleAt),MAX_AGE_MS-(SystemClock.elapsedRealtime()-s.createdAt)));}
  private static void notifyState(Context c){c.startForegroundService(new Intent(c,MusicGpuService.class));}

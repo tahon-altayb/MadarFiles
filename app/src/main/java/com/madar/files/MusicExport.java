@@ -4,7 +4,7 @@ import java.io.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 /** Unbounded media duration, bounded decode/model memory. One GPU lease for the full file. */
 final class MusicExport {
- static final class Result {File pcm;long offsetUs;String warning="";}
+ static final class Result {ColabDiagnostics diagnostic;File pcm;long offsetUs;String warning="";}
  static Result run(Context c,File input,long endUs,boolean cloud,AtomicBoolean cancel,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
   if(endUs<=0)throw new IOException("مدة المقطع غير معروفة");if(cloud)return runCloud(c,input,endUs,cancel,progress,live);Result result=new Result();result.pcm=File.createTempFile("madar_export_clean_",".pcm",c.getCacheDir());
   LiveSeparation.Session target=live==null?new LiveSeparation.Session(input,false):live;target.buffer=new WatchBuffer(endUs/1e6,true);LiveSeparation.attach(target,result.pcm,0);ColabMusic.Session gpu=null;boolean success=false;
@@ -29,7 +29,7 @@ final class MusicExport {
   try{
    gpu=MusicGpuSession.acquire(c,ColabCredentials.take(),cancel,progress);gpu.startWarmup();
    long began=android.os.SystemClock.elapsedRealtime();decoded=AudioPipeline.decode(c,input,endUs,cancel,progress);gpu.diagnostic.measure("DECODE",android.os.SystemClock.elapsedRealtime()-began,decoded.pcm.length(),decoded.pcm.length()/4);
-   if(live!=null)live.buffer=new WatchBuffer(endUs/1e6);ColabMusic.Result clean=gpu.run(decoded,progress,live);result.pcm=clean.pcm;result.offsetUs=decoded.offsetUs;complete=true;return result;
+   if(live!=null)live.buffer=new WatchBuffer(endUs/1e6);ColabMusic.Result clean=gpu.run(decoded,progress,live);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=decoded.offsetUs;complete=true;return result;
   }finally{if(decoded!=null)decoded.pcm.delete();if(gpu!=null){if(!complete)gpu.healthy=false;gpu.close();result.warning=gpu.warning;}}
  }
  private MusicExport(){}

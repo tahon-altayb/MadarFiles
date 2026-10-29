@@ -81,6 +81,15 @@ def service_state():
 def heartbeat(stop, interval=2):
     global _HEARTBEAT
     while not stop.wait(interval):
+        if _SERVICE_ROOT is not None:
+            try:
+                request = json.loads((_SERVICE_ROOT / 'stop.json').read_text('utf-8'))
+            except (OSError, ValueError):
+                request = {}
+            if request == dict(service=_SERVICE_ROOT.name, cancel=True):
+                # Only this owned worker process exits, even while inference is busy.
+                write_json(_SERVICE_ROOT / 'stopped.json', dict(service=_SERVICE_ROOT.name, stopped=True))
+                os._exit(0)
         with _STATUS_LOCK:
             if _STATUS_PATH is not None and _STATUS.get('stage') not in ('failed', 'done'):
                 _HEARTBEAT += 1

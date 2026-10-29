@@ -36,7 +36,7 @@ public class VideoExportService extends Service {
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         if(intent==null){stopSelf();return START_NOT_STICKY;}
-        if("cancel".equals(intent.getAction())){if(musicWorker!=null&&active){musicCancel.set(true);}else if(active)finish("cancelled",null);else stopSelf();return START_NOT_STICKY;}
+        if("cancel".equals(intent.getAction())){if(musicWorker!=null&&active){musicCancel.set(true);MusicGpuSession.cancelOwner(musicCancel);stageText="إلغاء المعالجة وإغلاق مهمتها…";notifications.notify(7,notification(-1));}else if(active)finish("cancelled",null);else stopSelf();return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
         try{
             if(Build.VERSION.SDK_INT>=35)startForeground(7,notification(-1),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING);else startForeground(7,notification(-1),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
@@ -137,10 +137,10 @@ public class VideoExportService extends Service {
         if(live!=null)publish(new JSONObject().put("type","musicLiveReady").put("session",live.id));
         musicWorker=new Thread(()->{
             File clean=null;boolean liveSuccess=false;
-            try{boolean cloud=options.optString("musicMode").equals("colab");if(cloud&&!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");MusicExport.Result separated=MusicExport.run(this,input,sample?Math.min(duration*1000,10000000L):duration*1000,cloud,musicCancel,callback,live);clean=separated.pcm;String warning=separated.warning;MusicSeparator.check(musicCancel);AudioPipeline.mux(input,clean,partial,separated.offsetUs,limitUs,audioOnly,musicCancel,callback);MusicSeparator.check(musicCancel);
+            try{boolean cloud=options.optString("musicMode").equals("colab");if(cloud&&!options.optBoolean("onlineAudioConsent"))throw new java.io.IOException("وافق على رفع الصوت إلى Colab أولًا");MusicExport.Result separated=MusicExport.run(this,input,sample?Math.min(duration*1000,10000000L):duration*1000,cloud,musicCancel,(p,m)->callback.update(p<0?p:Math.min(85,p*85/97),m),live);clean=separated.pcm;String warning=separated.warning;MusicSeparator.check(musicCancel);long muxAt=SystemClock.elapsedRealtime();AudioPipeline.mux(input,clean,partial,separated.offsetUs,limitUs,audioOnly,musicCancel,callback);if(separated.diagnostic!=null)separated.diagnostic.measure("MUX",SystemClock.elapsedRealtime()-muxAt,partial.length(),clean.length()/4);MusicSeparator.check(musicCancel);
                 if(!partial.renameTo(output))throw new java.io.IOException("تعذر حفظ النتيجة");liveSuccess=true;JSONObject result=FilesUtil.info(output).put("type","result").put("warning",warning);handler.post(()->{if(!terminal){publish(result);musicWorker=null;finish("done",null);}});
-            }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
-            catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;finish("error","تعذر فصل الموسيقى. "+(e.getMessage()==null?"جرّب عينة أقصر وتأكد من المساحة المتاحة.":e.getMessage()));});}
+            }catch(java.util.concurrent.CancellationException e){MusicGpuSession.awaitCancelled(musicCancel,callback);handler.post(()->{musicWorker=null;finish("cancelled",null);});}
+            catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){if(musicCancel.get())MusicGpuSession.awaitCancelled(musicCancel,callback);handler.post(()->{musicWorker=null;if(musicCancel.get())finish("cancelled",null);else finish("error","تعذر فصل الموسيقى. "+(e.getMessage()==null?"جرّب عينة أقصر وتأكد من المساحة المتاحة.":e.getMessage()));});}
             finally{if(live!=null)LiveSeparation.end(live,liveSuccess?null:"لم تكتمل المعالجة أو أوقفتها");if(clean!=null&&!LiveSeparation.retain(clean))clean.delete();}
         },"madar-offline-separation");musicWorker.start();
     }

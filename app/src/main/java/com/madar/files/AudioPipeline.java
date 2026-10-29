@@ -35,19 +35,34 @@ final class AudioPipeline {
   }catch(Exception|OutOfMemoryError e){raw.delete();throw e;}finally{if(codec!=null){try{codec.stop();}catch(Exception ignored){}codec.release();}ex.release();}
  }
  static void mux(File source,File clean,File output,long audioOffsetUs,long limitUs,boolean audioOnly,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
-  MediaExtractor video=new MediaExtractor();MediaCodec encoder=null;MediaMuxer muxer=null;boolean muxStarted=false;
+  MediaExtractor video=new MediaExtractor();MediaCodec encoder=null;MediaMuxer muxer=null;boolean muxStarted=false,complete=false;
+  long totalFrames=clean.length()/4;if(totalFrames<=0||clean.length()%4!=0)throw new IOException("ملف الصوت المفصول غير مكتمل");
   try(InputStream pcm=new BufferedInputStream(new FileInputStream(clean))){
    video.setDataSource(source.getAbsolutePath());int videoIndex=audioOnly?-1:track(video,"video/");
    muxer=new MediaMuxer(output.getAbsolutePath(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);int videoTrack=-1;if(videoIndex>=0){video.selectTrack(videoIndex);MediaFormat f=video.getTrackFormat(videoIndex);videoTrack=muxer.addTrack(f);if(f.containsKey(MediaFormat.KEY_ROTATION))muxer.setOrientationHint(f.getInteger(MediaFormat.KEY_ROTATION));}
    MediaFormat format=MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC,44100,2);format.setInteger(MediaFormat.KEY_AAC_PROFILE,MediaCodecInfo.CodecProfileLevel.AACObjectLC);format.setInteger(MediaFormat.KEY_BIT_RATE,192000);format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE,16384);
-   encoder=MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);encoder.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);encoder.start();boolean inputDone=false,outputDone=false;long frames=0;int audioTrack=-1;MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();byte[] bytes=new byte[16384];
-   while(!outputDone){ColabProbe.check(cancel);
-    if(!inputDone){int index=encoder.dequeueInputBuffer(10000);if(index>=0){ByteBuffer buffer=encoder.getInputBuffer(index);buffer.clear();int n=pcm.read(bytes,0,Math.min(bytes.length,buffer.remaining()/4*4));long pts=audioOffsetUs+frames*1000000L/44100;if(n<0){encoder.queueInputBuffer(index,0,0,pts,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputDone=true;}else{buffer.put(bytes,0,n);encoder.queueInputBuffer(index,0,n,pts,0);frames+=n/4;}}}
-    int index=encoder.dequeueOutputBuffer(info,10000);if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){audioTrack=muxer.addTrack(encoder.getOutputFormat());muxer.start();muxStarted=true;}
-    else if(index>=0){if((info.flags&MediaCodec.BUFFER_FLAG_CODEC_CONFIG)!=0)info.size=0;if(info.size>0){ByteBuffer buffer=encoder.getOutputBuffer(index);buffer.position(info.offset);buffer.limit(info.offset+info.size);muxer.writeSampleData(audioTrack,buffer,info);}outputDone=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;encoder.releaseOutputBuffer(index,false);}
+   encoder=MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);encoder.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);encoder.start();boolean inputDone=false,outputDone=false;long frames=0,encodedFrames=0,lastWork=android.os.SystemClock.elapsedRealtime(),lastUi=0;int audioTrack=-1;MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();byte[] bytes=new byte[16384];ByteBuffer videoBytes=videoTrack>=0?ByteBuffer.allocateDirect(16*1024*1024):null;
+   progress.update(85,"اكتمل الفصل · ترميز الصوت وحفظ الفيديو على الجهاز");
+   while(!outputDone){ColabProbe.check(cancel);boolean worked=false;
+    // Pump input and drain ALL ready output. Waiting 10 ms per AAC packet used
+    // to add minutes after Colab had already completed the actual separation.
+    if(!inputDone){int index=encoder.dequeueInputBuffer(0);if(index>=0){ByteBuffer buffer=encoder.getInputBuffer(index);buffer.clear();int capacity=Math.min(bytes.length,buffer.remaining()/4*4);if(capacity<=0)throw new IOException("حجم مخزن ترميز الصوت غير صالح");int n=pcm.read(bytes,0,capacity);long pts=audioOffsetUs+frames*1000000L/44100;if(n<0){encoder.queueInputBuffer(index,0,0,pts,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputDone=true;}else{if(n%4!=0)throw new IOException("إطار صوت غير مكتمل");buffer.put(bytes,0,n);encoder.queueInputBuffer(index,0,n,pts,0);frames+=n/4;}worked=true;}}
+    for(int drained=0;drained<64;drained++){ColabProbe.check(cancel);int index=encoder.dequeueOutputBuffer(info,0);
+     if(index==MediaCodec.INFO_TRY_AGAIN_LATER)break;
+     if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){if(muxStarted)throw new IOException("تغير ترميز الصوت أثناء الحفظ");audioTrack=muxer.addTrack(encoder.getOutputFormat());muxer.start();muxStarted=true;worked=true;}
+     else if(index>=0){boolean eos=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;
+      if((info.flags&MediaCodec.BUFFER_FLAG_CODEC_CONFIG)==0&&info.size>0){if(!muxStarted)throw new IOException("لم يبدأ حفظ مسار الصوت");ByteBuffer buffer=encoder.getOutputBuffer(index);buffer.position(info.offset);buffer.limit(info.offset+info.size);muxer.writeSampleData(audioTrack,buffer,info);encodedFrames=Math.max(encodedFrames,Math.min(totalFrames,Math.max(0,info.presentationTimeUs-audioOffsetUs)*44100L/1000000));if(videoTrack>=0)copyVideo(video,muxer,videoTrack,videoBytes,Math.min(limitUs>0?limitUs:Long.MAX_VALUE,Math.max(0,info.presentationTimeUs)+24000),cancel);}
+      encoder.releaseOutputBuffer(index,false);worked=true;if(eos){outputDone=true;break;}
+     }
+    }
+    long now=android.os.SystemClock.elapsedRealtime();if(worked)lastWork=now;else{if(now-lastWork>30000)throw new IOException("توقف مرمز الصوت عن الاستجابة أثناء الحفظ");Thread.sleep(2);}
+    if(now-lastUi>=250){lastUi=now;progress.update(85+(int)Math.min(13,13*encodedFrames/totalFrames),"حفظ الصوت المعالج · "+(encodedFrames/44100)+" / "+(totalFrames/44100)+" ثانية");}
    }
-   if(videoTrack>=0){ByteBuffer buffer=ByteBuffer.allocateDirect(16*1024*1024);while(true){ColabProbe.check(cancel);long pts=video.getSampleTime();if(pts<0||(limitUs>0&&pts>=limitUs))break;int n=video.readSampleData(buffer,0);if(n<0)break;if((video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_ENCRYPTED)!=0)throw new IOException("لا يمكن معالجة الفيديو المحمي");int flags=(video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0;info.set(0,n,pts,flags);muxer.writeSampleData(videoTrack,buffer,info);video.advance();}}
-   progress.update(99,"حفظ الملف بالصوت المعالج");
-  }finally{if(encoder!=null){try{encoder.stop();}catch(Exception ignored){}encoder.release();}video.release();if(muxer!=null){try{if(muxStarted)muxer.stop();}finally{muxer.release();}}}
+   if(videoTrack>=0){progress.update(98,"اكتمل الصوت · إتمام نسخ الفيديو دون إعادة ترميزه");copyVideo(video,muxer,videoTrack,videoBytes,limitUs>0?limitUs:Long.MAX_VALUE,cancel);}
+   progress.update(99,"إغلاق الملف والتحقق من حفظه");muxer.stop();muxStarted=false;complete=true;
+  }finally{if(encoder!=null){try{encoder.stop();}catch(Exception ignored){}encoder.release();}video.release();if(muxer!=null){try{if(muxStarted)muxer.stop();}finally{muxer.release();}}if(!complete)output.delete();}
+ }
+ private static void copyVideo(MediaExtractor video,MediaMuxer muxer,int track,ByteBuffer buffer,long endUs,AtomicBoolean cancel)throws Exception{
+  MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();while(true){ColabProbe.check(cancel);long pts=video.getSampleTime();if(pts<0||pts>=endUs)return;buffer.clear();int n=video.readSampleData(buffer,0);if(n<0)return;if(n>buffer.capacity())throw new IOException("إطار الفيديو أكبر من المخزن المتاح");if((video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_ENCRYPTED)!=0)throw new IOException("لا يمكن معالجة الفيديو المحمي");int flags=(video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0;info.set(0,n,pts,flags);buffer.position(0);buffer.limit(n);muxer.writeSampleData(track,buffer,info);video.advance();}
  }
 }

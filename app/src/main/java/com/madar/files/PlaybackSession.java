@@ -1,0 +1,74 @@
+package com.madar.files;
+
+import android.content.*;
+import android.net.Uri;
+import androidx.media3.common.*;
+import androidx.media3.exoplayer.*;
+import java.io.File;
+import java.util.Collections;
+
+/** One main-thread playback owner. Activities only attach a surface and controls. */
+@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+final class PlaybackSession implements AutoCloseable {
+ static PlaybackSession current;
+ final String id=java.util.UUID.randomUUID().toString();
+ final Context context;final ExoPlayer player;final Player controls;private final androidx.media3.exoplayer.source.DefaultMediaSourceFactory sources;
+ PlayerInput input;File subtitle;WatchMusicService.Job watchJob;LiveSeparation.Session cleanSession;
+ CleanAudioController clean;boolean cleanRequested,legacyClean,closed;private boolean preparingWanted;
+ float volume=1,speed=1,pitch=1;String status="",error="",decoder="";boolean waiting;
+ interface Observer {void changed();}
+ private Observer observer;
+ static PlaybackSession obtain(Context c,PlayerInput input){
+  PlaybackSession s=current;if(s!=null&&!s.closed&&s.input.identity.equals(input.identity))return s;
+  if(s!=null)s.close();return current=new PlaybackSession(c,input);
+ }
+ private PlaybackSession(Context c,PlayerInput input){
+  context=c.getApplicationContext();this.input=input;
+  sources=new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(input.http.factory(context),new androidx.media3.extractor.DefaultExtractorsFactory().setTsExtractorFlags(androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS|androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES));
+  player=new ExoPlayer.Builder(context).setRenderersFactory(new DefaultRenderersFactory(context).setExtensionRendererMode(context.getSharedPreferences("player",0).getBoolean("software_audio",false)?DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER:DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON).setEnableDecoderFallback(true)).setMediaSourceFactory(sources).build();
+  player.setWakeMode(C.WAKE_MODE_LOCAL);player.setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),true);player.setHandleAudioBecomingNoisy(true);
+  player.addAnalyticsListener(new androidx.media3.exoplayer.analytics.AnalyticsListener(){@Override public void onAudioDecoderInitialized(androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime t,String name,long at,long duration){decoder=name;}});
+  player.addListener(new Player.Listener(){@Override public void onEvents(Player p,Player.Events events){changed();}@Override public void onPlayerError(PlaybackException failure){error=MediaFailure.describe(failure,false);changed();}});
+  controls=new ForwardingPlayer(player){
+   @Override public boolean getPlayWhenReady(){return wanted();}
+   @Override public int getPlaybackState(){return clean!=null&&clean.waiting()?Player.STATE_BUFFERING:super.getPlaybackState();}
+   @Override public long getBufferedPosition(){return cleanRequested&&cleanSession!=null?Math.round(cleanSession.ready()*1000):super.getBufferedPosition();}
+   @Override public long getTotalBufferedDuration(){return Math.max(0,getBufferedPosition()-getCurrentPosition());}
+   @Override public void setPlayWhenReady(boolean play){setWanted(play);}
+   @Override public void play(){setWanted(true);}
+   @Override public void pause(){setWanted(false);}
+  };
+ }
+ void observe(Observer listener){observer=listener;if(listener!=null)listener.changed();}
+ void unobserve(Observer listener){if(observer==listener)observer=null;}
+ private void changed(){if(!closed&&observer!=null)observer.changed();}
+ void prepare(PlayerInput next,File captions,long position,boolean play){
+  boolean same=player.getMediaItemCount()>0&&player.getPlayerError()==null&&player.getPlaybackState()!=Player.STATE_IDLE&&input.uri.equals(next.uri)&&java.util.Objects.equals(subtitle,captions);
+  input=next;if(same)return;sources.setDataSourceFactory(input.http.factory(context));
+  boolean wasClean=cleanRequested;closeClean();player.pause();player.setVolume(wasClean?0:volume);
+  File old=subtitle;subtitle=captions;if(old!=null&&!old.equals(captions))old.delete();
+  MediaItem.Builder media=new MediaItem.Builder().setUri(input.uri).setMediaMetadata(new MediaMetadata.Builder().setTitle(input.title).setArtist("مدار").build());if(input.mime!=null)media.setMimeType(input.mime);
+  if(subtitle!=null)media.setSubtitleConfigurations(Collections.singletonList(new MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(subtitle)).setMimeType(subtitle.getName().endsWith(".vtt")?MimeTypes.TEXT_VTT:MimeTypes.APPLICATION_SUBRIP).setLanguage("ar").setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build()));
+  error="";player.setMediaItem(media.build());player.setPlaybackParameters(new PlaybackParameters(speed,pitch));player.seekTo(position);player.prepare();
+  if(wasClean&&cleanSession!=null)useClean(cleanSession,watchJob,legacyClean,position,play);else player.setPlayWhenReady(play&&!wasClean);
+ }
+ boolean wanted(){return clean!=null?clean.wanted():cleanRequested?preparingWanted:player.getPlayWhenReady();}
+ long position(){return clean!=null?clean.positionMs():player.getCurrentPosition();}
+ void setWanted(boolean value){if(closed)return;if(clean!=null){if(value&&cleanSession.done&&clean.playedFrames()>=cleanSession.frames)clean.move(cleanSession.offsetUs/1000);clean.setWanted(value);}else if(cleanRequested)preparingWanted=value;else{if(value&&player.getPlaybackState()==Player.STATE_ENDED)player.seekTo(0);player.setPlayWhenReady(value);}changed();}
+ void useClean(LiveSeparation.Session source,WatchMusicService.Job job,boolean legacy,long position,boolean play){
+  if(source==null||job!=null&&!job.usable())throw new IllegalStateException("أُلغيت جلسة الفصل؛ ابدأ فصلًا جديدًا");
+  if(clean!=null&&cleanSession==source){clean.setWanted(play);return;}
+  closeClean();if(cleanSession!=source)releaseSource();cleanSession=source;watchJob=job;legacyClean=legacy;cleanRequested=true;player.pause();player.setVolume(0);
+  clean=new CleanAudioController(context,player,source,position,play,(text,wait)->{status=text;waiting=wait;changed();});settings(speed,pitch,volume);changed();
+ }
+ void original(){
+  boolean play=wanted();long at=position();closeClean();cleanRequested=false;waiting=false;status="";
+  player.pause();player.seekTo(at);player.setAudioAttributes(player.getAudioAttributes(),true);player.setVolume(volume);player.setPlayWhenReady(play);changed();
+ }
+ void waitForClean(){preparingWanted=wanted();closeClean();cleanRequested=true;player.setVolume(0);player.pause();waiting=true;changed();}
+ void settings(float speed,float pitch,float volume){this.speed=speed;this.pitch=pitch;this.volume=volume;player.setPlaybackParameters(new PlaybackParameters(speed,pitch));if(clean!=null)clean.settings(speed,pitch,volume);else player.setVolume(cleanRequested?0:volume);}
+ private void closeClean(){if(clean!=null){clean.close();clean=null;}}
+ private void releaseSource(){if(watchJob!=null)WatchMusicService.release(watchJob);else if(legacyClean&&cleanSession!=null)LiveSeparation.leave(cleanSession);watchJob=null;cleanSession=null;legacyClean=false;}
+ void foreground(){Intent intent=new Intent(context,PlaybackService.class).putExtra("session",id);if(input.uri!=null&&"content".equals(input.uri.getScheme())){intent.setData(input.uri);intent.setClipData(ClipData.newRawUri("مقطع مدار",input.uri));intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);}context.startForegroundService(intent);}
+ @Override public void close(){if(closed)return;closed=true;observer=null;context.getSharedPreferences("player",0).edit().putLong(input.key,position()).apply();closeClean();releaseSource();player.release();if(subtitle!=null)subtitle.delete();if(current==this)current=null;}
+}

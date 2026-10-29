@@ -19,7 +19,7 @@ final class ColabDiagnostics {
  synchronized void record(String code){if(!safe(code))return;if(!lines.isEmpty()&&lines.get(lines.size()-1).endsWith(" · "+code))return;
   if(lines.size()>=120)lines.remove(1);lines.add((System.nanoTime()-started)/1000000000L+"s · "+code);save();}
  synchronized void measure(String phase,long millis,long bytes,long frames){
-  if(!Arrays.asList("DECODE","PREPARE","UPLOAD","PROCESS_FETCH","GPU","FETCH").contains(phase))return;
+  if(!Arrays.asList("DECODE","PREPARE","UPLOAD","PROCESS_FETCH","GPU","FETCH","MUX").contains(phase))return;
   if(lines.size()>=120)lines.remove(1);lines.add((System.nanoTime()-started)/1000000000L+"s · TIME_"+phase+" · "+Math.max(0,millis)+"ms · "+Math.max(0,bytes)+" bytes · "+Math.max(0,frames)+" frames");save();
  }
  void failed(Exception error){if(error instanceof java.util.concurrent.CancellationException){record("CANCELLED");return;}issue(error);record("FAILED");}

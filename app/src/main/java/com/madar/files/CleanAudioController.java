@@ -25,24 +25,25 @@ final class CleanAudioController implements AutoCloseable {
   move(positionMs);feederThread.start();feeder=new Handler(feederThread.getLooper());feeder.post(feed);if(wanted)requestFocus();main.post(tick);
  }
  private final Player.Listener listener=new Player.Listener(){
-  @Override public void onPlayWhenReadyChanged(boolean play,int reason){if(!ownPlayChanges.isEmpty()&&ownPlayChanges.peekFirst()==play){ownPlayChanges.removeFirst();return;}if(!adjusting)setWanted(play);}
+  @Override public void onPlayWhenReadyChanged(boolean play,int reason){if(ownPlayChanges.contains(play)){while(!ownPlayChanges.isEmpty())if(ownPlayChanges.removeFirst()==play)break;return;}if(!adjusting)setWanted(play);}
   @Override public void onPositionDiscontinuity(Player.PositionInfo old,Player.PositionInfo next,int reason){if(reason!=Player.DISCONTINUITY_REASON_SEEK)return;
    // Media3 can deliver these callbacks after seekTo returns. A temporary boolean
    // is insufficient: clock corrections must NEVER become user seeks/PCM flushes.
-   if(!ownSeeks.isEmpty()&&Math.abs(ownSeeks.peekFirst()-next.positionMs)<=2){ownSeeks.removeFirst();return;}
+   Long match=null;for(Long target:ownSeeks)if(Math.abs(target-next.positionMs)<=2){match=target;break;}if(match!=null){while(!ownSeeks.isEmpty())if(ownSeeks.removeFirst().equals(match))break;return;}
    if(!adjusting)move(next.positionMs);
   }
   @Override public void onPlayerError(PlaybackException error){wanted=false;pause();failure="تعذر تشغيل الفيديو؛ الصوت الأصلي مكتوم";}
  };
- private void seekVideo(long target){if(video.getCurrentPosition()==target)return;ownSeeks.addLast(target);video.seekTo(target);}
+ private void seekVideo(long target){if(video.getCurrentPosition()==target)return;if(ownSeeks.size()>=32)ownSeeks.removeFirst();ownSeeks.addLast(target);video.seekTo(target);}
  private void setVideoPlaying(boolean value){if(video.getPlayWhenReady()==value)return;ownPlayChanges.addLast(value);video.setPlayWhenReady(value);}
  private void pause(){feedAllowed=false;adjusting=true;try{setVideoPlaying(false);synchronized(audioLock){if(playing){playedLocked();pausedLimit=cursor;refillAfter=SystemClock.elapsedRealtime()+100;}audio.pause();playing=false;}}finally{adjusting=false;}}
- void move(long positionMs){pause();synchronized(audioLock){audio.flush();resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,Math.min(session.ready(),positionMs/1000.0));cursor=Math.max(0,Math.min(session.frames,Math.round((at-start)*44100)));baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;reserveApproved=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
+ void move(long positionMs){pause();synchronized(audioLock){audio.flush();resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,positionMs/1000.0);if(session.done)at=Math.min(session.ready(),at);cursor=Math.max(0,Math.round((at-start)*44100));baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;reserveApproved=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
  private final BroadcastReceiver noisy=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent intent){if(!closed)setWanted(false);}};
  private void requestFocus(){if(hasFocusRequest)return;hasFocusRequest=true;focused=manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;if(!focused){hasFocusRequest=false;wanted=false;failure="الصوت مشغول بتطبيق آخر؛ اضغط تشغيل للمحاولة";}}
  void setWanted(boolean value){if(closed)return;wanted=value;if(value){failure="";requestFocus();}else{pause();if(hasFocusRequest)manager.abandonAudioFocusRequest(focus);hasFocusRequest=false;focused=false;}}
  boolean waiting(){return wanted&&!playing;}
  boolean wanted(){return wanted;}
+ long positionMs(){return Math.round(session.offsetUs/1000.0+playedFrames()*1000.0/44100);}
  int audioSession(){return audio.getAudioSessionId();}
  void settings(float speed,float pitch,float volume){this.speed=speed;this.pitch=pitch;this.volume=volume;synchronized(audioLock){audio.setVolume(volume);if(playing)audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));}video.setVolume(0);}
  long playedFrames(){synchronized(audioLock){return playedLocked();}}

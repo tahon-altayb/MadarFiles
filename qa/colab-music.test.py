@@ -17,6 +17,43 @@ spec.loader.exec_module(w)
 
 
 class MusicTest(unittest.TestCase):
+    def test_owned_stop_interrupts_busy_worker_and_does_not_run_queued_job(self):
+        import subprocess, sys
+        injection = """
+def prepare():
+    global GPU_VERIFIED
+    GPU_VERIFIED=True
+def run():
+    (CACHE/'entered.txt').write_text(Path.cwd().name)
+    while True:
+        time.sleep(.05)
+"""
+        worker=(ROOT/'app/src/main/assets/colab/music_worker.py').read_text().replace("if __name__ == '__main__':",injection+"\nif __name__ == '__main__':").replace('args=(stop,)', 'args=(stop,.02)')
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/('madar_'+'8'*32);root.mkdir();script=root/'music_worker.py';script.write_text(worker)
+            for n in range(2):
+                job=root.parent/(root.name+'_b'+str(n));job.mkdir()
+                (job/'request.json').write_text('{"protocol":2}')
+                (job/'submit.json').write_text(json.dumps(dict(protocol=2,service=root.name,job=job.name)))
+            process=subprocess.Popen([sys.executable,str(script),str(root),'--serve'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            try:
+                deadline=time.monotonic()+5
+                while not (root/'entered.txt').exists():
+                    if process.poll() is not None:raise AssertionError(process.communicate()[1].decode())
+                    if time.monotonic()>deadline:raise AssertionError('job not started')
+                    time.sleep(.01)
+                (root/'stop.json').write_text(json.dumps(dict(service='another-service',cancel=True)))
+                time.sleep(.1);self.assertIsNone(process.poll())
+                (root/'stop.json').write_text('{');time.sleep(.05);self.assertIsNone(process.poll())
+                (root/'stop.json').write_text(json.dumps(dict(service=root.name,cancel=True)))
+                self.assertEqual(process.wait(timeout=3),0)
+                self.assertTrue(json.loads((root/'stopped.json').read_text())['stopped'])
+                self.assertEqual((root/'entered.txt').read_text(),root.name+'_b0')
+                self.assertFalse((root.parent/(root.name+'_b1')/'accepted.json').exists())
+            finally:
+                if process.poll() is None:process.kill();process.wait()
+                process.communicate()
+
     def test_v2_single_long_job_has_bounded_manifests_and_identical_pcm(self):
         import numpy as np
         from unittest.mock import patch

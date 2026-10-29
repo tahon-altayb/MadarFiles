@@ -157,5 +157,11 @@ final class ColabRuntime implements AutoCloseable {
   cloud("DELETE","v1beta/"+name+"?allowMissing=true",null,new AtomicBoolean());journal().edit().clear().commit();
  }
  boolean cleanup(){try{cleanupPrevious();return true;}catch(Exception ignored){return false;}}
+ /** Independent cancellation token: the processing token has already been cancelled. */
+ void stopMusicWorker(String root){
+  try{Request.Builder builder;synchronized(this){if(base==null||!root.matches("madar_[a-f0-9]{32}"))return;builder=new Request.Builder().url(base.resolve(contentPath(root+"/stop.json",null))).header("X-Colab-Runtime-Proxy-Token",proxyToken).header("X-Colab-Client-Agent","madarfiles");}
+   request(builder,"PUT",new JSONObject().put("type","file").put("format","text").put("content",new JSONObject().put("service",root).put("cancel",true).toString()),new AtomicBoolean(),65536,5000);
+  }catch(Exception ignored){} // Runtime DELETE remains authoritative, including expired proxy credentials.
+ }
  @Override public void close(){http.dispatcher().cancelAll();http.connectionPool().evictAll();http.dispatcher().executorService().shutdown();}
 }
