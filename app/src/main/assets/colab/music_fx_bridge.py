@@ -4,12 +4,42 @@ import json
 import os
 from pathlib import Path
 import shutil
+import site
 import subprocess
 import sys
 import time
 import venv
 
 from music_profiles import CONFIG, FX_SHA
+
+def create_environment(folder):
+    # Colab's Debian Python may not include ensurepip/python3-venv. Its
+    # already-running pip can manage a bare venv using --python (pip >=22.3).
+    # Never bootstrap pip from the network or modify the notebook's packages.
+    try:
+        venv.EnvBuilder(with_pip=False, system_site_packages=True).create(folder)
+        # A nested venv normally sees the base interpreter, not its parent's
+        # venv packages. Preserve Colab's exact installed Torch/CUDA packages
+        # even when the notebook interpreter itself lives in a venv. The child
+        # site-packages stays first, so optional installs remain isolated.
+        library = Path(folder)/'lib'/('python'+str(sys.version_info.major)+'.'+str(sys.version_info.minor))/'site-packages'
+        parents = [str(Path(path).resolve()) for path in site.getsitepackages() if Path(path).is_dir()]
+        (library/'madar-parent-site.pth').write_text('\n'.join(parents)+'\n')
+    except (Exception, SystemExit) as error:
+        raise ValueError('MUSIC_FX_ENV') from error
+
+def pip_command(folder):
+    return [sys.executable, '-m', 'pip', '--python', str(Path(folder)/'bin/python')]
+
+def install(command, log, **options):
+    try:
+        with Path(log).open('wb') as output:
+            subprocess.run(command, stdout=output, stderr=output, check=True, **options)
+    except subprocess.TimeoutExpired as error:
+        raise ValueError('MUSIC_FX_INSTALL_TIMEOUT') from error
+    except subprocess.CalledProcessError as error:
+        # Only fixed codes leave Colab; pip logs can contain private index URLs.
+        raise ValueError('MUSIC_FX_INSTALL') from error
 
 class Client:
     def __init__(self, root, status):
@@ -31,24 +61,23 @@ class Client:
         torch_version = importlib.metadata.version('torch')
         ort = '1.28.0' if major == 13 else '1.22.0'
         identity = dict(audio_separator=CONFIG['audio_separator'], ort=ort, torch=torch_version,
-                        python=list(sys.version_info[:2]), numpy='2.2.6', librosa=CONFIG['librosa'])
+                        python=list(sys.version_info[:2]), numpy='2.2.6', librosa=CONFIG['librosa'], bootstrap=2)
         envroot = self.root.parent / ('madar_fx_env_cu' + str(major) + '_0480_' + str(sys.version_info.minor))
         marker = envroot / 'madar-ready.json'
         try: installed = json.loads(marker.read_text()) == identity
         except (OSError, ValueError): installed = False
         if not installed:
             if envroot.exists(): shutil.rmtree(envroot)
-            venv.EnvBuilder(with_pip=True, system_site_packages=True).create(envroot)
+            create_environment(envroot)
             constraints = envroot / 'constraints.txt'
             constraints.write_text('torch=='+torch_version+'\nnumpy==2.2.6\nonnxruntime-gpu=='+ort+'\n')
             install_env = os.environ.copy()
             if shutil.which('gcc'): install_env['CC'] = 'gcc'
             if shutil.which('g++'): install_env['CXX'] = 'g++'
-            with (self.root / 'fx-install.log').open('wb') as log:
-                subprocess.run([str(envroot/'bin/python'), '-m', 'pip', 'install', '--disable-pip-version-check',
+            install(pip_command(envroot) + ['install', '--disable-pip-version-check',
                     '--timeout', '30', '--retries', '2', '-c', str(constraints),
                     'audio-separator[gpu]=='+CONFIG['audio_separator'], 'onnxruntime-gpu=='+ort, 'numpy==2.2.6', 'librosa=='+CONFIG['librosa'], 'audioread==3.0.1'],
-                    stdout=log, stderr=log, check=True, timeout=600, env=install_env)
+                    self.root / 'fx-install.log', timeout=600, env=install_env)
             marker.write_text(json.dumps(identity))
         if shutil.which('ffmpeg') is None:
             with (self.root / 'fx-ffmpeg.log').open('wb') as log:
@@ -63,10 +92,9 @@ class Client:
             cudnn = self.root.parent/'madar_fx_cudnn_cu12_9130050'
             libs = cudnn/'nvidia/cudnn/lib'
             if not (libs/'libcudnn.so.9').is_file():
-                with (self.root/'fx-cudnn.log').open('wb') as log:
-                    subprocess.run([str(envroot/'bin/python'), '-m', 'pip', 'install', '--no-deps',
+                install(pip_command(envroot) + ['install', '--no-deps',
                         '--only-binary=:all:', '--target', str(cudnn), 'nvidia-cudnn-cu12==9.13.0.50'],
-                        stdout=log, stderr=log, check=True, timeout=600)
+                        self.root/'fx-cudnn.log', timeout=600)
             env['MADAR_CUDNN_LIB'] = str(libs/'libcudnn.so.9')
             env['LD_LIBRARY_PATH'] = str(libs)+os.pathsep+env.get('LD_LIBRARY_PATH', '')
         # An old status cannot satisfy a newly started child.

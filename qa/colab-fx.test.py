@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,10 +16,56 @@ ASSETS = ROOT/'app/src/main/assets/colab'
 sys.path.insert(0, str(ASSETS))
 import music_profiles as profiles
 import music_fx_engine as engine
+import music_fx_bridge as bridge
 spec = importlib.util.spec_from_file_location('fx_protocol_worker', ASSETS/'music_worker.py')
 w = importlib.util.module_from_spec(spec); spec.loader.exec_module(w)
 
 class FxTest(unittest.TestCase):
+    def test_environment_and_real_package_install_do_not_require_ensurepip(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); env = root/'private-env'
+            # Exercise actual venv creation, blocking the old ensurepip path.
+            with patch.object(bridge.venv.EnvBuilder, '_setup_pip', side_effect=AssertionError('ensurepip unavailable')):
+                bridge.create_environment(env)
+            wheel = root/'madar_bootstrap_fixture-0.0.1-py3-none-any.whl'
+            with zipfile.ZipFile(wheel, 'w') as archive:
+                archive.writestr('madar_bootstrap_fixture.py', 'VALUE = 73\n')
+                prefix='madar_bootstrap_fixture-0.0.1.dist-info/'
+                archive.writestr(prefix+'METADATA', 'Metadata-Version: 2.1\nName: madar-bootstrap-fixture\nVersion: 0.0.1\n')
+                archive.writestr(prefix+'WHEEL', 'Wheel-Version: 1.0\nGenerator: madar-qa\nRoot-Is-Purelib: true\nTag: py3-none-any\n')
+                archive.writestr(prefix+'RECORD', '')
+            # Use the production command, a real wheel and no network/index.
+            bridge.install(bridge.pip_command(env)+['install','--no-index','--no-deps',str(wheel)], root/'install.log', timeout=60)
+            code='import pathlib,sys,madar_bootstrap_fixture as f; assert f.VALUE==73; assert pathlib.Path(f.__file__).is_relative_to(pathlib.Path(sys.prefix))'
+            subprocess.run([str(env/'bin/python'), '-c', code], check=True, timeout=20)
+            nested = root/'nested-env'
+            setup='import sys;sys.path.insert(0,sys.argv[1]);from music_fx_bridge import create_environment;create_environment(sys.argv[2])'
+            subprocess.run([str(env/'bin/python'),'-c',setup,str(ASSETS),str(nested)],check=True,timeout=20)
+            check='import pathlib,sys,madar_bootstrap_fixture as f; assert f.VALUE==73; assert pathlib.Path(f.__file__).is_relative_to(pathlib.Path(sys.argv[1]))'
+            subprocess.run([str(nested/'bin/python'),'-c',check,str(env)],check=True,timeout=20)
+            self.assertFalse(list(env.glob('lib/python*/site-packages/pip')))
+            result=subprocess.run([sys.executable,'-c','import madar_bootstrap_fixture'],capture_output=True)
+            self.assertNotEqual(result.returncode,0, 'Parent Python packages must remain unchanged')
+
+    def test_system_python_without_ensurepip_can_create_production_environment(self):
+        python=Path('/usr/bin/python3')
+        if not python.exists(): self.skipTest('No Debian Python on this host')
+        check=subprocess.run([str(python),'-c','import ensurepip'],capture_output=True)
+        if check.returncode == 0: self.skipTest('System Python supplies ensurepip')
+        with tempfile.TemporaryDirectory() as temporary:
+            code='import sys;sys.path.insert(0,sys.argv[1]);from music_fx_bridge import create_environment;create_environment(sys.argv[2])'
+            subprocess.run([str(python),'-c',code,str(ASSETS),temporary+'/environment'],check=True,timeout=20)
+
+    def test_bootstrap_failures_have_fixed_private_safe_phase_codes(self):
+        with patch.object(bridge.venv.EnvBuilder, 'create', side_effect=SystemExit('private error')):
+            with self.assertRaisesRegex(ValueError,'^MUSIC_FX_ENV$'): bridge.create_environment('/unused')
+        with tempfile.TemporaryDirectory() as temporary:
+            for error, code in [(subprocess.CalledProcessError(1,['private-token']), 'MUSIC_FX_INSTALL'),
+                                (subprocess.TimeoutExpired(['private-token'],1), 'MUSIC_FX_INSTALL_TIMEOUT')]:
+                with patch.object(bridge.subprocess,'run',side_effect=error):
+                    with self.assertRaisesRegex(ValueError,'^'+code+'$'):
+                        bridge.install(['private-token'],Path(temporary)/'log',timeout=1)
+
     def test_profile_identity_matches_android_and_both_checked_weights(self):
         self.assertEqual(w.FX_SHA, profiles.FX_SHA)
         self.assertIn(profiles.FX_SHA, (ROOT/'app/src/main/java/com/madar/files/MusicPipeline.java').read_text())

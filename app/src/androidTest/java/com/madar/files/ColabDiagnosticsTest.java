@@ -10,6 +10,17 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ColabDiagnosticsTest {
+ @Test public void twoPassBootstrapFailuresRemainSpecificWithoutSavingPrivateOutput()throws Exception{
+  Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();
+  try{
+   ColabDiagnostics report=new ColabDiagnostics(context);report.record("MUSIC_PROFILE_FX");
+   for(String code:new String[]{"MUSIC_FX_ENV","MUSIC_FX_INSTALL","MUSIC_FX_INSTALL_TIMEOUT"}){
+    assertEquals(code,MusicStartup.workerError(code));report.issue(new java.io.IOException("private-index https://private.invalid/?token=PRIVATE_TOKEN "+code));
+   }
+   String saved=ColabDiagnostics.last(context);for(String code:new String[]{"MUSIC_PROFILE_FX","MUSIC_FX_ENV","MUSIC_FX_INSTALL","MUSIC_FX_INSTALL_TIMEOUT"})assertTrue(saved,saved.contains(code));
+   assertFalse(saved.contains("private-index"));assertFalse(saved.contains("PRIVATE_TOKEN"));assertFalse(saved.contains("https"));
+  }finally{context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();}
+ }
  @Test public void translationFailureIsNotReportedAsFullSuccess()throws Exception{
   Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();context.getSharedPreferences("colab_diagnostics",0).edit().clear().commit();
   try{

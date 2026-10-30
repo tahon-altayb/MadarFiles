@@ -63,7 +63,7 @@ final class ColabMusic {
    try{initializeEngine();}catch(Exception error){diagnostic.failed(error);throw error;}finally{storageReady.countDown();}
   }
   private void initializeEngine()throws Exception{
-   if(initialized)return;diagnostic.record("RUNTIME_CREATE");runtime.create((p,m)->status.update(p,m),true);
+   if(initialized)return;diagnostic.record(MusicPipeline.FX.equals(pipeline)?"MUSIC_PROFILE_FX":"MUSIC_PROFILE_LEGACY");diagnostic.record("RUNTIME_CREATE");runtime.create((p,m)->status.update(p,m),true);
    long ready=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(3);
    status.update(13,"GPU مخصص · انتظار استجابة محرك التنفيذ");diagnostic.record("JUPYTER_CONNECT");
    while(true){ColabProbe.check(cancel);try{runtime.jupyter("GET","api/kernelspecs",null,1024*1024);break;}catch(IOException e){if(!(e instanceof ColabRuntime.NetworkFailure)&&(!(e instanceof ColabRuntime.HttpFailure)||(((ColabRuntime.HttpFailure)e).status<500&&((ColabRuntime.HttpFailure)e).status!=404&&((ColabRuntime.HttpFailure)e).status!=429)))throw e;if(System.nanoTime()>ready)throw new IOException("Colab · JUPYTER_START_TIMEOUT");Thread.sleep(1000);}}

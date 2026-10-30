@@ -181,14 +181,12 @@ jobs:
         with:
           path: ${{ runner.temp }}/madar-fx-models
           key: madar-fx-hq4-hq3-3c4b5b9b-317554b0-v1
-      - name: Test actual two-pass HQ4 and HQ3 models on CPU
+      - name: Test bare-venv install and actual two-pass HQ4 and HQ3 models on CPU
         timeout-minutes: 10
         run: |
           "$RUNNER_TEMP/madar-qwen/bin/python" -m pip install --disable-pip-version-check torchvision==0.26.0+cpu --index-url https://download.pytorch.org/whl/cpu
-          "$RUNNER_TEMP/madar-qwen/bin/python" -c 'from pathlib import Path;import os;Path(os.environ["RUNNER_TEMP"],"fx-constraints.txt").write_text("torch==2.11.0+cpu\nnumpy==2.2.6\nonnxruntime==1.28.0\n")'
-          "$RUNNER_TEMP/madar-qwen/bin/python" -m pip install --disable-pip-version-check -c "$RUNNER_TEMP/fx-constraints.txt" "audio-separator[cpu]==0.48.0" onnxruntime==1.28.0 numpy==2.2.6 librosa==0.11.0 audioread==3.0.1
           mkdir -p app/build/reports
-          MADAR_FX_MODEL_CACHE="$RUNNER_TEMP/madar-fx-models" "$RUNNER_TEMP/madar-qwen/bin/python" qa/colab-fx-inference.test.py | tee app/build/reports/fx-inference.log
+          MADAR_FX_MODEL_CACHE="$RUNNER_TEMP/madar-fx-models" "$RUNNER_TEMP/madar-qwen/bin/python" qa/colab-fx-install.test.py | tee app/build/reports/fx-inference.log
       - name: Build and lint APK
         env:
           MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
@@ -196,9 +194,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 50 --version-name 1.9.15 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 51 --version-name 1.9.16 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.15.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.16.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -251,8 +249,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.15-APK
-          path: MadarFiles-1.9.15.apk
+          name: MadarFiles-1.9.16-APK
+          path: MadarFiles-1.9.16.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
