@@ -15,5 +15,5 @@ final class WatchPlan {
   if(forward!=null){historyTurn=true;return window(forward,forwardIndex++);}
   return null;
  }
- private WatchWindows window(long[] gap,int index){return WatchWindows.forWatch(micros(gap[0]),micros(gap[1]),cloud,index);}
+ private WatchWindows window(long[] gap,int index){return WatchWindows.contextFor(WatchWindows.forWatch(micros(gap[0]),micros(gap[1]),cloud,index),micros(end));}
 }
