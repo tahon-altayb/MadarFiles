@@ -25,6 +25,11 @@ public class PlayerLifecycleTest {
  private PlayerActivity start(File f,LiveSeparation.Session live){Intent intent=new Intent(c,PlayerActivity.class).putExtra("path",f.getPath()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_MULTIPLE_TASK);if(live!=null)intent.putExtra("separationSession",live.id);return (PlayerActivity)i.startActivitySync(intent);}
  private LiveSeparation.Session live(File source,File pcm){LiveSeparation.Session live=LiveSeparation.begin(source,true);LiveSeparation.attach(live,pcm,0);LiveSeparation.publish(live,24*44100);LiveSeparation.end(live,null);return live;}
  private MediaController controller()throws Exception{final MediaSession.Token[] token={null};await(()->{for(android.service.notification.StatusBarNotification n:c.getSystemService(NotificationManager.class).getActiveNotifications())if(n.getId()==83)token[0]=n.getNotification().extras.getParcelable(Notification.EXTRA_MEDIA_SESSION);return token[0]!=null;});return new MediaController(c,token[0]);}
+ private void capturePipMenu()throws Exception{
+  UiAutomation ui=i.getUiAutomation();android.accessibilityservice.AccessibilityServiceInfo info=ui.getServiceInfo();info.flags|=android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;ui.setServiceInfo(info);
+  for(android.view.accessibility.AccessibilityWindowInfo w:ui.getWindows()){android.view.accessibility.AccessibilityNodeInfo root=w.getRoot();if(root==null||!c.getPackageName().contentEquals(root.getPackageName()==null?"":root.getPackageName()))continue;android.graphics.Rect b=new android.graphics.Rect();w.getBoundsInScreen(b);if(!b.isEmpty()){shell("input tap "+b.centerX()+" "+b.centerY());Thread.sleep(600);break;}}
+  shell("screencap -p /data/local/tmp/madar-pip-controls.png");
+ }
  private void shell(String command)throws Exception{try(InputStream in=new ParcelFileDescriptor.AutoCloseInputStream(i.getUiAutomation().executeShellCommand(command))){in.readAllBytes();}}
  @Test public void systemSeekbarHasDurationAccurateClockAndWorkingTransportActions()throws Exception{
   File source=source(),pcm=pcm();PlayerActivity a=start(source,live(source,pcm));
@@ -40,7 +45,7 @@ public class PlayerLifecycleTest {
   try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>200);CleanAudioController clean=s.clean;MediaController system=controller();
    for(int n=0;n<3;n++){i.runOnMainSync(()->{s.setWanted(false);s.seekTo(1000);try{java.lang.reflect.Method enter=PlayerActivity.class.getDeclaredMethod("enterMiniPlayer");enter.setAccessible(true);assertTrue("A repeated PiP request must be accepted or queued until RESUMED",(boolean)enter.invoke(a));}catch(Exception e){throw new AssertionError(e);}});await(a::isInPictureInPictureMode);
     i.runOnMainSync(()->{try{PictureInPictureParams params=(PictureInPictureParams)field(a,"miniParams");assertTrue("Native media slots must control the PiP row",params.getActions().isEmpty());LinearLayout bar=(LinearLayout)field(a,"toolbar");assertEquals(View.GONE,((View)bar.getParent()).getVisibility());}catch(Exception e){throw new AssertionError(e);}});
-    system.getTransportControls().play();await(()->s.position()>1300);system.getTransportControls().pause();await(()->!s.wanted());long[] at={0};i.runOnMainSync(()->at[0]=s.position());Thread.sleep(180);i.runOnMainSync(()->assertEquals(at[0],s.position(),100));system.getSessionActivity().send();await(()->!a.isInPictureInPictureMode()&&a.hasWindowFocus());i.runOnMainSync(()->{assertSame(s,PlaybackSession.current);assertSame(clean,s.clean);assertFalse(s.wanted());assertFalse(a.isDestroyed());});
+    if(n==0)capturePipMenu();system.getTransportControls().play();await(()->s.position()>1300);system.getTransportControls().pause();await(()->!s.wanted());long[] at={0};i.runOnMainSync(()->at[0]=s.position());Thread.sleep(180);i.runOnMainSync(()->assertEquals(at[0],s.position(),100));system.getSessionActivity().send();await(()->!a.isInPictureInPictureMode()&&a.hasWindowFocus());i.runOnMainSync(()->{assertSame(s,PlaybackSession.current);assertSame(clean,s.clean);assertFalse(s.wanted());assertFalse(a.isDestroyed());});
    }
   }finally{i.runOnMainSync(a::finish);source.delete();pcm.delete();}
  }
@@ -146,7 +151,7 @@ public class PlayerLifecycleTest {
   try{PlaybackSession s=PlaybackSession.current;await(()->s.position()>200);i.runOnMainSync(()->{try{java.lang.reflect.Method choose=PlayerActivity.class.getDeclaredMethod("chooseWatchStart",long.class);choose.setAccessible(true);choose.invoke(a,150001L);}catch(Exception e){throw new AssertionError(e);}});
    await(()->{android.view.accessibility.AccessibilityNodeInfo root=i.getUiAutomation().getRootInActiveWindow();return root!=null&&!root.findAccessibilityNodeInfosByText("افصل من البداية").isEmpty();});
    android.view.accessibility.AccessibilityNodeInfo root=i.getUiAutomation().getRootInActiveWindow();assertFalse(root.findAccessibilityNodeInfosByText("انتظر اكتمال الفصل").isEmpty());
-   i.runOnMainSync(()->{assertFalse(s.cleanRequested);assertNull(s.clean);assertTrue(s.player.getVolume()>0);});
+   shell("screencap -p /data/local/tmp/madar-watch-choice.png");i.runOnMainSync(()->{assertFalse(s.cleanRequested);assertNull(s.clean);assertTrue(s.player.getVolume()>0);});
    for(android.view.accessibility.AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText("إلغاء"))if(node.isClickable()){node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK);break;}
    i.runOnMainSync(()->{assertFalse(s.cleanRequested);assertTrue(s.wanted());});
   }finally{i.runOnMainSync(a::finish);source.delete();}

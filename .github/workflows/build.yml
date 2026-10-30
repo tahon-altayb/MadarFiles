@@ -230,6 +230,8 @@ jobs:
             adb pull /data/local/tmp/madar-colab.png phone-screenshots/colab.png || true
             adb pull /data/local/tmp/madar-player.png phone-screenshots/player.png || true
             adb pull /data/local/tmp/madar-media-controls.png phone-screenshots/media-controls.png || true
+            adb pull /data/local/tmp/madar-pip-controls.png phone-screenshots/pip-controls.png || true
+            adb pull /data/local/tmp/madar-watch-choice.png phone-screenshots/watch-choice.png || true
             adb pull /data/local/tmp/madar-assistant.png phone-screenshots/assistant.png || true
             adb pull /data/local/tmp/madar-crop.png phone-screenshots/crop.png || true
             cp app/src/androidTest/assets/music-test.mp4 phone-screenshots/original-music-test.mp4

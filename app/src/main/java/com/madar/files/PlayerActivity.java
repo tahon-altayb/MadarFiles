@@ -76,10 +76,8 @@ public class PlayerActivity extends Activity {
  }
  private void chooseWatchStart(long selected){
   if(WatchPlan.needsStartChoice(selected)){
-   new AlertDialog.Builder(this).setTitle("إزالة الموسيقى بعد 2:30")
-    .setMessage("موضعك بعد 2:30. يمكنك الفصل والمشاهدة من البداية، أو انتظار اكتمال الفصل للمتابعة من "+stamp(selected)+".")
-    .setPositiveButton("افصل من البداية",(d,n)->prepareWatch(0,false))
-    .setNeutralButton("انتظر اكتمال الفصل",(d,n)->prepareWatch(selected,true))
+   new AlertDialog.Builder(this).setTitle("موضعك بعد 2:30 · اختر طريقة الفصل")
+    .setItems(new String[]{"افصل من البداية", "انتظر اكتمال الفصل ثم تابع من "+stamp(selected)},(d,n)->prepareWatch(n==0?0:selected,n==1))
     .setNegativeButton("إلغاء",null).show();return;
   }
   prepareWatch(selected,getSharedPreferences("player",0).getBoolean("watch_complete",false));
