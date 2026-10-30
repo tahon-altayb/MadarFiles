@@ -23,12 +23,15 @@ public class WatchMusicService extends Service {
   return start(c,uri,file,identity,title,headers,mime,positionMs,durationMs,cloud,null);
  }
  static synchronized Job start(Context c,Uri uri,File file,String identity,String title,java.util.Map<String,String> headers,String mime,long positionMs,long durationMs,boolean cloud,MediaHttp.Session http)throws Exception{
+  return start(c,uri,file,identity,title,headers,mime,positionMs,durationMs,cloud,http,c.getSharedPreferences("player",0).getBoolean("watch_complete",false));
+ }
+ static synchronized Job start(Context c,Uri uri,File file,String identity,String title,java.util.Map<String,String> headers,String mime,long positionMs,long durationMs,boolean cloud,MediaHttp.Session http,boolean complete)throws Exception{
   if(busy())throw new IOException("انتظر انتهاء المعالجة الحالية أو أوقفها أولًا");
   if(durationMs<=0||positionMs<0||positionMs>=durationMs)throw new IOException("انتظر تحميل مدة المقطع أو اختر موضعًا قبل نهايته");
   if(cloud&&!ColabCredentials.ready()&&!MusicGpuSession.available(c))throw new IOException("اتصل بحساب Colab أولًا");
   Job old=current;boolean inherited=old!=null&&file!=null&&old.ownsSource&&file.equals(old.source);if(inherited)old.sourceTransferred=true;if(old!=null&&!old.clean.watching)dispose(old);if(old==null){File[] orphaned=c.getCacheDir().listFiles(f->f.getName().startsWith("madar_watch_input_")||f.getName().startsWith("madar_watch_clean_"));if(orphaned!=null)for(File orphan:orphaned)orphan.delete();}
   boolean owned=file==null||inherited;File source=file==null?File.createTempFile("madar_watch_input_",".media",c.getCacheDir()):file;
-  Job job=new Job(uri,source,owned,identity,title,headers,mime,positionMs*1000,durationMs*1000,cloud);if(file!=null)job.sourceReady=true;if(http!=null)job.http=http;job.clean.buffer=new WatchBuffer(durationMs/1000.0,true);job.clean.waitForComplete=c.getSharedPreferences("player",0).getBoolean("watch_complete",false);current=job;starting=true;
+  Job job=new Job(uri,source,owned,identity,title,headers,mime,positionMs*1000,durationMs*1000,cloud);if(file!=null)job.sourceReady=true;if(http!=null)job.http=http;job.clean.buffer=new WatchBuffer(durationMs/1000.0,true);job.clean.waitForComplete=complete;current=job;starting=true;
   try{Intent intent=new Intent(c,WatchMusicService.class).putExtra("job",job.id).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("الصوت للمشاهدة",uri));c.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=old;if(inherited){old.sourceTransferred=false;job.sourceTransferred=true;}dispose(job);throw error;}
  }
  static void dispose(Job job){if(job.clean.pcm!=null)job.clean.pcm.delete();if(job.ownsSource&&!job.sourceTransferred)job.source.delete();}
@@ -62,7 +65,7 @@ public class WatchMusicService extends Service {
      MusicSeparator.check(job.cancel);long cycleBegan=SystemClock.elapsedRealtime();AudioPipeline.Decoded decoded=null;File processed=null;
      try{
       if(job.clean.buffer!=null)job.clean.buffer.planGap(transferSecondsPerMedia*(window.decodeEnd-window.decodeStart)/1e6);long decodeAt=SystemClock.elapsedRealtime();
-      update("فك الصوت من موضع المشاهدة");decoded=ExternalMedia.network(job.uri)?RemoteWatchAudio.decode(this,job.http,job.mime,window.decodeStart,window.decodeEnd,job.cancel):AudioPipeline.decodeRange(this,job.source,window.decodeStart,window.decodeEnd,job.cancel,(p,m)->update(m));
+      update("تجهيز الصوت بالترتيب من البداية · "+(window.coreStart/1000000)+" ثانية");decoded=ExternalMedia.network(job.uri)?RemoteWatchAudio.decode(this,job.http,job.mime,window.decodeStart,window.decodeEnd,job.cancel):AudioPipeline.decodeRange(this,job.source,window.decodeStart,window.decodeEnd,job.cancel,(p,m)->update(m));
       long decodeMs=SystemClock.elapsedRealtime()-decodeAt;if(job.cloud)cloudSession.diagnostic.measure("DECODE",decodeMs,decoded.pcm.length(),decoded.pcm.length()/4);
       long skip=Math.max(0,Math.round((window.coreStart-decoded.offsetUs)*44100.0/1000000)),base=WatchPlan.frame(window.coreStart),count=WatchPlan.frame(window.coreEnd)-base;long[] copied={0};
       LiveSeparation.Session part=new LiveSeparation.Session(job.source,true);

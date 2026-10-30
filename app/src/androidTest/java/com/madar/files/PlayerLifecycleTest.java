@@ -29,8 +29,8 @@ public class PlayerLifecycleTest {
  @Test public void systemSeekbarHasDurationAccurateClockAndWorkingTransportActions()throws Exception{
   File source=source(),pcm=pcm();PlayerActivity a=start(source,live(source,pcm));
   try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>200);MediaController controller=controller();await(()->controller.getMetadata()!=null&&controller.getMetadata().getLong(MediaMetadata.METADATA_KEY_DURATION)>23000);MediaController.TransportControls transport=controller.getTransportControls();transport.pause();await(()->!s.wanted());transport.seekTo(6000);await(()->Math.abs(s.position()-6000)<100);await(()->Math.abs(controller.getPlaybackState().getPosition()-6000)<100);
-   PlaybackState state=controller.getPlaybackState();assertTrue((state.getActions()&PlaybackState.ACTION_SEEK_TO)!=0);assertEquals(0,state.getPlaybackSpeed(),0);assertEquals(3,state.getCustomActions().size());assertEquals(PlaybackService.ACTION+"REWIND",state.getCustomActions().get(0).getAction());assertEquals(PlaybackService.ACTION+"FORWARD",state.getCustomActions().get(1).getAction());
-   transport.sendCustomAction(PlaybackService.ACTION+"FORWARD",null);await(()->Math.abs(s.position()-16000)<100);transport.sendCustomAction(PlaybackService.ACTION+"REWIND",null);await(()->Math.abs(s.position()-6000)<100);transport.play();await(()->s.position()>6200);i.runOnMainSync(()->assertEquals(0,s.player.getVolume(),0));
+   PlaybackState state=controller.getPlaybackState();assertTrue((state.getActions()&PlaybackState.ACTION_SEEK_TO)!=0);assertTrue((state.getActions()&PlaybackState.ACTION_SKIP_TO_PREVIOUS)!=0);assertTrue((state.getActions()&PlaybackState.ACTION_SKIP_TO_NEXT)!=0);assertEquals(0,state.getPlaybackSpeed(),0);assertEquals(3,state.getCustomActions().size());assertEquals(PlaybackService.ACTION+"REWIND",state.getCustomActions().get(0).getAction());assertEquals(PlaybackService.ACTION+"FORWARD",state.getCustomActions().get(1).getAction());
+   transport.sendCustomAction(PlaybackService.ACTION+"FORWARD",null);await(()->Math.abs(s.position()-16000)<100);transport.sendCustomAction(PlaybackService.ACTION+"REWIND",null);await(()->Math.abs(s.position()-6000)<100);transport.skipToNext();await(()->Math.abs(s.position()-16000)<100);transport.skipToPrevious();await(()->Math.abs(s.position()-6000)<100);transport.play();await(()->s.position()>6200);i.runOnMainSync(()->assertEquals(0,s.player.getVolume(),0));
    // Save native UI evidence for visual inspection, not a fabricated mockup.
    shell("cmd statusbar expand-settings");Thread.sleep(600);shell("screencap -p /data/local/tmp/madar-media-controls.png");shell("cmd statusbar collapse");
   }finally{shell("cmd statusbar collapse");i.runOnMainSync(a::finish);source.delete();pcm.delete();}
@@ -39,7 +39,7 @@ public class PlayerLifecycleTest {
   assertTrue(c.getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE));File source=source(),pcm=pcm();PlayerActivity a=start(source,live(source,pcm));
   try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>200);CleanAudioController clean=s.clean;MediaController system=controller();
    for(int n=0;n<3;n++){i.runOnMainSync(()->{s.setWanted(false);s.seekTo(1000);try{java.lang.reflect.Method enter=PlayerActivity.class.getDeclaredMethod("enterMiniPlayer");enter.setAccessible(true);assertTrue("A repeated PiP request must be accepted or queued until RESUMED",(boolean)enter.invoke(a));}catch(Exception e){throw new AssertionError(e);}});await(a::isInPictureInPictureMode);
-    i.runOnMainSync(()->{try{PictureInPictureParams params=(PictureInPictureParams)field(a,"miniParams");assertEquals(3,params.getActions().size());assertEquals("تقديم 10 ثوانٍ",params.getActions().get(2).getTitle().toString());LinearLayout bar=(LinearLayout)field(a,"toolbar");assertEquals(View.GONE,((View)bar.getParent()).getVisibility());}catch(Exception e){throw new AssertionError(e);}});
+    i.runOnMainSync(()->{try{PictureInPictureParams params=(PictureInPictureParams)field(a,"miniParams");assertTrue("Native media slots must control the PiP row",params.getActions().isEmpty());LinearLayout bar=(LinearLayout)field(a,"toolbar");assertEquals(View.GONE,((View)bar.getParent()).getVisibility());}catch(Exception e){throw new AssertionError(e);}});
     system.getTransportControls().play();await(()->s.position()>1300);system.getTransportControls().pause();await(()->!s.wanted());long[] at={0};i.runOnMainSync(()->at[0]=s.position());Thread.sleep(180);i.runOnMainSync(()->assertEquals(at[0],s.position(),100));system.getSessionActivity().send();await(()->!a.isInPictureInPictureMode()&&a.hasWindowFocus());i.runOnMainSync(()->{assertSame(s,PlaybackSession.current);assertSame(clean,s.clean);assertFalse(s.wanted());assertFalse(a.isDestroyed());});
    }
   }finally{i.runOnMainSync(a::finish);source.delete();pcm.delete();}
@@ -128,6 +128,28 @@ public class PlayerLifecycleTest {
    i.runOnMainSync(()->{assertSame("Backfill must not replace the AudioTrack",clean,s.clean);assertEquals(65000,s.bufferedPosition(),2);s.setWanted(false);LiveSeparation.end(live,null);s.controls.seekTo(0);assertEquals(0,s.position(),2);});Thread.sleep(200);
    i.runOnMainSync(()->{assertFalse(s.wanted());assertEquals(0,s.position(),100);s.controls.play();});await(()->s.position()>200&&s.position()<3000);
   }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+
+ @Test public void selectedSceneWaitsForContinuousPrefixThenRewindsWithoutAProcessingGap()throws Exception{
+  File source=File.createTempFile("lifecycle-prefix-",".mp4",c.getCacheDir()),pcm=File.createTempFile("lifecycle-prefix-",".pcm",c.getCacheDir());
+  try(InputStream in=i.getContext().getAssets().open("music-long.mp4");OutputStream out=new FileOutputStream(source)){FilesUtil.copy(in,out);}try(RandomAccessFile out=new RandomAccessFile(pcm,"rw")){out.setLength(65L*44100*4);}
+  LiveSeparation.Session live=LiveSeparation.begin(source,true);live.coverage=new PcmRanges();live.buffer=new WatchBuffer(65,true);LiveSeparation.attach(live,pcm,0);
+  c.getSharedPreferences("player",0).edit().putLong("position_"+source.getName(),54000).commit();PlayerActivity a=start(source,live);
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null);CleanAudioController clean=s.clean;LiveSeparation.publishRange(live,0,40L*44100);Thread.sleep(350);
+   i.runOnMainSync(()->{assertTrue(s.buffering());assertEquals(54000,s.position(),100);assertEquals(0,s.player.getVolume(),0);});
+   LiveSeparation.publishRange(live,40L*44100,65L*44100);await(()->s.position()>54200);
+   i.runOnMainSync(()->{assertFalse(live.done);s.seekTo(10000);});await(()->s.position()>10200);i.runOnMainSync(()->{assertSame(clean,s.clean);assertEquals(65000,s.bufferedPosition(),2);});
+  }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+ @Test public void lateStartRequiresAChoiceAndCancelDoesNotStartProcessingOrMutePlayback()throws Exception{
+  File source=source();PlayerActivity a=start(source,null);
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.position()>200);i.runOnMainSync(()->{try{java.lang.reflect.Method choose=PlayerActivity.class.getDeclaredMethod("chooseWatchStart",long.class);choose.setAccessible(true);choose.invoke(a,150001L);}catch(Exception e){throw new AssertionError(e);}});
+   await(()->{android.view.accessibility.AccessibilityNodeInfo root=i.getUiAutomation().getRootInActiveWindow();return root!=null&&!root.findAccessibilityNodeInfosByText("افصل من البداية").isEmpty();});
+   android.view.accessibility.AccessibilityNodeInfo root=i.getUiAutomation().getRootInActiveWindow();assertFalse(root.findAccessibilityNodeInfosByText("انتظر اكتمال الفصل").isEmpty());
+   i.runOnMainSync(()->{assertFalse(s.cleanRequested);assertNull(s.clean);assertTrue(s.player.getVolume()>0);});
+   for(android.view.accessibility.AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText("إلغاء"))if(node.isClickable()){node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK);break;}
+   i.runOnMainSync(()->{assertFalse(s.cleanRequested);assertTrue(s.wanted());});
+  }finally{i.runOnMainSync(a::finish);source.delete();}
  }
 
 }

@@ -26,6 +26,10 @@ public final class PlaybackService extends Service {
    @Override public void onSeekTo(long at){if(valid()){playback.seekTo(at);update();}}
    @Override public void onRewind(){command("REWIND");}
    @Override public void onFastForward(){command("FORWARD");}
+   // Let SystemUI choose the native play/pause slot in PiP.
+   // Both side buttons still seek ten seconds.
+   @Override public void onSkipToPrevious(){command("REWIND");}
+   @Override public void onSkipToNext(){command("FORWARD");}
    @Override public void onCustomAction(String action,Bundle extras){if(action!=null&&action.startsWith(ACTION))command(action.substring(ACTION.length()));}
   },timer);
  }
@@ -80,7 +84,7 @@ public final class PlaybackService extends Service {
  private void update(){
   if(!valid())return;metadata();boolean play=playback.wanted(),seek=playback.player.isCurrentMediaItemSeekable();
   int state=playback.player.getPlayerError()!=null?PlaybackState.STATE_ERROR:!play?playback.player.getPlaybackState()==Player.STATE_ENDED?PlaybackState.STATE_STOPPED:PlaybackState.STATE_PAUSED:playback.buffering()?PlaybackState.STATE_BUFFERING:PlaybackState.STATE_PLAYING;
-  PlaybackState.Builder p=new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY|PlaybackState.ACTION_PAUSE|PlaybackState.ACTION_PLAY_PAUSE|PlaybackState.ACTION_STOP|(seek?PlaybackState.ACTION_SEEK_TO|PlaybackState.ACTION_REWIND|PlaybackState.ACTION_FAST_FORWARD:0)).setBufferedPosition(playback.bufferedPosition()).setState(state,playback.position(),state==PlaybackState.STATE_PLAYING?playback.speed:0,SystemClock.elapsedRealtime());
+  PlaybackState.Builder p=new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY|PlaybackState.ACTION_PAUSE|PlaybackState.ACTION_PLAY_PAUSE|PlaybackState.ACTION_STOP|(seek?PlaybackState.ACTION_SEEK_TO|PlaybackState.ACTION_REWIND|PlaybackState.ACTION_FAST_FORWARD|PlaybackState.ACTION_SKIP_TO_PREVIOUS|PlaybackState.ACTION_SKIP_TO_NEXT:0)).setBufferedPosition(playback.bufferedPosition()).setState(state,playback.position(),state==PlaybackState.STATE_PLAYING?playback.speed:0,SystemClock.elapsedRealtime());
   if(seek){p.addCustomAction(new PlaybackState.CustomAction.Builder(ACTION+"REWIND","رجوع 10 ثوانٍ",R.drawable.ic_player_rewind).build());p.addCustomAction(new PlaybackState.CustomAction.Builder(ACTION+"FORWARD","تقديم 10 ثوانٍ",R.drawable.ic_player_forward).build());}
   p.addCustomAction(new PlaybackState.CustomAction.Builder(ACTION+"STOP","إغلاق المشغّل",android.R.drawable.ic_menu_close_clear_cancel).build());
   if(state==PlaybackState.STATE_ERROR)p.setErrorMessage(playback.error);media.setPlaybackState(p.build());
