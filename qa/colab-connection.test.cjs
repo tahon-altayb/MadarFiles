@@ -7,5 +7,6 @@ vm.createContext(context);vm.runInContext(source.slice(source.indexOf(marker)),c
 home.onclick();assert.deepEqual(calls.pop(),['colabConnect']);
 vm.runInContext("openTool('subtitles');openTool('music');openTool('crop')",context);assert.equal(buttons.length,2);buttons[0].onclick();assert.deepEqual(calls.pop(),['colabConnect']);assert.equal(buttons[0].type,'button');
 const mode=controls.find(x=>x.id==='musicMode');assert.ok(mode);mode.value='colab';mode.onchange();assert.match(kicker.textContent,/السحابية/);
+const pipeline=controls.find(x=>x.id==='musicPipeline');assert.ok(pipeline);assert.match(pipeline.innerHTML,/voc_ft/);assert.match(pipeline.innerHTML,/inst_hq_4_3/);assert.equal(pipeline.hidden,false);mode.value='local';mode.onchange();assert.equal(pipeline.hidden,true);
 const manifest=fs.readFileSync('app/src/main/AndroidManifest.xml','utf8');assert.match(manifest,/ColabActivity" android:exported="false"/);
 console.log('PASS: native Colab connection from home and speech/music tools; bridge carries no tokens or credentials');

@@ -21,6 +21,10 @@ _SERVICE_ROOT = None
 _SERVICE_ERROR = None
 _ACTIVE_JOB = ""
 _NEXT_BATCH = 0
+_FX_CLIENT = None
+_FX_VERIFIED = False
+FX_PIPELINE = 'inst_hq_4_3'
+FX_SHA = 'e165729735b0493b2711b73de37f17cd57dc0a550bd2dff1d4c627586ed32a55'
 
 def load_private_cudnn():
     global _cudnn
@@ -71,7 +75,7 @@ def status(stage, progress, parts=None, frames=None, packs=None, extra=None):
 def service_state():
     if _SERVICE_ROOT is not None:
         value = dict(protocol=2, heartbeat=_HEARTBEAT, next_batch=_NEXT_BATCH,
-                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED else 'bootstrap',
+                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED or _FX_VERIFIED else 'bootstrap',
                      active_job=_ACTIVE_JOB)
         if _SERVICE_ERROR:
             value['error'] = _SERVICE_ERROR
@@ -190,6 +194,44 @@ def prepare():
         ENGINE = sherpa_onnx.OfflineSourceSeparation(config)
         verify_gpu_inference()
         status('ready', 38)
+
+
+def prepare_fx():
+    global _FX_CLIENT, _FX_VERIFIED
+    if _FX_CLIENT is None:
+        from music_fx_bridge import Client
+        _FX_CLIENT = Client(CACHE or Path.cwd(), status)
+    _FX_CLIENT.prepare()
+    _FX_VERIFIED = True
+    status('ready', 38)
+
+
+def publish_fx(frames):
+    output, gpu_ms = _FX_CLIENT.run(Path.cwd(), frames)
+    stride, recent, count = 16 * RATE, [], 0
+    try:
+        with output.open('rb') as stream:
+            while True:
+                data = stream.read(stride * 4)
+                if not data: break
+                meta = write_pack(f'pack_{count}.pcm', data)
+                meta['index'] = count
+                write_json(f'pack_{count}.json', meta)
+                recent.append(meta); recent = recent[-8:]; count += 1
+                complete = min(frames, count * stride)
+                status('separate', 90 + int(7 * complete / frames), extra=dict(
+                    frames=frames, completed_frames=complete, sample_rate=RATE, channels=2,
+                    model_sha256=FX_SHA, pipeline=FX_PIPELINE, pack_count=count,
+                    output_frames=stride, recent_packs=recent, gpu_ms=gpu_ms))
+        manifest = dict(protocol=2, job=Path.cwd().name, frames=frames, completed_frames=frames,
+            sample_rate=RATE, channels=2, model_sha256=FX_SHA, pipeline=FX_PIPELINE,
+            provider='cuda', pack_count=count, output_frames=stride,
+            recent_packs=recent, gpu_ms=gpu_ms)
+        write_json('result.json', manifest)
+        status('done', 97, extra=manifest)
+    finally:
+        output.unlink(missing_ok=True)
+        Path('input.pcm').unlink(missing_ok=True)
 
 
 def verify_gpu_inference():
@@ -334,7 +376,11 @@ def run_v2(req):
         raise ValueError('MUSIC_DURATION')
     if not isinstance(inputs, list) or len(inputs) != (frames + stride - 1) // stride:
         raise ValueError('MUSIC_MANIFEST')
-    prepare()
+    pipeline = req.get('pipeline', 'voc_ft')
+    if pipeline not in ('voc_ft', FX_PIPELINE):
+        raise ValueError('MUSIC_PIPELINE')
+    if pipeline == FX_PIPELINE: prepare_fx()
+    else: prepare()
     with open('input.pcm', 'wb') as out:
         for i, part in enumerate(inputs):
             expected = min(stride, frames - i * stride) * 4
@@ -343,6 +389,8 @@ def run_v2(req):
             if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
                 raise ValueError('MUSIC_DISK')
             out.write(read_wire(part, f'input_{i}.pcm', expected))
+    if pipeline == FX_PIPELINE:
+        return publish_fx(frames)
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
     recent, packed, count = [], bytearray(), 0
     began = time.monotonic()
@@ -393,7 +441,11 @@ def serve(root):
     root = Path(root).resolve()
     CACHE = _SERVICE_ROOT = root
     os.chdir(root)
-    prepare()
+    config_path = root / 'engine.json'
+    profile = json.loads(config_path.read_text()).get('pipeline', 'voc_ft') if config_path.is_file() else 'voc_ft'
+    if profile == FX_PIPELINE: prepare_fx()
+    elif profile == 'voc_ft': prepare()
+    else: raise ValueError('MUSIC_PIPELINE')
     with _STATUS_LOCK:
         service_state()
     previous = None

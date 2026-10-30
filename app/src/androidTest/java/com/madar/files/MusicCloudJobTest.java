@@ -21,7 +21,7 @@ public class MusicCloudJobTest {
  Context context;MockWebServer server;ColabMusic.Session session;AtomicBoolean cancel=new AtomicBoolean();
  Map<String,byte[]> files=new ConcurrentHashMap<>();Map<String,JSONObject> requests=new ConcurrentHashMap<>();Map<String,Integer> polls=new ConcurrentHashMap<>();
  AtomicInteger submitted=new AtomicInteger(),submitPuts=new AtomicInteger(),channels=new AtomicInteger();AtomicReference<Throwable> failure=new AtomicReference<>();
- boolean corrupt,retrySubmit,silence;
+ boolean corrupt,retrySubmit,silence,wrongProfile;
  @Before public void setup()throws Exception{
   context=InstrumentationRegistry.getInstrumentation().getTargetContext();context.getSharedPreferences("colab_owned_runtime",0).edit().clear().commit();
   server=new MockWebServer();server.start(java.net.InetAddress.getByName("127.0.0.1"),0);
@@ -43,7 +43,7 @@ public class MusicCloudJobTest {
  private JSONObject state(String job,boolean done)throws Exception{
   long frames=requests.get(job).getLong("frames"),total=(frames+MusicCloudJob.OUTPUT_FRAMES-1)/MusicCloudJob.OUTPUT_FRAMES,count=done?total:1;
   JSONArray recent=new JSONArray();for(long i=Math.max(0,count-8);i<count;i++)recent.put(pack(job,i));
-  return new JSONObject().put("protocol",2).put("job",job).put("stage",done?"done":"separate").put("progress",done?97:60).put("heartbeat",done?2:1).put("frames",frames).put("completed_frames",done?frames:Math.min(frames,MusicCloudJob.OUTPUT_FRAMES)).put("sample_rate",44100).put("channels",2).put("output_frames",MusicCloudJob.OUTPUT_FRAMES).put("pack_count",count).put("model_sha256",ColabMusic.MODEL_SHA).put("provider","cuda").put("recent_packs",recent);
+  return new JSONObject().put("protocol",2).put("job",job).put("stage",done?"done":"separate").put("progress",done?97:60).put("heartbeat",done?2:1).put("frames",frames).put("completed_frames",done?frames:Math.min(frames,MusicCloudJob.OUTPUT_FRAMES)).put("sample_rate",44100).put("channels",2).put("output_frames",MusicCloudJob.OUTPUT_FRAMES).put("pack_count",count).put("pipeline",wrongProfile?MusicPipeline.LEGACY:requests.get(job).optString("pipeline",MusicPipeline.LEGACY)).put("model_sha256",wrongProfile?ColabMusic.MODEL_SHA:MusicPipeline.fingerprint(requests.get(job).optString("pipeline",MusicPipeline.LEGACY))).put("provider","cuda").put("recent_packs",recent);
  }
  private MockResponse respond(RecordedRequest request)throws Exception{
   assertNull(request.getHeader("Authorization"));assertEquals("PROXY_FIXTURE",request.getHeader("X-Colab-Runtime-Proxy-Token"));String path=request.getPath();
@@ -92,4 +92,14 @@ public class MusicCloudJobTest {
   try{session.run(audio,(p,m)->{if(m.startsWith("استرجاع الصوت")){cancel.set(true);session.cancel.set(true);}},live);fail();}
   catch(CancellationException expected){assertTrue(live.frames>0);assertFalse(live.pcm.exists());assertEquals(1,submitted.get());assertEquals(0,channels.get());}finally{audio.pcm.delete();}
  }
+ @Test(timeout=90000) public void twoPassAndOriginalProfilesReuseTheSameRestSessionWithExplicitResults()throws Exception{
+  for(String profile:new String[]{MusicPipeline.FX,MusicPipeline.LEGACY,MusicPipeline.FX}){session.pipeline=profile;AudioPipeline.Decoded audio=audio(1);ColabMusic.Result result=null;
+   try{result=session.run(audio,(p,m)->{},null);String job=session.root+"_b"+(session.batch-1);assertEquals(profile,requests.get(job).getString("pipeline"));assertEquals(audio.pcm.length(),result.pcm.length());}finally{audio.pcm.delete();if(result!=null)result.pcm.delete();}}
+  assertEquals(3,submitted.get());assertEquals(0,channels.get());assertTrue(session.healthy);
+ }
+ @Test(timeout=45000) public void oldModelOutputCannotMasqueradeAsTheTwoPassResult()throws Exception{
+  session.pipeline=MusicPipeline.FX;wrongProfile=true;AudioPipeline.Decoded audio=audio(1);LiveSeparation.Session live=new LiveSeparation.Session(audio.pcm,true);
+  try{session.run(audio,(p,m)->{},live);fail("Mismatched pipeline must be rejected");}catch(IOException expected){assertTrue(expected.getMessage().contains("MUSIC_RESULT_SCHEMA"));assertEquals(0,live.frames);assertFalse(live.pcm.exists());}finally{audio.pcm.delete();}
+ }
+
 }

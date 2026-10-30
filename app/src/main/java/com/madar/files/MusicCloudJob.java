@@ -10,7 +10,10 @@ final class MusicCloudJob {
  static final int INPUT_FRAMES=32*ColabMusic.RATE,OUTPUT_FRAMES=16*ColabMusic.RATE;
  static long now(){return android.os.SystemClock.elapsedRealtime();}
  static void schema(JSONObject state,String folder,long frames)throws IOException{
-  if(state.optInt("protocol")!=2||!folder.equals(state.optString("job"))||state.optLong("frames",-1)!=frames||state.optInt("sample_rate")!=44100||state.optInt("channels")!=2||state.optInt("output_frames")!=OUTPUT_FRAMES||!ColabMusic.MODEL_SHA.equals(state.optString("model_sha256")))throw new IOException("Colab · MUSIC_RESULT_SCHEMA");
+  schema(state,folder,frames,MusicPipeline.LEGACY);
+ }
+ static void schema(JSONObject state,String folder,long frames,String profile)throws IOException{
+  if(state.optInt("protocol")!=2||!folder.equals(state.optString("job"))||state.optLong("frames",-1)!=frames||state.optInt("sample_rate")!=44100||state.optInt("channels")!=2||state.optInt("output_frames")!=OUTPUT_FRAMES||!MusicPipeline.fingerprint(profile).equals(state.optString("model_sha256"))||!MusicPipeline.checked(profile).equals(state.optString("pipeline",MusicPipeline.LEGACY)))throw new IOException("Colab · MUSIC_RESULT_SCHEMA");
  }
  static ColabMusic.Result run(ColabMusic.Session session,AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
   long sourceFrames=audio.pcm.length()/4,frames=Math.round(sourceFrames*44100.0/audio.sampleRate);if(frames<=0)throw new IOException("Colab · MUSIC_DURATION");
@@ -29,7 +32,7 @@ final class MusicCloudJob {
      progress.update(17+(int)(9*(start+keep)/frames),"رفع الصوت دون فقد · "+((start+keep)/44100)+" / "+(frames/44100)+" ثانية");
     }
    }
-   runtime.put(folder+"/request.json",new JSONObject().put("protocol",2).put("frames",frames).put("inputs",inputs).toString(),"text");
+   runtime.put(folder+"/request.json",new JSONObject().put("protocol",2).put("pipeline",session.pipeline).put("frames",frames).put("inputs",inputs).toString(),"text");
    session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,wireBytes,frames);
    long readyAt=now();session.awaitReady();session.lastColdStartMs=cold?Math.max(0,now()-began):0;diagnostic.measure("PREPARE",now()-readyAt,0,0);
    MusicMailbox.submit(runtime,session.root,folder);diagnostic.record("MUSIC_SUBMITTED");
@@ -38,7 +41,7 @@ final class MusicCloudJob {
     MusicMailbox.await(runtime,session.root,folder,session.cancel,diagnostic::record,state->{
      String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));
      if(state.has("pack_count")){
-      schema(state,folder,frames);long count=state.optLong("pack_count",-1),expected=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES;
+      schema(state,folder,frames,session.pipeline);long count=state.optLong("pack_count",-1),expected=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES;
       if(count<0||count>expected)throw new IOException("Colab · MUSIC_PACK_SCHEMA");JSONArray recent=state.optJSONArray("recent_packs");
       while(fetched[0]<count){ColabProbe.check(session.cancel);long at=now(),index=fetched[0];JSONObject meta=null;
        if(recent!=null)for(int i=0;i<recent.length();i++){JSONObject item=recent.getJSONObject(i);if(item.optLong("index",-1)==index){meta=item;break;}}
@@ -54,7 +57,7 @@ final class MusicCloudJob {
      }
     });
    }
-   diagnostic.record("FETCH_RESULT");JSONObject manifest=ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536));schema(manifest,folder,frames);
+   diagnostic.record("FETCH_RESULT");JSONObject manifest=ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536));schema(manifest,folder,frames,session.pipeline);
    if(!"cuda".equals(manifest.optString("provider"))||manifest.optLong("completed_frames",-1)!=frames||manifest.optLong("pack_count",-1)!=fetched[0]||fetched[0]!=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES||output.length()!=frames*4)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
    session.lastProcessMs=now()-processAt;diagnostic.measure("PROCESS_FETCH",session.lastProcessMs,output.length(),frames);diagnostic.measure("FETCH",fetchMs[0],output.length(),frames);diagnostic.measure("GPU",gpuMs[0],0,frames);diagnostic.record("RESULT_VERIFIED");complete=true;return result;
   }finally{if(!complete)output.delete();}

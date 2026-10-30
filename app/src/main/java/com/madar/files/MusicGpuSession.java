@@ -26,12 +26,17 @@ final class MusicGpuSession {
  static long remainingIdle(){ColabMusic.Session s=idle;return s==null?0:Math.max(0,Math.min(IDLE_MS-(SystemClock.elapsedRealtime()-idleAt),MAX_AGE_MS-(SystemClock.elapsedRealtime()-s.createdAt)));}
  private static void notifyState(Context c){c.startForegroundService(new Intent(c,MusicGpuService.class));}
  static ColabMusic.Session acquire(Context c,ColabCredentials.Grant grant,AtomicBoolean stop,MusicSeparator.Progress progress)throws Exception{
+  return acquire(c,grant,stop,progress,MusicPipeline.LEGACY);
+ }
+ static ColabMusic.Session acquire(Context c,ColabCredentials.Grant grant,AtomicBoolean stop,MusicSeparator.Progress progress,String profile)throws Exception{
+  profile=MusicPipeline.checked(profile);
   ColabMusic.Session s;
   synchronized(MusicGpuSession.class){
    if(busy())throw new IOException(closing()?"جارٍ إيقاف جلسة GPU السابقة بأمان؛ تابع حالتها من إشعار مدار":"توجد عملية GPU أخرى؛ أوقفها أو انتظر اكتمالها");
    s=idle;
    if(s!=null&&(remainingIdle()<=0||grant!=null&&!s.runtime.grant.project.equals(grant.project))){idle=null;retireLocked(s);s=null;throw new IOException("انتهت صلاحية جلسة GPU؛ جارٍ إغلاقها قبل اتصال جديد");}
-   if(s==null)s=new ColabMusic.Session(c.getApplicationContext(),grant,stop,progress);else s.bind(stop,progress);
+   if(s==null)s=new ColabMusic.Session(c.getApplicationContext(),grant,stop,progress);else s.bind(stop,progress,profile);
+   s.pipeline=profile;
    idle=null;active=s;busy=true;generation++;
   }
   try{if(s.initialized)progress.update(12,"إعادة استخدام جلسة GPU والنموذج المحمّل");notifyState(c);return s;}
