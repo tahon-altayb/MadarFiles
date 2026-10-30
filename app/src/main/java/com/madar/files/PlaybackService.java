@@ -67,7 +67,7 @@ public final class PlaybackService extends Service {
   if(valid()){
    n.setContentIntent(open()).setDeleteIntent(action(this,playback.id,"STOP",87));
    n.addAction(new Notification.Action.Builder(R.drawable.ic_player_rewind,"رجوع 10 ثوانٍ",action(this,playback.id,"REWIND",84)).build());
-   n.addAction(new Notification.Action.Builder(playback.wanted()?android.R.drawable.ic_media_pause:android.R.drawable.ic_media_play,playback.wanted()?"إيقاف مؤقت":"تشغيل",action(this,playback.id,"TOGGLE",85)).build());
+   n.addAction(new Notification.Action.Builder(playback.wanted()?R.drawable.ic_player_pause:R.drawable.ic_player_play,playback.wanted()?"إيقاف مؤقت":"تشغيل",action(this,playback.id,"TOGGLE",85)).build());
    n.addAction(new Notification.Action.Builder(R.drawable.ic_player_forward,"تقديم 10 ثوانٍ",action(this,playback.id,"FORWARD",88)).build());
    n.addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel,"إغلاق المشغّل",action(this,playback.id,"STOP",86)).build());
   }

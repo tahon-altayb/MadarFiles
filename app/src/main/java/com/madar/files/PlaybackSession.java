@@ -38,7 +38,7 @@ final class PlaybackSession implements AutoCloseable {
    @Override public void seekBack(){PlaybackSession.this.seekTo(position()-10000);}
    @Override public void seekForward(){PlaybackSession.this.seekTo(position()+10000);}
    @Override public int getPlaybackState(){return clean!=null&&clean.waiting()?Player.STATE_BUFFERING:super.getPlaybackState();}
-   @Override public long getBufferedPosition(){return cleanRequested&&cleanSession!=null?Math.round(cleanSession.ready()*1000):super.getBufferedPosition();}
+   @Override public long getBufferedPosition(){return cleanRequested&&cleanSession!=null?cleanSession.bufferedAt(position()):super.getBufferedPosition();}
    @Override public long getTotalBufferedDuration(){return Math.max(0,getBufferedPosition()-getCurrentPosition());}
    @Override public void setPlayWhenReady(boolean play){setWanted(play);}
    @Override public void play(){setWanted(true);}
@@ -63,7 +63,7 @@ final class PlaybackSession implements AutoCloseable {
  boolean wanted(){return clean!=null?clean.wanted():cleanRequested?preparingWanted:player.getPlayWhenReady()&&player.getPlaybackState()!=Player.STATE_ENDED;}
  long duration(){long n=player.getDuration();return n==C.TIME_UNSET||n<0?-1:n;}
  boolean buffering(){return wanted()&&(cleanRequested?(clean==null||clean.waiting()):player.getPlaybackState()==Player.STATE_BUFFERING||player.getPlaybackState()==Player.STATE_IDLE||player.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE);}
- long bufferedPosition(){long at=cleanRequested&&cleanSession!=null?Math.round(cleanSession.ready()*1000):player.getBufferedPosition();long duration=duration();return Math.max(0,duration>=0?Math.min(at,duration):at);}
+ long bufferedPosition(){long at=cleanRequested&&cleanSession!=null?cleanSession.bufferedAt(position()):player.getBufferedPosition();long duration=duration();return Math.max(0,duration>=0?Math.min(at,duration):at);}
  void seekTo(long at){if(closed)return;long end=duration();at=Math.max(0,end>=0?Math.min(at,end):at);if(clean!=null)clean.move(at);else player.seekTo(at);changed();}
  long position(){return clean!=null?clean.positionMs():player.getCurrentPosition();}
  void setWanted(boolean value){if(closed)return;if(clean!=null){if(value&&cleanSession.done&&clean.playedFrames()>=cleanSession.frames)clean.move(cleanSession.offsetUs/1000);clean.setWanted(value);}else if(cleanRequested)preparingWanted=value;else{if(value&&player.getPlaybackState()==Player.STATE_ENDED)player.seekTo(0);player.setPlayWhenReady(value);}changed();}

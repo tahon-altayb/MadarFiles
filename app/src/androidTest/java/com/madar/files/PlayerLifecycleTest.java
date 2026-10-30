@@ -116,4 +116,18 @@ public class PlayerLifecycleTest {
   }
  }
 
+ @Test public void removalStartingAtFiftyFourCanRewindIntoHistoryWithoutReadingSparseHoles()throws Exception{
+  File source=File.createTempFile("lifecycle-history-",".mp4",c.getCacheDir()),pcm=File.createTempFile("lifecycle-history-",".pcm",c.getCacheDir());
+  try(InputStream in=i.getContext().getAssets().open("music-long.mp4");OutputStream out=new FileOutputStream(source)){FilesUtil.copy(in,out);}try(RandomAccessFile out=new RandomAccessFile(pcm,"rw")){out.setLength(65L*44100*4);}
+  LiveSeparation.Session live=LiveSeparation.begin(source,true);live.coverage=new PcmRanges();live.buffer=new WatchBuffer(65,true);LiveSeparation.attach(live,pcm,0);LiveSeparation.publishRange(live,54L*44100,65L*44100);
+  c.getSharedPreferences("player",0).edit().putLong("position_"+source.getName(),54000).commit();PlayerActivity a=start(source,live);
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.clean!=null&&s.position()>54200);CleanAudioController clean=s.clean;
+   i.runOnMainSync(()->{s.controls.seekTo(10000);assertEquals(10000,s.position(),2);assertEquals(10000,s.bufferedPosition(),2);assertEquals(10L*44100,live.requestedFrame);});Thread.sleep(350);
+   i.runOnMainSync(()->{assertTrue("Unwritten sparse bytes cannot count as playable clean sound",s.buffering());assertEquals(10000,s.position(),100);assertEquals(0,s.player.getVolume(),0);});
+   LiveSeparation.publishRange(live,0,54L*44100);await(()->s.position()>10200);
+   i.runOnMainSync(()->{assertSame("Backfill must not replace the AudioTrack",clean,s.clean);assertEquals(65000,s.bufferedPosition(),2);s.setWanted(false);LiveSeparation.end(live,null);s.controls.seekTo(0);assertEquals(0,s.position(),2);});Thread.sleep(200);
+   i.runOnMainSync(()->{assertFalse(s.wanted());assertEquals(0,s.position(),100);s.controls.play();});await(()->s.position()>200&&s.position()<3000);
+  }finally{LiveSeparation.end(live,null);i.runOnMainSync(a::finish);source.delete();pcm.delete();}
+ }
+
 }

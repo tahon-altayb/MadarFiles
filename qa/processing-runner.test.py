@@ -12,7 +12,7 @@ for lifecycle,source,isolated,watch,rest,expect in [('pass','pass','pass','pass'
 if [[ "$*" == *"am instrument"* ]]; then
  result="$MADAR_FAKE_ISOLATED"
  count=2
- if [[ "$*" == *"PlayerLifecycleTest"* ]]; then result="$MADAR_FAKE_LIFECYCLE";count=12;fi
+ if [[ "$*" == *"PlayerLifecycleTest"* ]]; then result="$MADAR_FAKE_LIFECYCLE";count=13;fi
  if [[ "$*" == *"PlayerWatchTest"* ]]; then result="$MADAR_FAKE_WATCH";count=8;fi
  if [[ "$*" == *"PlayerSourceTest"* ]]; then result="$MADAR_FAKE_SOURCE";count=8;fi
  if [ "$result" = fail ]; then echo 'FAILURES!!!'; elif [ "$result" = skip ]; then printf 'INSTRUMENTATION_STATUS_CODE: -3\\nOK (%s tests)\\n' "$count"; else printf 'INSTRUMENTATION_STATUS_CODE: 0\\nOK (%s tests)\\n' "$count"; fi

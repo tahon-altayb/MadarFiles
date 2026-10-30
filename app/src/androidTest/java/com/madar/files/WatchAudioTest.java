@@ -18,4 +18,12 @@ public class WatchAudioTest {
    byte[] data=new byte[(int)aggregate.length()];try(InputStream in=new FileInputStream(aggregate)){assertEquals(data.length,in.read(data));}ByteBuffer result=ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);for(int w=0;w<2;w++)for(int i=4;i<12;i++)assertEquals(w*20+i,result.getInt());assertFalse(result.hasRemaining());
   }finally{source.delete();aggregate.delete();}
  }
+ @Test public void outOfOrderWindowsKeepOriginalBytesAndNeverPublishContextOrHoles()throws Exception{
+  Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();File source=File.createTempFile("watch-ranges-",".media",c.getCacheDir()),aggregate=File.createTempFile("watch-ranges-",".pcm",c.getCacheDir());LiveSeparation.Session target=new LiveSeparation.Session(source,true);target.coverage=new PcmRanges();LiveSeparation.attach(target,aggregate,0);
+  try(RandomAccessFile out=new RandomAccessFile(aggregate,"rw")){
+   for(int w=0;w<2;w++){File part=File.createTempFile("watch-range-part-",".pcm",c.getCacheDir());try{ByteBuffer bytes=ByteBuffer.allocate(80).order(ByteOrder.LITTLE_ENDIAN);for(int n=0;n<20;n++)bytes.putInt((w+1)*100+n);try(OutputStream file=new FileOutputStream(part)){file.write(bytes.array());}LiveSeparation.Session ready=new LiveSeparation.Session(source,true);LiveSeparation.attach(ready,part,0);LiveSeparation.publish(ready,6);long start=w==0?12:0,count=w==0?8:12,copied=WatchMusicService.appendWindow(ready,target,out,start,0,4,count);assertEquals(2,copied);if(w==0){assertEquals(0,target.availableEnd(0));assertEquals(14,target.availableEnd(12));}LiveSeparation.publish(ready,20);copied=WatchMusicService.appendWindow(ready,target,out,start,copied,4,count);assertEquals(count,copied);assertEquals(count,WatchMusicService.appendWindow(ready,target,out,start,copied,4,count));}finally{part.delete();}}
+   assertEquals(20,target.availableEnd(0));assertEquals(20,target.coverage.total());out.seek(0);byte[] data=new byte[80];out.readFully(data);ByteBuffer result=ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);for(int n=0;n<12;n++)assertEquals(204+n,result.getInt());for(int n=0;n<8;n++)assertEquals(104+n,result.getInt());
+  }finally{aggregate.delete();source.delete();}
+ }
+
 }

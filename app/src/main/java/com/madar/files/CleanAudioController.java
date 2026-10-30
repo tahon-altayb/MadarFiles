@@ -37,7 +37,7 @@ final class CleanAudioController implements AutoCloseable {
  private void seekVideo(long target){if(video.getCurrentPosition()==target)return;if(ownSeeks.size()>=32)ownSeeks.removeFirst();ownSeeks.addLast(target);video.seekTo(target);}
  private void setVideoPlaying(boolean value){if(video.getPlayWhenReady()==value)return;ownPlayChanges.addLast(value);video.setPlayWhenReady(value);}
  private void pause(){feedAllowed=false;adjusting=true;try{setVideoPlaying(false);synchronized(audioLock){if(playing){playedLocked();pausedLimit=cursor;refillAfter=SystemClock.elapsedRealtime()+100;}audio.pause();playing=false;}}finally{adjusting=false;}}
- void move(long positionMs){pause();seeking=true;synchronized(audioLock){audio.flush();resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,positionMs/1000.0);if(session.done)at=Math.min(session.ready(),at);cursor=Math.max(0,Math.round((at-start)*44100));baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;reserveApproved=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
+ void move(long positionMs){pause();seeking=true;synchronized(audioLock){audio.flush();resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,positionMs/1000.0);if(session.done)at=Math.min(session.ready(),at);cursor=Math.max(0,Math.round((at-start)*44100));session.requestedFrame=cursor;baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;reserveApproved=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
  private final BroadcastReceiver noisy=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent intent){if(!closed)setWanted(false);}};
  private void requestFocus(){if(hasFocusRequest)return;hasFocusRequest=true;focused=manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;if(!focused){hasFocusRequest=false;wanted=false;failure="الصوت مشغول بتطبيق آخر؛ اضغط تشغيل للمحاولة";}}
  void setWanted(boolean value){if(closed)return;wanted=value;if(value){failure="";requestFocus();}else{pause();if(hasFocusRequest)manager.abandonAudioFocusRequest(focus);hasFocusRequest=false;focused=false;}}
@@ -53,11 +53,11 @@ final class CleanAudioController implements AutoCloseable {
  private long playedLocked(){long head=baseFrame+(audio.getPlaybackHeadPosition()&0xffffffffL);return lastPlayed=Math.max(lastPlayed,Math.min(playing?cursor:pausedLimit,head));}
  private final Runnable feed=new Runnable(){@Override public void run(){if(closed)return;try{synchronized(audioLock){
   if(session.pcm!=null&&input==null)input=new RandomAccessFile(session.pcm,"r");
-  if(input!=null&&feedAllowed){long head=audio.getPlaybackHeadPosition()&0xffffffffL;if(baseFrame+head>cursor)baseFrame=cursor-head;byte[] bytes=feedBuffer;for(int i=0;i<16&&session.frames>cursor;i++){int count=(int)Math.min(bytes.length/4,session.frames-cursor)*4;input.seek(cursor*4);input.readFully(bytes,0,count);int n=audio.write(bytes,0,count,AudioTrack.WRITE_NON_BLOCKING);if(n<0)throw new IOException("AudioTrack write "+n);if(n%4!=0)throw new IOException("إطار صوت غير مكتمل");cursor+=n/4;if(n<count)break;}}
+  if(input!=null&&feedAllowed){long head=audio.getPlaybackHeadPosition()&0xffffffffL;if(baseFrame+head>cursor)baseFrame=cursor-head;byte[] bytes=feedBuffer;for(int i=0;i<16&&session.availableEnd(cursor)>cursor;i++){int count=(int)Math.min(bytes.length/4,session.availableEnd(cursor)-cursor)*4;input.seek(cursor*4);input.readFully(bytes,0,count);int n=audio.write(bytes,0,count,AudioTrack.WRITE_NON_BLOCKING);if(n<0)throw new IOException("AudioTrack write "+n);if(n%4!=0)throw new IOException("إطار صوت غير مكتمل");cursor+=n/4;if(n<count)break;}}
  }}catch(Exception error){failure="تعذرت متابعة الصوت المنظّف: "+error.getMessage();}if(!closed)feeder.postDelayed(this,10);}};
  private final byte[] feedBuffer=new byte[16384];
  private final Runnable tick=new Runnable(){@Override public void run(){if(closed)return;try{
-  video.setVolume(0);long frames=playedFrames();session.playedFrames=frames;double played=session.offsetUs/1e6+frames/44100.0,ready=session.ready();long now=SystemClock.elapsedRealtime();
+  video.setVolume(0);long frames=playedFrames();session.playedFrames=frames;double played=session.offsetUs/1e6+frames/44100.0,ready=session.offsetUs/1e6+session.availableEnd(frames)/44100.0;long now=SystemClock.elapsedRealtime();
   if(!failure.isEmpty()){wanted=false;pause();}
   if(playing&&(video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE))pause();
   long queued;synchronized(audioLock){queued=cursor-frames;}
@@ -71,14 +71,14 @@ final class CleanAudioController implements AutoCloseable {
    // Only arm prefill when resuming is intended; never submit a tiny refill
    // into the final hardware quantum of a paused/starved AudioTrack.
    feedAllowed=true;
-   if(queued>0&&(queued>=Math.min(8820,session.frames-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;reserveApproved=true;seeking=false;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
+   if(queued>0&&(queued>=Math.min(8820,session.availableEnd(frames)-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;reserveApproved=true;seeking=false;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
   }
   if(playing){
-   if(frames>=session.frames){reserveApproved=false;pause();rebuffered=true;if(session.done)wanted=false;}
+   if(frames>=session.availableEnd(frames)){reserveApproved=false;pause();rebuffered=true;session.requestedFrame=frames;if(session.done&&frames>=session.frames)wanted=false;}
    else if(video.getPlaybackState()==Player.STATE_READY&&now-lastSync>1500&&Math.abs(video.getCurrentPosition()/1000.0-played)>.25){if(driftSince==0)driftSince=now;else if(now-driftSince>=350){syncSeekCount++;seekVideo(Math.round(played*1000));lastSync=now;driftSince=0;}}
    else driftSince=0;
   }
-  String text=!failure.isEmpty()?failure:session.failed?session.error:session.done?"الصوت المنظّف · اكتمل الفصل":"الصوت المنظّف · جاهز إلى "+stamp(Math.round(ready*1000))+(session.waitForComplete?" · انتظار اكتمال الفصل قبل المشاهدة":session.buffer!=null?" · "+session.buffer.describe(frames/44100.0,session.frames/44100.0,speed,now):wanted&&!playing?" · تجهيز مخزون للمشاهدة المستقرة":"");
+  String text=!failure.isEmpty()?failure:session.failed?session.error:session.done?"الصوت المنظّف · اكتمل الفصل":"الصوت المنظّف · جاهز إلى "+stamp(Math.round(ready*1000))+(session.waitForComplete?" · انتظار اكتمال الفصل قبل المشاهدة":session.buffer!=null?" · "+session.buffer.describe(frames/44100.0,session.availableEnd(frames)/44100.0,speed,now):wanted&&!playing?" · تجهيز مخزون للمشاهدة المستقرة":"");
   if(now-lastUi>=250){lastUi=now;status.show(text,wanted&&!playing||session.failed||!failure.isEmpty());}
  }catch(Exception error){wanted=false;pause();failure="تعذرت متابعة الصوت المنظّف: "+error.getMessage();status.show(failure,true);}main.postDelayed(this,30);}};
  private static String stamp(long ms){return String.format(java.util.Locale.US,"%d:%02d",ms/60000,ms/1000%60);}
