@@ -148,13 +148,16 @@ public class PlayerLifecycleTest {
  }
  @Test public void lateStartRequiresAChoiceAndCancelDoesNotStartProcessingOrMutePlayback()throws Exception{
   File source=source();PlayerActivity a=start(source,null);
-  try{PlaybackSession s=PlaybackSession.current;await(()->s.position()>200);i.runOnMainSync(()->{try{java.lang.reflect.Method choose=PlayerActivity.class.getDeclaredMethod("chooseWatchStart",long.class);choose.setAccessible(true);choose.invoke(a,150001L);}catch(Exception e){throw new AssertionError(e);}});
-   await(()->{android.view.accessibility.AccessibilityNodeInfo root=i.getUiAutomation().getRootInActiveWindow();return root!=null&&!root.findAccessibilityNodeInfosByText("افصل من البداية").isEmpty();});
-   android.view.accessibility.AccessibilityNodeInfo root=i.getUiAutomation().getRootInActiveWindow();assertFalse(root.findAccessibilityNodeInfosByText("انتظر اكتمال الفصل").isEmpty());
-   shell("screencap -p /data/local/tmp/madar-watch-choice.png");i.runOnMainSync(()->{assertFalse(s.cleanRequested);assertNull(s.clean);assertTrue(s.player.getVolume()>0);});
-   for(android.view.accessibility.AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText("إلغاء"))if(node.isClickable()){node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK);break;}
+  final AlertDialog[] dialog={null};
+  try{PlaybackSession s=PlaybackSession.current;await(()->s.position()>200);i.runOnMainSync(()->{try{java.lang.reflect.Method choose=PlayerActivity.class.getDeclaredMethod("chooseWatchStart",long.class);choose.setAccessible(true);dialog[0]=(AlertDialog)choose.invoke(a,150001L);}catch(Exception e){throw new AssertionError(e);}});
+   // Query the real dialog on its UI thread. Cross-process accessibility queries
+   // must not block that same thread while waiting for it to render the dialog.
+   await(()->dialog[0]!=null&&dialog[0].isShowing()&&dialog[0].getListView().isShown()&&dialog[0].getListView().getChildCount()==2);
+   i.runOnMainSync(()->{assertEquals("افصل من البداية",dialog[0].getListView().getAdapter().getItem(0));assertTrue(dialog[0].getListView().getAdapter().getItem(1).toString().startsWith("انتظر اكتمال الفصل"));assertFalse(s.cleanRequested);assertNull(s.clean);assertTrue(s.player.getVolume()>0);});
+   shell("screencap -p /data/local/tmp/madar-watch-choice.png");
+   i.runOnMainSync(()->{dialog[0].getButton(AlertDialog.BUTTON_NEGATIVE).performClick();});await(()->!dialog[0].isShowing());
    i.runOnMainSync(()->{assertFalse(s.cleanRequested);assertTrue(s.wanted());});
-  }finally{i.runOnMainSync(a::finish);source.delete();}
+  }finally{i.runOnMainSync(()->{if(dialog[0]!=null)dialog[0].dismiss();a.finish();});source.delete();}
  }
 
 }

@@ -14,6 +14,8 @@ adb shell am instrument -w -r -e class com.madar.files.PlayerLifecycleTest com.m
 kill "$lifecycle_logcat_pid" 2>/dev/null || true
 wait "$lifecycle_logcat_pid" 2>/dev/null || true
 cat phone-screenshots/player-lifecycle-tests.txt
+adb pull /data/local/tmp/madar-pip-controls.png phone-screenshots/pip-controls.png || true
+adb pull /data/local/tmp/madar-watch-choice.png phone-screenshots/watch-choice.png || true
 python3 - <<'PYLIFECYCLE'
 from pathlib import Path
 import re
