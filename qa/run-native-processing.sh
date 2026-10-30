@@ -2,6 +2,10 @@
 # Keep the language-model test in a fresh process, without media/OCR native caches.
 set -uo pipefail
 mkdir -p phone-screenshots || exit $?
+# A fresh emulator's full-screen education window steals focus from PiP.
+# Acknowledge that one-time OS tutorial, as a real user would, before UI tests.
+# This changes only the disposable test device; application behavior is unchanged.
+adb shell settings put secure immersive_mode_confirmations confirmed || exit $?
 gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:installDebug :app:installDebugAndroidTest || exit $?
 status=0
 # Exercise lifecycle transitions first and in a fresh process. A fixture/lifecycle
