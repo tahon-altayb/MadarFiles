@@ -1,7 +1,7 @@
 name: Check cloud censor source
 on:
   push:
-    branches: [features/cloud-censor-20261031]
+    branches: [features/cloud-censor-20261031, validation/cloud-censor-20261031]
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,6 +28,8 @@ jobs:
       - run: python3 qa/colab-censor.test.py
       - name: Prepare silent-window and playback fixtures
         run: |
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update -qq
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends ffmpeg
           ffmpeg -v error -y -f lavfi -i color=c=red:s=160x90:r=10:d=1 -f lavfi -i color=c=green:s=160x90:r=10:d=1 -f lavfi -i color=c=blue:s=160x90:r=10:d=1 -f lavfi -i sine=frequency=440:sample_rate=44100 -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]" -map "[v]" -map 3:a -t 3 -c:v libx264 -pix_fmt yuv420p -c:a aac app/src/androidTest/assets/censor-time.mp4
           ffmpeg -v error -y -i app/src/androidTest/assets/censor-time.mp4 -c copy -metadata:s:v:0 rotate=90 app/src/androidTest/assets/censor-time-rotated.mp4
           ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=15 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 24 -c:v libx264 -preset ultrafast -crf 35 -c:a aac -movflags +faststart app/src/androidTest/assets/watch-long.mp4
