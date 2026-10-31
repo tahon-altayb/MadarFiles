@@ -16,6 +16,7 @@ final class PlayerInput {
  static PlayerInput read(Context c,Intent intent)throws Exception{
   MediaHttp.browserAgent(c);
   PlaybackSession saved=PlaybackSession.current;if(saved!=null&&!saved.closed&&saved.id.equals(intent.getStringExtra("playbackSession")))return saved.input;
+  WatchCensorService.Job visual=WatchCensorService.current;if(visual!=null&&visual.id.equals(intent.getStringExtra("censorJob")))return visual.input;
   WatchMusicService.Job job=WatchMusicService.current;
   if(job!=null&&job.id.equals(intent.getStringExtra("watchJob")))return new PlayerInput(job.sourceReady?Uri.fromFile(job.source):job.uri,job.sourceReady?job.source:null,job.identity,job.title,job.ownsSource?key(job.identity):"position_"+job.source.getName(),job.headers,job.mime,job.http);
   Uri uri=ExternalMedia.uri(intent);File file=null;String title=intent.getStringExtra("title"),identity,bookmark;

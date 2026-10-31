@@ -28,6 +28,11 @@ final class MusicGpuSession {
  static ColabMusic.Session acquire(Context c,ColabCredentials.Grant grant,AtomicBoolean stop,MusicSeparator.Progress progress)throws Exception{
   return acquire(c,grant,stop,progress,MusicPipeline.LEGACY);
  }
+ static ColabMusic.Session acquireVision(Context c,ColabCredentials.Grant grant,AtomicBoolean stop,MusicSeparator.Progress progress)throws Exception{
+  ColabMusic.Session session=acquire(c,grant,stop,progress,MusicPipeline.LEGACY);
+  if(!session.initialized){session.visionOnly=true;session.musicReady=false;}
+  return session;
+ }
  static ColabMusic.Session acquire(Context c,ColabCredentials.Grant grant,AtomicBoolean stop,MusicSeparator.Progress progress,String profile)throws Exception{
   profile=MusicPipeline.checked(profile);
   ColabMusic.Session s;

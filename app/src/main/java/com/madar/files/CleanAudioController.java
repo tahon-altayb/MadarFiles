@@ -17,6 +17,8 @@ final class CleanAudioController implements AutoCloseable {
  private boolean seeking;private final java.util.ArrayDeque<Boolean> ownPlayChanges=new java.util.ArrayDeque<>();private final java.util.ArrayDeque<Long> ownSeeks=new java.util.ArrayDeque<>();
  // Diagnostics used by the native continuity regression tests (no source audio is recorded).
  int resetCount,syncSeekCount;private long lastPlayed;
+ private java.util.function.BooleanSupplier playbackGate=()->true;
+ void setPlaybackGate(java.util.function.BooleanSupplier gate){playbackGate=gate==null?()->true:gate;}
  CleanAudioController(Context context,ExoPlayer video,LiveSeparation.Session session,long positionMs,boolean wanted,Status status){
   this.context=context.getApplicationContext();this.video=video;this.session=session;this.status=status;this.wanted=wanted;session.watching=true;manager=this.context.getSystemService(AudioManager.class);
   focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()).setWillPauseWhenDucked(true).setOnAudioFocusChangeListener(change->{if(closed)return;if(change==AudioManager.AUDIOFOCUS_GAIN)focused=true;else{focused=false;if(change==AudioManager.AUDIOFOCUS_LOSS){this.wanted=false;hasFocusRequest=false;}pause();}},main).build();
@@ -59,7 +61,7 @@ final class CleanAudioController implements AutoCloseable {
  private final Runnable tick=new Runnable(){@Override public void run(){if(closed)return;try{
   video.setVolume(0);long frames=playedFrames();session.playedFrames=frames;double played=session.offsetUs/1e6+frames/44100.0,ready=session.offsetUs/1e6+session.availableEnd(frames)/44100.0;long now=SystemClock.elapsedRealtime();
   if(!failure.isEmpty()){wanted=false;pause();}
-  if(playing&&(video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE))pause();
+  boolean gate=playbackGate.getAsBoolean();if(playing&&(!gate||video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE))pause();
   long queued;synchronized(audioLock){queued=cursor-frames;}
   double reserve=session.waitForComplete?Double.POSITIVE_INFINITY:session.buffer==null?(rebuffered?8:3)*Math.max(1,speed):session.buffer.required(frames/44100.0,speed,now);
   // A transport seek needs only a short prefix at the requested position. It
@@ -67,7 +69,7 @@ final class CleanAudioController implements AutoCloseable {
   if(seeking&&!session.waitForComplete)reserve=WatchBuffer.seekRequired(video.getDuration()==C.TIME_UNSET?Double.POSITIVE_INFINITY:Math.max(0,(video.getDuration()/1000.0)-played),speed);
   // A transport/manual pause retains the reserve already approved for queued PCM.
   // Only actual PCM exhaustion or a user seek requires a fresh reserve.
-  if(wanted&&focused&&!playing&&video.getPlaybackState()==Player.STATE_READY&&ready>played&&now>=refillAfter&&((ready-played>=reserve)||session.done||(!session.waitForComplete&&reserveApproved&&queued>0))){
+  if(gate&&wanted&&focused&&!playing&&video.getPlaybackState()==Player.STATE_READY&&ready>played&&now>=refillAfter&&((ready-played>=reserve)||session.done||(!session.waitForComplete&&reserveApproved&&queued>0))){
    // Only arm prefill when resuming is intended; never submit a tiny refill
    // into the final hardware quantum of a paused/starved AudioTrack.
    feedAllowed=true;

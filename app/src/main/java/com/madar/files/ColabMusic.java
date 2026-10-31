@@ -53,6 +53,7 @@ final class ColabMusic {
  static final class Session implements AutoCloseable {
   final Context context;final AtomicBoolean cancel=new AtomicBoolean();volatile AtomicBoolean callerCancel;volatile MusicSeparator.Progress status;final long createdAt=android.os.SystemClock.elapsedRealtime();boolean healthy,leased=true;private Thread cancelWatcher;private long cancelGeneration;final ColabRuntime runtime;ColabDiagnostics diagnostic;
   final String root="madar_"+UUID.randomUUID().toString().replace("-","");String pipeline=MusicPipeline.LEGACY;String kernel;ColabKernel.Session channel;boolean initialized,closed;int batch;long lastColdStartMs,lastUploadMs,lastProcessMs;final java.util.concurrent.CountDownLatch storageReady=new java.util.concurrent.CountDownLatch(1);String warning="";private java.util.concurrent.FutureTask<Void> initializer;
+  boolean visionOnly,visionReady,musicReady=true;String visionRoot;int visionBatch;
   Session(Context c,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws IOException{if(grant==null)throw new IOException("أعد الاتصال بحساب Colab للفصل السحابي");context=c.getApplicationContext();status=progress;runtime=new ColabRuntime(context,grant,this.cancel);bind(cancel,progress);}
   synchronized void bind(AtomicBoolean caller,MusicSeparator.Progress progress){final long ticket=++cancelGeneration;diagnostic=new ColabDiagnostics(context);if(initialized)diagnostic.record("GPU_REUSED");callerCancel=caller;status=progress;cancel.set(false);leased=true;healthy=false;cancelWatcher=new Thread(()->{try{while(!Thread.currentThread().isInterrupted()){if(caller.get()){synchronized(Session.this){if(ticket==cancelGeneration)cancel.set(true);}return;}Thread.sleep(50);}}catch(InterruptedException ignored){}},"madar-gpu-job-cancel");cancelWatcher.setDaemon(true);cancelWatcher.start();}
   synchronized void bind(AtomicBoolean caller,MusicSeparator.Progress progress,String profile){pipeline=MusicPipeline.checked(profile);bind(caller,progress);}
@@ -74,6 +75,7 @@ final class ColabMusic {
    storageReady.countDown();diagnostic.record("JUPYTER_READY");status.update(15,"بدء نواة Python للفصل");diagnostic.record("KERNEL_CREATE");
    String id=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",root),1024*1024).getString("id");if(!id.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرف نواة Colab غير صالح");kernel=id;
    status.update(16,"الاتصال بنواة Python على GPU");diagnostic.record("KERNEL_CONNECT");channel=runtime.openKernel(kernel,diagnostic::record);
+   if(visionOnly){initialized=true;musicReady=false;channel.close();channel=null;diagnostic.record("CENSOR_RUNTIME");return;}
    status.update(27,"بدء محرك فصل الموسيقى على GPU");diagnostic.record("MUSIC_PREPARE");
    MusicStartup startup=new MusicStartup(runtime,root,cancel,(p,m)->status.update(p,m),diagnostic);
    channel.execute("SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py"),startup::poll);
@@ -86,10 +88,16 @@ final class ColabMusic {
   }
   void checkInitialization()throws Exception{if(initializer!=null&&initializer.isDone())awaitReady();}
   Result run(AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
-   healthy=false;try{Result result=MusicCloudJob.run(this,audio,progress,live);healthy=true;return result;}
+   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,progress,live);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
+  private void prepareMusicAfterVision()throws Exception{
+   runtime.put(root+"/progress.json",new JSONObject().put("stage","bootstrap").put("progress",27).put("heartbeat",0).toString(),"text");
+   channel=runtime.openKernel(kernel,diagnostic::record);MusicStartup startup=new MusicStartup(runtime,root,cancel,(p,m)->status.update(p,m),diagnostic);
+   try{channel.execute("SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py"),startup::poll);startup.awaitReady();musicReady=true;}
+   finally{channel.close();channel=null;}
+  }
   @Override public void close(){MusicGpuSession.release(this);}
-  void dispose(){synchronized(this){if(closed)return;closed=true;}cancel.set(true);stopWatcher();if(channel!=null)channel.close();status.update(98,"إغلاق جلسة الفصل السحابي…");boolean interrupted=false;if(initializer!=null)for(;;)try{initializer.get();break;}catch(InterruptedException stop){interrupted=true;}catch(java.util.concurrent.ExecutionException failure){break;}runtime.stopMusicWorker(root);boolean cleaned=runtime.cleanup();diagnostic.record(cleaned?"CLEANUP_OK":"CLEANUP_PENDING");if(!cleaned)warning="تعذر تأكيد إيقاف جلسة Colab؛ افتح اتصال Colab لإيقاف جلسة مدار السابقة.";runtime.close();if(interrupted)Thread.currentThread().interrupt();}
+  void dispose(){synchronized(this){if(closed)return;closed=true;}cancel.set(true);stopWatcher();if(channel!=null)channel.close();status.update(98,"إغلاق جلسة المعالجة السحابية…");boolean interrupted=false;if(initializer!=null)for(;;)try{initializer.get();break;}catch(InterruptedException stop){interrupted=true;}catch(java.util.concurrent.ExecutionException failure){break;}if(visionRoot!=null)runtime.stopMusicWorker(visionRoot);runtime.stopMusicWorker(root);boolean cleaned=runtime.cleanup();diagnostic.record(cleaned?"CLEANUP_OK":"CLEANUP_PENDING");if(!cleaned)warning="تعذر تأكيد إيقاف جلسة Colab؛ افتح اتصال Colab لإيقاف جلسة مدار السابقة.";runtime.close();if(interrupted)Thread.currentThread().interrupt();}
  }
 }
