@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import urllib.error
 import zipfile
 
 from censor_profile import CONFIG, WEIGHTS, FINGERPRINT
@@ -28,6 +29,7 @@ def download(path, url, digest, maximum):
                 sha.update(data);out.write(data)
         if sha.hexdigest()!=digest: raise ValueError('CENSOR_MODEL_HASH')
         temporary.replace(path);return path
+    except urllib.error.URLError as error: raise ValueError('CENSOR_MODEL_NETWORK') from error
     finally: temporary.unlink(missing_ok=True)
 
 class Engine:
@@ -59,11 +61,16 @@ class Engine:
                         raise ValueError('CENSOR_MODEL_HASH')
                 archive.extractall(cache)
         sys.path.insert(0,str(source))
+        os.environ['YOLO_CONFIG_DIR']=str(cache/'ultralytics')
+        os.environ['YOLO_AUTOINSTALL']='false'
+        os.environ['YOLO_OFFLINE']='true'
         status('model_load',35)
         from mivolo.model.create_timm_model import create_model
         from mivolo.data.misc import prepare_classification_images
         from safetensors.torch import load_file
         from ultralytics import YOLO
+        from ultralytics import settings
+        settings.update({'sync':False})
         self.prepare=prepare_classification_images
         self.classifier=create_model('mivolo_d1_384',num_classes=3,in_chans=6,pretrained=False)
         state=load_file(str(paths['classifier.safetensors']))

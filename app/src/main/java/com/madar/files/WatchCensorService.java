@@ -25,7 +25,7 @@ public class WatchCensorService extends Service {
   if(duration<=0||position<0||position>=duration||width<=0||height<=0)throw new IOException("انتظر تحميل الفيديو ومدته أولًا");
   Job old=current;if(old!=null&&!old.watching)old.dispose();
   Job job=new Job(context,input,playbackId,position,duration,width,height,complete);current=job;starting=true;
-  Intent intent=new Intent(context,WatchCensorService.class).putExtra("job",job.id).setData(input.uri).setClipData(ClipData.newRawUri("الفيديو للحجب",input.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+  Intent intent=new Intent(context,WatchCensorService.class).putExtra("job",job.id).setData(input.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("الفيديو للحجب",input.uri));
   try{context.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=old;job.dispose();throw error;}
  }
  static void release(Job job){if(job==null)return;job.watching=false;job.cancel.set(true);MusicGpuSession.cancelOwner(job.cancel);if(job.done)job.timeline.close();}
@@ -38,14 +38,15 @@ public class WatchCensorService extends Service {
   return new Notification.Builder(this,"watch_censor").setSmallIcon(R.drawable.ic_launcher).setContentTitle("مدار · حجب النساء أثناء المشاهدة").setContentText(job.stage).setContentIntent(open).setOnlyAlertOnce(true).setOngoing(true).setProgress(100,0,true).addAction(new Notification.Action.Builder(null,"إيقاف التحليل",cancel).build()).build();
  }
  @Override public int onStartCommand(Intent intent,int flags,int id){
+  startId=id;
   if(intent==null){stopSelfResult(id);return START_NOT_STICKY;}
-  if("cancel".equals(intent.getAction())){if(job!=null&&job.id.equals(intent.getStringExtra("job"))){job.cancel.set(true);MusicGpuSession.cancelOwner(job.cancel);update("إيقاف التحليل وإغلاق مهمته في Colab…");}return START_NOT_STICKY;}
+  if("cancel".equals(intent.getAction())){if(job!=null&&job.id.equals(intent.getStringExtra("job"))){job.cancel.set(true);MusicGpuSession.cancelOwner(job.cancel);update("إيقاف التحليل وإغلاق مهمته في Colab…");}if(job==null)stopSelfResult(id);return START_NOT_STICKY;}
   if(active)return START_NOT_STICKY;job=current;startId=id;
   if(job==null||!job.id.equals(intent.getStringExtra("job"))){starting=false;stopSelfResult(id);return START_NOT_STICKY;}
   try{
    if(Build.VERSION.SDK_INT>=35)startForeground(86,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING);else startForeground(86,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
    active=true;starting=false;wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:WatchCensor");wake.acquire(5L*60*60*1000);new Thread(this::process,"madar-watch-censor").start();
-  }catch(Exception error){starting=false;job.failed=true;job.error="تعذر بدء الحجب في الخلفية";stopSelfResult(id);}return START_NOT_STICKY;
+  }catch(Exception error){starting=false;job.failed=true;job.done=true;job.error=job.stage="تعذر بدء الحجب في الخلفية";if(!job.watching)job.timeline.close();stopSelfResult(id);}return START_NOT_STICKY;
  }
  private void update(String message){job.stage=message;main.post(()->{if(active)manager.notify(86,notification());});}
  private void process(){ColabMusic.Session session=null;String failure=null;

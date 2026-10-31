@@ -10,7 +10,7 @@ import androidx.media3.effect.*;
 final class CensorOverlay extends BitmapOverlay {
  volatile CensorTimeline timeline;volatile boolean enabled;volatile long lastTimestampUs=-1;
  private Bitmap bitmap;private Canvas canvas;private final Paint paint=new Paint();private int width=1,height=1;
- @Override public void configure(Size videoSize)throws VideoFrameProcessingException{
+ @Override public void configure(Size videoSize){
   super.configure(videoSize);width=videoSize.getWidth();height=videoSize.getHeight();
   float scale=Math.min(1,768f/Math.max(width,height));int w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
   if(bitmap!=null)bitmap.recycle();bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);canvas=new Canvas(bitmap);paint.setColor(Color.BLACK);

@@ -11,7 +11,7 @@ concurrency:
 jobs:
   source:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -28,4 +28,34 @@ jobs:
       - run: python3 qa/colab-censor.test.py
       - name: Compile actual Android integration and tests
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug
+      - name: Disposable validation signing key
+        run: |
+          echo "MADAR_VALIDATION_KEYSTORE=$RUNNER_TEMP/censor-debug.keystore" >> "$GITHUB_ENV"
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/censor-debug.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=Madar censor validation" -keyalg RSA -keysize 2048 -validity 2
+      - run: gradle --no-daemon -PvalidationBuild=true :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test actual video compositing and strict media-time masks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install app/build/outputs/apk/debug/app-debug.apk
+            adb install app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -r -e class com.madar.files.CensorTimelineTest,com.madar.files.CensorRenderTest com.madar.files.validation.test/androidx.test.runner.AndroidJUnitRunner > censor-render-result.txt
+            cat censor-render-result.txt
+            python3 -c 'from pathlib import Path;import re;s=Path("censor-render-result.txt").read_text();assert re.search(r"OK\s*\(5 tests\)",s) and not re.search(r"INSTRUMENTATION_STATUS_CODE:\s*-\d+|INSTRUMENTATION_FAILED|FAILURES!!!",s), "All actual censor rendering regressions must pass"'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: censor-source-validation
+          path: |
+            censor-render-result.txt
+            app/build/reports/
 
