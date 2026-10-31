@@ -49,6 +49,7 @@ def report_failure(error):
     global _ERROR
     code=str(error) if isinstance(error,ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}',str(error)) else type(error).__name__
     if 'CUDNN' in str(error) or 'HEURISTIC_QUERY_FAILED' in str(error): code='CENSOR_CUDNN'
+    if type(error).__name__=='OutOfMemoryError' or 'out of memory' in str(error).lower(): code='CENSOR_GPU_MEMORY'
     with _LOCK:
         _ERROR=code
         write(_PATH or ROOT/'progress.json',dict(stage='failed',progress=0,error=code,last_stage=_STATE.get('stage','bootstrap'),job=Path.cwd().name,protocol=2))

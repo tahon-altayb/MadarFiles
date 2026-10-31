@@ -28,7 +28,7 @@ public class WatchCensorService extends Service {
   Intent intent=new Intent(context,WatchCensorService.class).putExtra("job",job.id).setData(input.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("الفيديو للحجب",input.uri));
   try{context.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=old;job.dispose();throw error;}
  }
- static void release(Job job){if(job==null)return;job.watching=false;job.cancel.set(true);MusicGpuSession.cancelOwner(job.cancel);if(job.done)job.timeline.close();}
+ static void release(Job job){if(job==null)return;job.watching=false;job.cancel.set(true);if(!job.done)MusicGpuSession.cancelOwner(job.cancel);if(job.done)job.timeline.close();}
  private Job job;private int startId;private NotificationManager manager;private final Handler main=new Handler(Looper.getMainLooper());private PowerManager.WakeLock wake;
  @Override public void onCreate(){super.onCreate();manager=getSystemService(NotificationManager.class);manager.createNotificationChannel(new NotificationChannel("watch_censor","حجب النساء أثناء المشاهدة",NotificationManager.IMPORTANCE_LOW));}
  private Notification notification(){

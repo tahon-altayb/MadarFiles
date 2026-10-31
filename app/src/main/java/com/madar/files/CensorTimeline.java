@@ -13,6 +13,7 @@ final class CensorTimeline implements AutoCloseable {
  static final int MAX_BYTES=4000000;
  private final String source;private final File directory;
  private final TreeMap<Long,Block> blocks=new TreeMap<>();
+ private final TreeMap<Long,Long> ready=new TreeMap<>();
  private final LinkedHashMap<Long,Clip> cache=new LinkedHashMap<>(16,.75f,true);
  private final Set<Long> loading=new HashSet<>();
  private final ExecutorService reader=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"madar-censor-masks");t.setDaemon(true);return t;});
@@ -40,18 +41,24 @@ final class CensorTimeline implements AutoCloseable {
   }
   if(frames[0].at>start||frames[frames.length-1].end<end)throw new IOException("Colab · CENSOR_SCHEMA");return new Clip(start,end,frames);
  }
- synchronized void install(byte[] raw,long startUs,long endUs)throws Exception{
-  if(closed)throw new IOException("أُغلقت بيانات الحجب");if(raw.length==0||raw.length>MAX_BYTES)throw new IOException("Colab · CENSOR_OUTPUT_LENGTH");
+ void install(byte[] raw,long startUs,long endUs)throws Exception{
+  synchronized(this){if(closed)throw new IOException("أُغلقت بيانات الحجب");}if(raw.length==0||raw.length>MAX_BYTES)throw new IOException("Colab · CENSOR_OUTPUT_LENGTH");
   Clip clip=parse(new JSONObject(new String(raw,StandardCharsets.UTF_8)),source,startUs,endUs);
   if(directory.getUsableSpace()<raw.length+16L*1024*1024)throw new IOException("المساحة لا تكفي لحفظ تقدم الحجب");
   File path=new File(directory,startUs+".json"),temporary=new File(directory,startUs+".tmp");
   try(FileOutputStream out=new FileOutputStream(temporary)){out.write(raw);out.getFD().sync();}
-  if(!temporary.renameTo(path)){temporary.delete();throw new IOException("تعذر حفظ بيانات الحجب");}
-  blocks.put(startUs,new Block(startUs,endUs,path,java.security.MessageDigest.getInstance("SHA-256").digest(raw)));remember(clip);
+  byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(raw);
+  synchronized(this){
+   if(closed){temporary.delete();throw new IOException("أُغلقت بيانات الحجب");}
+   if(!temporary.renameTo(path)){temporary.delete();throw new IOException("تعذر حفظ بيانات الحجب");}
+   blocks.put(startUs,new Block(startUs,endUs,path,digest));remember(clip);
+   long first=startUs,last=endUs;Map.Entry<Long,Long> previous=ready.floorEntry(first);if(previous!=null&&previous.getValue()>=first){first=previous.getKey();last=Math.max(last,previous.getValue());ready.remove(previous.getKey());}
+   for(Map.Entry<Long,Long> next=ready.ceilingEntry(first);next!=null&&next.getKey()<=last;next=ready.ceilingEntry(first)){last=Math.max(last,next.getValue());ready.remove(next.getKey());}ready.put(first,last);
+  }
  }
  private void remember(Clip clip){cache.put(clip.start,clip);while(cache.size()>8)cache.remove(cache.keySet().iterator().next());}
  synchronized boolean has(long startMs){return !closed&&blocks.containsKey(startMs*1000);}
- synchronized long contiguousEnd(long positionMs){if(closed)return positionMs;long at=positionMs*1000;Map.Entry<Long,Block> first=blocks.floorEntry(at);if(first==null||first.getValue().end<=at)return positionMs;long end=first.getValue().end;for(Block b:blocks.tailMap(end,true).values()){if(b.start!=end)break;end=b.end;}return end/1000;}
+ synchronized long contiguousEnd(long positionMs){if(closed)return positionMs;Map.Entry<Long,Long> first=ready.floorEntry(positionMs*1000);return first==null||first.getValue()<=positionMs*1000?positionMs:first.getValue()/1000;}
  private void request(Block block){
   if(closed||cache.containsKey(block.start)||!loading.add(block.start))return;
   reader.execute(()->{Clip result=null;String error="";try{
@@ -75,5 +82,5 @@ final class CensorTimeline implements AutoCloseable {
  }
  private static void merge(Map<Long,double[]> output,Frame frame){for(double[] b:frame.boxes){long id=(long)b[0];double[] old=output.get(id);if(old==null)output.put(id,new double[]{b[1],b[2],b[3],b[4]});else{old[0]=Math.min(old[0],b[1]);old[1]=Math.min(old[1],b[2]);old[2]=Math.max(old[2],b[3]);old[3]=Math.max(old[3],b[4]);}}}
  synchronized int loadedClips(){return cache.size();}
- @Override public synchronized void close(){if(closed)return;closed=true;reader.shutdownNow();cache.clear();blocks.clear();File[] files=directory.listFiles();if(files!=null)for(File f:files)if(f.isFile())f.delete();directory.delete();}
+ @Override public synchronized void close(){if(closed)return;closed=true;reader.shutdownNow();cache.clear();blocks.clear();ready.clear();File[] files=directory.listFiles();if(files!=null)for(File f:files)if(f.isFile())f.delete();directory.delete();}
 }

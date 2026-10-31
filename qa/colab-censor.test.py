@@ -74,11 +74,11 @@ class CensorTest(unittest.TestCase):
 
     def test_owned_stop_terminates_worker_while_model_is_busy(self):
         source='''
-import sys,time,threading
+import sys,time,threading,os
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
 import censor_worker as w
-w.ROOT=Path(sys.argv[2]);w.status('separate',50)
+w.ROOT=Path(sys.argv[2]);os.chdir(w.ROOT);w.status('separate',50)
 threading.Thread(target=w.heartbeat,args=(threading.Event(),.05),daemon=True).start()
 (w.ROOT/'entered').touch()
 while True: time.sleep(.05)

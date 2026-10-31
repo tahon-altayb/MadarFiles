@@ -92,8 +92,8 @@ final class PlaybackSession implements AutoCloseable {
   player.pause();player.stop();player.setVideoEffects(Collections.singletonList(new androidx.media3.effect.OverlayEffect(Collections.singletonList(censorOverlay))));
   prepare(input,subtitle,at,play);censorMain.removeCallbacksAndMessages(null);censorMain.post(censorTick);changed();
  }
- void stopCensor(){boolean play=wanted();censorRequested=false;censorWaiting=false;censorStatus="";censorOverlay.enabled=false;censorMain.removeCallbacksAndMessages(null);if(clean!=null)clean.setPlaybackGate(null);if(censorJob!=null)WatchCensorService.release(censorJob);censorJob=null;if(clean==null&&!cleanRequested)player.setPlayWhenReady(play);changed();}
- WatchCensorService.Job detachCensorForRebuild(){WatchCensorService.Job job=censorJob;censorJob=null;censorRequested=false;censorOverlay.enabled=false;censorMain.removeCallbacksAndMessages(null);return job;}
+ void stopCensor(){boolean play=wanted();long at=position();censorRequested=false;censorWaiting=false;censorStatus="";censorOverlay.enabled=false;censorMain.removeCallbacksAndMessages(null);if(clean!=null)clean.setPlaybackGate(null);if(censorJob!=null)WatchCensorService.release(censorJob);censorJob=null;if(player.getPlaybackState()==Player.STATE_IDLE){player.setVideoEffects(Collections.emptyList());prepare(input,subtitle,at,play);}else if(clean==null&&!cleanRequested)player.setPlayWhenReady(play);changed();}
+ WatchCensorService.Job detachCensorForRebuild(){WatchCensorService.Job job=censorJob;censorJob=null;censorRequested=false;censorMain.removeCallbacksAndMessages(null);return job;}
  private boolean censorPermit(){
   if(!censorRequested)return true;WatchCensorService.Job job=censorJob;if(job==null)return false;
   long at=position();job.requestedMs=at;long left=Math.max(0,job.durationMs-at);if(left==0)return true;

@@ -35,9 +35,10 @@ final class CensorCloudJob {
   MusicMailbox.await(runtime,session.visionRoot,folder,session.cancel,diagnostic::record,state->{String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));progress.update(state.optInt("progress",40),"تحليل المشهد وتتبع الحجب · "+startMs/1000+" — "+endMs/1000+" ثانية");});
   JSONObject manifest=ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536));long size=manifest.optLong("bytes",-1);
   if(manifest.optInt("protocol")!=1||!folder.equals(manifest.optString("job"))||!source.equals(manifest.optString("source"))||!CensorTimeline.FINGERPRINT.equals(manifest.optString("fingerprint"))||!"cuda".equals(manifest.optString("provider"))||manifest.optLong("core_start_us",-1)!=startMs*1000||manifest.optLong("core_end_us",-1)!=endMs*1000||size<=0||size>CensorTimeline.MAX_BYTES)throw new IOException("Colab · CENSOR_SCHEMA");
-  byte[] result=runtime.getBinary(folder+"/timeline.json",8*1024*1024);
+  long fetched=android.os.SystemClock.elapsedRealtime();byte[] result=runtime.getBinary(folder+"/timeline.json",8*1024*1024);
   if(result.length!=size||!ColabMusic.sha(result).equals(manifest.optString("sha256")))throw new IOException("Colab · CENSOR_OUTPUT_HASH");
-  CensorTimeline.parse(new JSONObject(new String(result,StandardCharsets.UTF_8)),source,startMs*1000,endMs*1000);
+  JSONObject payload=new JSONObject(new String(result,StandardCharsets.UTF_8));CensorTimeline.parse(payload,source,startMs*1000,endMs*1000);
+  diagnostic.measure("CENSOR_GPU",payload.optLong("gpu_ms",0),0,payload.getJSONArray("frames").length());diagnostic.measure("CENSOR_FETCH",android.os.SystemClock.elapsedRealtime()-fetched,result.length,payload.getJSONArray("frames").length());
   diagnostic.record("CENSOR_RESULT_VERIFIED");return result;
  }
  private CensorCloudJob(){}

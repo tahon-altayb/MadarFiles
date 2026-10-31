@@ -21,7 +21,7 @@ final class CensorVideoWindow {
   HandlerThread thread=new HandlerThread("madar-censor-video");thread.start();Handler handler=new Handler(thread.getLooper());CountDownLatch done=new CountDownLatch(1);AtomicReference<Exception> error=new AtomicReference<>();AtomicReference<Transformer> current=new AtomicReference<>();boolean complete=false;
   try{
    handler.post(()->{try{
-    ColabProbe.check(cancel);DefaultMediaSourceFactory sources=new DefaultMediaSourceFactory(input.http.factory(context));
+    ColabProbe.check(cancel);DefaultMediaSourceFactory sources=new DefaultMediaSourceFactory(input.http.factory(context),new androidx.media3.extractor.DefaultExtractorsFactory().setTsExtractorFlags(androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS|androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES));
     ExoPlayerAssetLoader.Factory loader=new ExoPlayerAssetLoader.Factory(context,new DefaultDecoderFactory.Builder(context).build(),Clock.DEFAULT,sources);
     DefaultEncoderFactory encoder=new DefaultEncoderFactory.Builder(context).setRequestedVideoEncoderSettings(new VideoEncoderSettings.Builder().setBitrate(900000).build()).setEnableFallback(true).build();
     Transformer transformer=new Transformer.Builder(context).setAssetLoaderFactory(loader).setEncoderFactory(encoder)

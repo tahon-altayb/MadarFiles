@@ -1,7 +1,7 @@
 name: Build MadarFiles APK
 on:
   push:
-    branches: [main, master, fixes/usability-arabic-20261021, fixes/translation-20261021, development/gemini-studio-20261026, fixes/player-seek-background-20261030, fixes/player-rewind-20261030]
+    branches: [main, master, fixes/usability-arabic-20261021, fixes/translation-20261021, development/gemini-studio-20261026, fixes/player-seek-background-20261030, fixes/player-rewind-20261030, features/cloud-censor-20261031]
   workflow_dispatch:
 permissions:
   contents: read
@@ -109,6 +109,8 @@ jobs:
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends ffmpeg espeak-ng
           curl -fL --connect-timeout 20 --max-time 90 --speed-time 30 --speed-limit 1024 --retry 2 https://github.com/k2-fsa/sherpa-onnx/releases/download/source-separation-models/qi-feng-le-zh.wav -o /tmp/speech.wav
           ffmpeg -y -f lavfi -i testsrc2=size=320x240:rate=24 -i /tmp/speech.wav -f lavfi -i "sine=frequency=997:sample_rate=44100" -filter_complex "[1:a]aresample=44100,volume=0.8[s];[2:a]volume=0.3[m];[s][m]amix=inputs=2:normalize=0,pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -t 3 -c:v libx264 -c:a aac app/src/androidTest/assets/music-test.mp4
+          ffmpeg -v error -y -f lavfi -i color=c=red:s=160x90:r=10:d=1 -f lavfi -i color=c=green:s=160x90:r=10:d=1 -f lavfi -i color=c=blue:s=160x90:r=10:d=1 -f lavfi -i sine=frequency=440:sample_rate=44100 -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]" -map "[v]" -map 3:a -t 3 -c:v libx264 -pix_fmt yuv420p -c:a aac app/src/androidTest/assets/censor-time.mp4
+          ffmpeg -v error -y -i app/src/androidTest/assets/censor-time.mp4 -c copy -metadata:s:v:0 rotate=90 app/src/androidTest/assets/censor-time-rotated.mp4
           espeak-ng -v en-us -s 135 -w app/src/androidTest/assets/speech-test.wav "The quick brown fox jumps over the lazy dog. Welcome to this video. This is a test of speech recognition."
           ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=15 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 24 -c:v libx264 -preset ultrafast -crf 35 -c:a aac -movflags +faststart app/src/androidTest/assets/watch-long.mp4
           ffmpeg -v error -y -stream_loop 2 -i app/src/androidTest/assets/watch-long.mp4 -t 65 -c copy app/src/androidTest/assets/music-long.mp4
@@ -152,6 +154,7 @@ jobs:
           python3 qa/colab-worker.test.py
           python3 qa/colab-music.test.py
           python3 qa/colab-fx.test.py
+          python3 qa/colab-censor.test.py
           python3 qa/processing-runner.test.py
       - name: Test subtitle export sessions in browser
         run: |
@@ -187,6 +190,15 @@ jobs:
           "$RUNNER_TEMP/madar-qwen/bin/python" -m pip install --disable-pip-version-check torchvision==0.26.0+cpu --index-url https://download.pytorch.org/whl/cpu
           mkdir -p app/build/reports
           MADAR_FX_MODEL_CACHE="$RUNNER_TEMP/madar-fx-models" "$RUNNER_TEMP/madar-qwen/bin/python" qa/colab-fx-install.test.py | tee app/build/reports/fx-inference.log
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/madar-censor-models
+          key: madar-censor-models-v1-96efb470-f59b3d83-8f2383e4
+      - name: Test real visual installer, classifier, detector and temporal video masks on CPU
+        timeout-minutes: 10
+        run: |
+          mkdir -p app/build/reports
+          MADAR_CENSOR_MODEL_CACHE="$RUNNER_TEMP/madar-censor-models" "$RUNNER_TEMP/madar-qwen/bin/python" qa/colab-censor-install.test.py | tee app/build/reports/censor-inference.log
       - name: Build and lint APK
         env:
           MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
@@ -194,9 +206,9 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 51 --version-name 1.9.16 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 52 --version-name 1.9.17 --firebase-config app/google-services.json
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.16.apk
+        run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.17.apk
       - name: Download installed-version baseline for upgrade test
         uses: actions/download-artifact@v4
         with:
@@ -249,8 +261,8 @@ jobs:
       - name: Upload verified update APK
         uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.16-APK
-          path: MadarFiles-1.9.16.apk
+          name: MadarFiles-1.9.17-APK
+          path: MadarFiles-1.9.17.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload verification reports
