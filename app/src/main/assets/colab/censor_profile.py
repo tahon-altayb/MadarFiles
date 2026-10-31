@@ -15,6 +15,6 @@ WEIGHTS = {
 CONFIG = dict(protocol=1, model='mivolo_v2', detector='yolov8n', face='yunet_2023mar',
               hashes={k:v[1] for k,v in WEIGHTS.items()}, classifier_size=384, detector_size=640,
               female_threshold=.55, male_threshold=.90, male_votes=2, classify_stride=8,
-              body_padding=.10, timestamp_margin_us=100_000, unknown='cover', tracking=1)
+              body_padding=.10, timestamp_margin_us=100_000, unknown='cover', tracking=1, orientation_auto=True)
 FINGERPRINT = hashlib.sha256(json.dumps(CONFIG, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 

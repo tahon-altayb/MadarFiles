@@ -130,7 +130,10 @@ class Engine:
 
     def analyze(self, path, decode_start_us, core_start_us, core_end_us, status=lambda *args:None):
         cv2,np=self.cv2,self.np
-        capture=cv2.VideoCapture(str(path));fps=capture.get(cv2.CAP_PROP_FPS)
+        capture=cv2.VideoCapture(str(path))
+        if not capture.set(cv2.CAP_PROP_ORIENTATION_AUTO,1):
+            capture.release();raise ValueError('CENSOR_VIDEO_ORIENTATION')
+        fps=capture.get(cv2.CAP_PROP_FPS)
         if not capture.isOpened() or not math.isfinite(fps) or not 1<=fps<=120:
             capture.release();raise ValueError('CENSOR_VIDEO_FORMAT')
         tracker=Tracker(round(fps*.20));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
