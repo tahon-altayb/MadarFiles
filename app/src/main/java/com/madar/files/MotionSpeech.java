@@ -12,6 +12,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 /** Google speech uses the existing private transport choice, never browser cookies. */
+@androidx.annotation.OptIn(markerClass=com.google.firebase.ai.type.PublicPreviewAPI.class)
 final class MotionSpeech {
  static final String MODEL="gemini-3.1-flash-tts-preview";
  static File synthesize(Context c,JSONObject p,JSONObject scene,AtomicBoolean cancel)throws Exception{
