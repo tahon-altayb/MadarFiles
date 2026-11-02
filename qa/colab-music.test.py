@@ -245,8 +245,12 @@ def run():
             stop=threading.Event();thread=threading.Thread(target=w.heartbeat,args=(stop,.01))
             try:
                 w.status('install',28);start=json.loads((root/'progress.json').read_text())['heartbeat'];thread.start();os.chdir(job)
-                time.sleep(.05)
-                state=json.loads((root/'progress.json').read_text());self.assertGreater(state['heartbeat'],start);self.assertEqual(state['stage'],'install');self.assertFalse((job/'progress.json').exists())
+                # Observe the actual heartbeat, allowing bounded scheduler delay on shared runners.
+                deadline=time.monotonic()+2
+                state=json.loads((root/'progress.json').read_text())
+                while state['heartbeat']<=start and time.monotonic()<deadline:
+                    time.sleep(.01);state=json.loads((root/'progress.json').read_text())
+                self.assertGreater(state['heartbeat'],start);self.assertEqual(state['stage'],'install');self.assertFalse((job/'progress.json').exists())
             finally:stop.set();thread.join(timeout=2);os.chdir(previous)
 
     def test_lost_warm_worker_fails_promptly_without_restarting_model_install(self):
