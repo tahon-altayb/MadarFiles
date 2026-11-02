@@ -15,6 +15,7 @@ final class AgentIntents {
   if(t.matches("(?:كامل المقطع|المقطع كامل|كله|كامله|كامل الفيديو|الفيديو كامل|كامل الملف|من البدايه للنهايه|من البدايه الي النهايه)[.!؟ ]*")&&previous!=null){for(int i=previous.length()-1;i>=0;i--){JSONObject turn=previous.getJSONObject(i);if(turn.optString("role").equals("user")&&!normalize(turn.optString("text")).equals(t)){JSONObject p=resolve(turn.optString("text"),source,null);if(p!=null)return p;}}}
   if(t.matches("(?:السلام عليكم(?: ورحمه الله(?: وبركاته)?)?|سلام|مرحبا|هلا)[.!؟ ]*"))return plan("chat").put("message","وعليكم السلام، أرفق ملفك وقل لي وش تبي أعدّل عليه.");
   if(has(t,"^(كيف|ليش|لماذا|هل|اشرح|وش|ما هو|ماهي|ما هي|ماذا)|(?:^|\\s)(لا|مو|ليس|not|don't)(?:\\s|$)|ما\\s*(ابي|ابغي|ابغى|اريد)|^(لات|لا ت)"))return null;
+  if(has(t,"موشن|motion graphics|استوديو الفيديو|استديو الفيديو")&&has(t,"سوي|سو |انش|اصنع|جهز|ابغ|ابي|اريد|create|make"))return plan("motionStudio","motionPrompt",user);
   // Leave multi-step edits to the structured planner, instead of silently dropping steps.
   if(has(t,"وبعد|بعدين|بعدها|\\bthen\\b|ثم|(?:و|\\s)(حسن|حسّن|قص|اضغط|حول|اكتب|حط|اضف|ضف|ترجم)"))return null;
   if(kind.equals("video")){

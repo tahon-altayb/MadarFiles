@@ -102,6 +102,8 @@
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service android:name=".WatchMusicService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <service android:name=".WatchCensorService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
+        <activity android:name=".MotionStudioActivity" android:exported="false" />
+        <service android:name=".MotionStudioService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <activity android:name=".DriveAccessActivity" android:exported="false" />
         <service android:name=".FileProcessingService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".TransferService" android:exported="false" android:foregroundServiceType="dataSync" />

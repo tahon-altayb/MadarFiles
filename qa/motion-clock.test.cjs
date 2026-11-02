@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict');const C=require('../app/src/main/assets/motion/core');
+const scene=(text='ذهب القوم إلى الإسكندرية ثم أبحرت السفينة')=>({id:'123456abcdef',title:'رحلة',narration:text,seconds:6,effect:'rise',transition:'fade',image:'asset_0123456789abcdef0123456789abcdef.jpg',imageQuery:'الإسكندرية',imageAnchor:'الإسكندرية',credit:'مصدر',highlights:[{text:'الإبحار',anchor:'أبحرت السفينة',role:'top',group:0},{text:'ذهب القوم',anchor:'ذهب القوم',role:'bottom',group:0}],words:[]});
+const project=s=>({version:1,id:'0'.repeat(32),title:'رحلة',theme:'paper',aspect:'9:16',voiceMode:'google',voice:'Charon',scenes:s||[scene()]});
+let p=project();const words=['ذهب','القوم','إلى','الإسكندرية','ثم','أبحرت','السفينة'].map((text,i)=>({text,start:.4+i*.55,end:.8+i*.55}));C.align(p,[{duration:5,words}]);assert.ok(Math.abs(p.scenes[0].imageAt-2.05)<1e-8);assert.ok(Math.abs(p.scenes[0].highlights[0].start-3.15)<1e-8);assert.equal(p.scenes[0].highlights[1].start,.4);assert.equal(p.scenes[0].needsReview,false);C.validate(p,true);
+// An ambiguous repeated phrase must not attach to an arbitrary occurrence.
+p=project([scene('ذهبت السفينة ثم ذهبت السفينة')]);p.scenes[0].highlights=[{text:'السفينة',anchor:'ذهبت السفينة',role:'bottom',group:0}];p.scenes[0].image='';C.align(p,[{duration:5,words:['ذهبت','السفينة','ثم','ذهبت','السفينة'].map((text,i)=>({text,start:i*.7,end:i*.7+.5}))}]);assert.equal(p.scenes[0].highlights[0].start,null);assert.throws(()=>C.validate(p,true),/متزامنة|مراجعة/);
+// Missing speech cannot be silently certified by a UI refresh.
+p=project([scene()]);p.scenes[0].image='';p.scenes[0].highlights=[];C.align(p,[{duration:5,words:[{text:'ذهب',start:1,end:1.5}]}]);assert.equal(p.scenes[0].needsReview,true);C.manualReview(p);assert.equal(p.scenes[0].needsReview,true);assert.throws(()=>C.validate(p,true));p.scenes[0].reviewed=true;C.manualReview(p);C.validate(p,true);
+// A manually reviewed phrase uses the explicit clock and never a fabricated token time.
+p=project();C.align(p,[{duration:5,words}]);p.scenes[0].imageManual=true;p.scenes[0].imageAt=3.5;C.bind(p.scenes[0],p.scenes[0].words);assert.equal(p.scenes[0].imageAt,3.5);p.scenes[0].highlights[1].manual=true;p.scenes[0].highlights[1].start=1.25;p.scenes[0].highlights[1].end=2;C.bind(p.scenes[0],p.scenes[0].words);assert.equal(p.scenes[0].highlights[1].start,1.25);
+// Recording mode keeps measured scene boundaries; generated narration has measured pauses.
+const s2=scene('وصلنا إلى الميناء');s2.id='abcdef123456';s2.image='';s2.highlights=[];p=project([scene(),s2]);p.scenes[0].image='';p.scenes[0].highlights=[];C.align(p,[{duration:5,words},{duration:3,words:[{text:'وصلنا',start:.2,end:.6},{text:'إلى',start:.7,end:.8},{text:'الميناء',start:1,end:2}]}]);assert.equal(p.scenes[1].start,5.25);assert.equal(p.duration,8.5);C.validate(p,true);
+p=project();p.voiceMode='none';C.draft(p);p.scenes[0].imageManual=true;p.scenes[0].imageAt=2;C.draft(p);assert.equal(p.scenes[0].imageAt,2);C.validate(p,true);p.duration=999999;assert.throws(()=>C.validate(p,true));p=project();p.scenes[0].image='../../secret';assert.throws(()=>C.validate(p));
+assert.throws(()=>C.align(project(),[{duration:4,words:[{text:'سفينة',start:2,end:1}]}]));assert.throws(()=>C.align(project(),[{duration:4,words:[{text:'سفينة',start:NaN,end:3}]}]));
+console.log('PASS: measured word anchors, repeated/missing phrases, manual review, preserved explicit edits, scene clocks and path/time bounds');
+// Arabic punctuation and digit variants must not shift a spoken anchor.
+assert.deepEqual(C.tokens('عام ١٢٣، ثم عام ۱۲۴.'),['عام','123','ثم','عام','124']);
+p=project();p.scenes[0].imageSeconds=11;assert.throws(()=>C.validate(p),/مدة ظهور/);

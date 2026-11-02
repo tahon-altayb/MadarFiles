@@ -1,0 +1,23 @@
+package com.madar.files;
+import android.app.*;
+import android.content.*;
+import android.os.*;
+import org.json.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+/** A single foreground task survives screen changes; partial output never becomes a result. */
+public final class MotionStudioService extends Service {
+ static final String EVENT="com.madar.files.MOTION";static volatile boolean active;static volatile String projectId="";private static volatile String snapshot="{}";
+ private final AtomicBoolean cancel=new AtomicBoolean();private Thread task;private String stage="تجهيز الاستوديو";private int percent;private NotificationManager notifications;private PowerManager.WakeLock wake;
+ static JSONObject state(){try{return new JSONObject(snapshot);}catch(Exception e){return new JSONObject();}}
+ static void start(Context c,String id,String mode){androidx.core.content.ContextCompat.startForegroundService(c,new Intent(c,MotionStudioService.class).putExtra("project",id).putExtra("mode",mode));}
+ @Override public void onCreate(){super.onCreate();notifications=getSystemService(NotificationManager.class);notifications.createNotificationChannel(new NotificationChannel("motion-studio","استوديو الفيديو",NotificationManager.IMPORTANCE_LOW));}
+ private Notification notification(){PendingIntent open=PendingIntent.getActivity(this,690,new Intent(this,MotionStudioActivity.class).putExtra("project",projectId),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);PendingIntent stop=PendingIntent.getService(this,691,new Intent(this,MotionStudioService.class).setAction("cancel"),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);return new Notification.Builder(this,"motion-studio").setSmallIcon(R.drawable.ic_launcher).setContentTitle("مدار · استوديو الفيديو").setContentText(stage).setProgress(100,percent,false).setOngoing(active).setOnlyAlertOnce(true).setContentIntent(open).addAction(new Notification.Action.Builder(null,"إلغاء",stop).build()).build();}
+ private void emit(String status,String message)throws Exception{JSONObject e=new JSONObject().put("type","motionState").put("project",projectId).put("status",status).put("message",message).put("progress",percent);snapshot=e.toString();if(!projectId.isEmpty())GeminiCheckpoint.save(MotionProject.asset(this,projectId,"state.json"),e);sendBroadcast(new Intent(EVENT).setPackage(getPackageName()).putExtra("event",snapshot));}
+ @Override public int onStartCommand(Intent intent,int flags,int startId){if(intent==null){stopSelf();return START_NOT_STICKY;}if("cancel".equals(intent.getAction())){cancel.set(true);if(!active)stopSelf();return START_NOT_STICKY;}if(active)return START_NOT_STICKY;
+  projectId=intent.getStringExtra("project");String mode=intent.getStringExtra("mode");ColabCredentials.Grant grant=ColabCredentials.take();active=true;cancel.set(false);startForeground(69,notification());wake=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"Madar:MotionStudio");wake.acquire(45*60*1000L);
+  task=new Thread(()->{try{if(!"align".equals(mode)&&!"render".equals(mode))throw new java.io.IOException("مهمة غير صالحة");JSONObject project=MotionProject.load(this,projectId);emit("running",stage);MotionCloud.run(this,project,mode,grant,cancel,(p,m)->{percent=p;stage=m;emit("running",m);notifications.notify(69,notification());});MusicSeparator.check(cancel);percent=100;emit("done",mode.equals("align")?"اكتملت المزامنة؛ راجع المعاينة والعبارات":"الفيديو جاهز للحفظ والمشاركة");}catch(java.util.concurrent.CancellationException e){try{emit("cancelled","أُلغيت المهمة؛ المشروع محفوظ");}catch(Exception ignored){}}catch(Exception e){try{emit("error",e instanceof java.io.IOException?e.getMessage():"تعذرت المعالجة؛ المشروع محفوظ ويمكن إعادة المحاولة");}catch(Exception ignored){}}finally{active=false;if(wake!=null&&wake.isHeld())wake.release();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}},"madar-motion-task");task.start();return START_NOT_STICKY;
+ }
+ @Override public void onTimeout(int startId,int type){cancel.set(true);stopSelf();}
+ @Override public void onDestroy(){cancel.set(true);if(wake!=null&&wake.isHeld())wake.release();super.onDestroy();}
+ @Override public IBinder onBind(Intent intent){return null;}
+}

@@ -8,6 +8,16 @@ mkdir -p phone-screenshots || exit $?
 adb shell settings put secure immersive_mode_confirmations confirmed || exit $?
 gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 :app:installDebug :app:installDebugAndroidTest || exit $?
 status=0
+adb shell am instrument -w -r -e class com.madar.files.MotionStudioTest com.madar.files.test/androidx.test.runner.AndroidJUnitRunner > phone-screenshots/motion-tests.txt
+cat phone-screenshots/motion-tests.txt
+python3 - <<'PYMOTION'
+from pathlib import Path
+import re
+s=Path('phone-screenshots/motion-tests.txt').read_text()
+assert re.search(r'OK\s*\(4 tests\)',s) and not re.search(r'INSTRUMENTATION_FAILED|FAILURES!!!|INSTRUMENTATION_STATUS_CODE:\s*-\d+',s)
+PYMOTION
+if [ "$?" -ne 0 ]; then exit 1; fi
+adb pull /sdcard/Android/data/com.madar.files/files/motion-studio.png phone-screenshots/motion-studio.png
 # Exercise lifecycle transitions first and in a fresh process. A fixture/lifecycle
 # failure must not spend another fifteen minutes running unrelated model tests.
 adb shell am force-stop com.madar.files || exit $?
