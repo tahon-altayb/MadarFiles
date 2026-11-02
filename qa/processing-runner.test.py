@@ -5,13 +5,16 @@ import subprocess
 import tempfile
 
 script=Path('qa/run-native-processing.sh').resolve()
-for lifecycle,source,isolated,watch,rest,expect in [('pass','pass','pass','pass','0',0),('pass','fail','pass','pass','0',1),('pass','skip','pass','pass','0',1),('pass','pass','fail','pass','0',1),('pass','pass','pass','fail','0',1),('pass','pass','pass','pass','7',7),('pass','pass','skip','pass','0',1),('pass','pass','pass','skip','0',1),('fail','pass','pass','pass','0',1),('skip','pass','pass','pass','0',1)]:
+base_cases=[('pass','pass','pass','pass','0',0),('pass','fail','pass','pass','0',1),('pass','skip','pass','pass','0',1),('pass','pass','fail','pass','0',1),('pass','pass','pass','fail','0',1),('pass','pass','pass','pass','7',7),('pass','pass','skip','pass','0',1),('pass','pass','pass','skip','0',1),('fail','pass','pass','pass','0',1),('skip','pass','pass','pass','0',1)]
+cases=[('pass',*case) for case in base_cases]+[('fail','pass','pass','pass','pass','0',1),('skip','pass','pass','pass','pass','0',1)]
+for motion,lifecycle,source,isolated,watch,rest,expect in cases:
  with tempfile.TemporaryDirectory() as temp:
   root=Path(temp);bin=root/'bin';bin.mkdir()
   adb=bin/'adb';adb.write_text('''#!/usr/bin/env bash
 if [[ "$*" == *"am instrument"* ]]; then
  result="$MADAR_FAKE_ISOLATED"
  count=2
+ if [[ "$*" == *"MotionStudioTest"* ]]; then result="$MADAR_FAKE_MOTION";count=4;fi
  if [[ "$*" == *"PlayerLifecycleTest"* ]]; then result="$MADAR_FAKE_LIFECYCLE";count=15;fi
  if [[ "$*" == *"PlayerWatchTest"* ]]; then result="$MADAR_FAKE_WATCH";count=8;fi
  if [[ "$*" == *"PlayerSourceTest"* ]]; then result="$MADAR_FAKE_SOURCE";count=8;fi
@@ -22,14 +25,15 @@ fi
 printf '%s\\n' "$*" >> calls.txt
 if [[ "$*" == *connectedDebugAndroidTest* ]]; then exit "$MADAR_FAKE_REST"; fi
 ''');gradle.chmod(0o700)
-  env=dict(os.environ,PATH=str(bin)+':'+os.environ['PATH'],MADAR_FAKE_LIFECYCLE=lifecycle,MADAR_FAKE_SOURCE=source,MADAR_FAKE_ISOLATED=isolated,MADAR_FAKE_WATCH=watch,MADAR_FAKE_REST=rest)
+  env=dict(os.environ,PATH=str(bin)+':'+os.environ['PATH'],MADAR_FAKE_MOTION=motion,MADAR_FAKE_LIFECYCLE=lifecycle,MADAR_FAKE_SOURCE=source,MADAR_FAKE_ISOLATED=isolated,MADAR_FAKE_WATCH=watch,MADAR_FAKE_REST=rest)
   result=subprocess.run(['bash',str(script)],cwd=root,env=env,capture_output=True,text=True)
-  assert result.returncode==expect,(source,isolated,watch,rest,result.returncode,result.stderr)
+  assert result.returncode==expect,(motion,lifecycle,source,isolated,watch,rest,result.returncode,result.stderr)
   calls=(root/'calls.txt').read_text()
   assert ':app:installDebugAndroidTest' in calls
-  assert ('notClass=com.madar.files.PlayerLifecycleTest,com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest,com.madar.files.PlayerSourceTest' in calls)==(lifecycle=='pass' and source=='pass' and isolated=='pass' and watch=='pass')
-  assert (root/'phone-screenshots/player-lifecycle-tests.txt').is_file()
-  assert (root/'phone-screenshots/player-source-tests.txt').is_file()==(lifecycle=='pass')
-  assert (root/'phone-screenshots/local-agent-tests.txt').is_file()==(lifecycle=='pass' and source=='pass')
-  assert (root/'phone-screenshots/player-watch-tests.txt').is_file()==(lifecycle=='pass' and source=='pass' and isolated=='pass')
-print('PASS: local model, real player/watch and remaining tests retain every failure or skip')
+  assert ('notClass=com.madar.files.MotionStudioTest,com.madar.files.PlayerLifecycleTest,com.madar.files.LocalAgentRuntimeTest,com.madar.files.PlayerWatchTest,com.madar.files.PlayerSourceTest' in calls)==(motion=='pass' and lifecycle=='pass' and source=='pass' and isolated=='pass' and watch=='pass')
+  assert (root/'phone-screenshots/motion-tests.txt').is_file()
+  assert (root/'phone-screenshots/player-lifecycle-tests.txt').is_file()==(motion=='pass')
+  assert (root/'phone-screenshots/player-source-tests.txt').is_file()==(motion=='pass' and lifecycle=='pass')
+  assert (root/'phone-screenshots/local-agent-tests.txt').is_file()==(motion=='pass' and lifecycle=='pass' and source=='pass')
+  assert (root/'phone-screenshots/player-watch-tests.txt').is_file()==(motion=='pass' and lifecycle=='pass' and source=='pass' and isolated=='pass')
+print('PASS: motion studio, local model, real player/watch and remaining tests retain every failure or skip')
