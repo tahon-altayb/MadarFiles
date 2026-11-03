@@ -165,7 +165,7 @@ jobs:
         run: |
           npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
           MADAR_UI_FAILED=0
-          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs qa/personal-studio.test.cjs; do
+          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/agent-motion.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs qa/personal-studio.test.cjs; do
             NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node "$MADAR_UI_TEST" || MADAR_UI_FAILED=1
           done
           exit "$MADAR_UI_FAILED"
@@ -211,7 +211,7 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 54 --version-name 1.9.20 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 55 --version-name 1.9.20 --firebase-config app/google-services.json
       - name: Prepare APK
         run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.20.apk
       - name: Download installed-version baseline for upgrade test
