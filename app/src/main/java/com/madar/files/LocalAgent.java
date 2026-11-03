@@ -37,6 +37,7 @@ final class LocalAgent {
  JSONObject plan(Context c,String user,JSONObject source,JSONArray previous,AtomicBoolean cancel)throws Exception {
   if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");
   ColabProbe.check(cancel);JSONObject direct=AgentIntents.resolve(user,source,previous);
+  if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));
   if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)){try{return AgentCloud.plan(c,user,source,previous,cancel);}catch(Exception cloud){ColabProbe.check(cancel);if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));if(!ready(c))throw cloud;}}
   if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));source=new JSONObject(source.toString());source.remove("_visual");
   if(!ready(c))throw new IOException("هذا الطلب المركب يحتاج اتصال Gemini أو تنزيل النموذج المحلي؛ الأوامر المباشرة تعمل فورًا");

@@ -4,7 +4,7 @@ import os,json,subprocess,tempfile,shutil
 repo=Path(__file__).resolve().parents[1];assets=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/motion';evidence.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='madar-product-render-') as tmp:
     job=Path(tmp);public=job/'public';public.mkdir()
-    for name in ['core.js','product.js','Root.tsx','render.cjs','package.json']:shutil.copyfile(assets/name,job/name)
+    for name in ['core.js','product.js','creative.js','Root.tsx','render.cjs','package.json']:shutil.copyfile(assets/name,job/name)
     shutil.copyfile(assets/'Cairo.ttf',public/'Cairo.ttf')
     modules=os.environ.get('MADAR_MOTION_NODE_MODULES')
     if modules:(job/'node_modules').symlink_to(Path(modules).resolve(),target_is_directory=True)

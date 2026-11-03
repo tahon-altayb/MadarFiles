@@ -64,4 +64,14 @@ public class MotionStudioTest {
   byte[] header=MotionSpeech.wavHeader(48000);java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(header).order(java.nio.ByteOrder.LITTLE_ENDIAN);assertEquals(48036,b.getInt(4));assertEquals(24000,b.getInt(24));assertEquals(48000,b.getInt(40));
   JSONObject p=MotionProject.create(c);p.getJSONArray("scenes").getJSONObject(0).put("image","../../private");try{MotionProject.validate(p,false);fail();}catch(IOException expected){}
  }
+ @Test(timeout=30000) public void incompleteProductDraftSurvivesReloadAndProjectSwitch()throws Exception{
+  js("(()=>{const e=document.getElementById('productBenefits');e.value='تفاصيل مدار\\nمعلومة لم تكتمل';e.dispatchEvent(new Event('input'));})()");
+  Field f=MotionStudioActivity.class.getDeclaredField("id");f.setAccessible(true);String id=(String)f.get(activity);long until=android.os.SystemClock.elapsedRealtime()+5000;JSONObject draft=null;while(android.os.SystemClock.elapsedRealtime()<until){draft=MotionProject.draft(c,id);if(draft!=null)break;Thread.sleep(80);}assertNotNull(draft);assertEquals("تفاصيل مدار\nمعلومة لم تكتمل",draft.getJSONObject("fields").getString("productBenefits"));
+  js("document.getElementById('theme').value='night';document.getElementById('theme').dispatchEvent(new Event('change'))");assertEquals("\"تفاصيل مدار\\nمعلومة لم تكتمل\"",js("document.getElementById('productBenefits').value"));
+  main(()->web.reload());ready();assertEquals("\"تفاصيل مدار\\nمعلومة لم تكتمل\"",js("document.getElementById('productBenefits').value"));JSONObject other=MotionProject.create(c);assertNull(MotionProject.draft(c,other.getString("id")));
+ }
+ @Test public void freeSceneGraphHasNativeAndPreviewValidationParity()throws Exception{
+  JSONObject p=MotionProject.create(c);JSONObject composition=new JSONObject("{\"backdrop\":\"orbit\",\"elements\":[{\"kind\":\"text\",\"text\":\"مدار\",\"size\":80,\"x\":0.1,\"y\":0.1,\"w\":0.8,\"h\":0.2,\"color\":\"ink\",\"motion\":\"rise\",\"delay\":0}]}");p.getJSONArray("scenes").getJSONObject(0).put("graphic","creative").put("composition",composition);MotionProject.validate(p,false);assertEquals("true",js("!!MadarMotion.creative.validate("+composition+")"));composition.getJSONArray("elements").getJSONObject(0).put("x",.9);try{MotionProject.validate(p,false);fail("Off-canvas elements must be rejected");}catch(IOException expected){}
+ }
+
 }

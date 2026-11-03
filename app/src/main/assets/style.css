@@ -184,3 +184,5 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 .agentGeneratedImage{width:100%;max-height:320px;object-fit:contain;border-radius:14px;display:block;margin:10px 0;background:#10251a}
 #sheet.studio15 #timelineScroll:has(.layerTrack){flex-basis:185px;min-height:185px;max-height:185px}
 @media(max-height:500px){#sheet.studio15.textTyping #timelineScroll:has(.layerTrack){display:none}}
+
+.agentResult video,.agentResult audio{display:block;width:100%;max-height:55vh;margin:12px 0;border-radius:14px;background:#192426}.agentMotionVoice{display:flex;align-items:center;gap:8px;font-size:12px;color:#626d6a}.agentMotionVoice select{padding:6px;min-width:0;flex:1;max-width:240px}.agentAttachmentChip .remove{margin-inline-start:8px}

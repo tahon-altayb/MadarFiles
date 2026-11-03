@@ -14,7 +14,7 @@ for motion,lifecycle,source,isolated,watch,rest,expect in cases:
 if [[ "$*" == *"am instrument"* ]]; then
  result="$MADAR_FAKE_ISOLATED"
  count=2
- if [[ "$*" == *"MotionStudioTest"* ]]; then result="$MADAR_FAKE_MOTION";count=5;fi
+ if [[ "$*" == *"MotionStudioTest"* ]]; then result="$MADAR_FAKE_MOTION";count=7;fi
  if [[ "$*" == *"PlayerLifecycleTest"* ]]; then result="$MADAR_FAKE_LIFECYCLE";count=15;fi
  if [[ "$*" == *"PlayerWatchTest"* ]]; then result="$MADAR_FAKE_WATCH";count=8;fi
  if [[ "$*" == *"PlayerSourceTest"* ]]; then result="$MADAR_FAKE_SOURCE";count=8;fi

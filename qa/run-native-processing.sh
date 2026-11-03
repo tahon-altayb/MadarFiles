@@ -14,7 +14,7 @@ python3 - <<'PYMOTION'
 from pathlib import Path
 import re
 s=Path('phone-screenshots/motion-tests.txt').read_text()
-assert re.search(r'OK\s*\(5 tests\)',s) and not re.search(r'INSTRUMENTATION_FAILED|FAILURES!!!|INSTRUMENTATION_STATUS_CODE:\s*-\d+',s)
+assert re.search(r'OK\s*\(7 tests\)',s) and not re.search(r'INSTRUMENTATION_FAILED|FAILURES!!!|INSTRUMENTATION_STATUS_CODE:\s*-\d+',s)
 PYMOTION
 if [ "$?" -ne 0 ]; then exit 1; fi
 adb pull /sdcard/Android/data/com.madar.files/files/motion-studio.png phone-screenshots/motion-studio.png

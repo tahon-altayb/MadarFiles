@@ -67,7 +67,7 @@ jobs:
             adb shell wm density 180
             adb shell am instrument -w -r -e class com.madar.files.MotionStudioTest com.madar.files.validation.test/androidx.test.runner.AndroidJUnitRunner > motion-android.txt
             cat motion-android.txt
-            python3 -c "import re; s=open('motion-android.txt').read(); assert re.search(r'OK\s*\(5 tests\)',s) and not re.search(r'INSTRUMENTATION_FAILED|FAILURES!!!|INSTRUMENTATION_STATUS_CODE:\s*-\d+',s)"
+            python3 -c "import re; s=open('motion-android.txt').read(); assert re.search(r'OK\s*\(7 tests\)',s) and not re.search(r'INSTRUMENTATION_FAILED|FAILURES!!!|INSTRUMENTATION_STATUS_CODE:\s*-\d+',s)"
             adb pull /sdcard/Android/data/com.madar.files.validation/files/motion-studio.png motion-studio.png
       - uses: actions/upload-artifact@v4
         if: always()

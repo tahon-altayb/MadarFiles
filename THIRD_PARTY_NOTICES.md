@@ -43,3 +43,7 @@ ZXing Core 3.5.4, Apache License 2.0, Copyright ZXing authors. QR codes are enco
 ## v1.5 additions
 - IS-Net general-use segmentation via danielgatis/rembg, Apache-2.0 model/source, pinned SHA-256 60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a. Source: https://github.com/xuebinqin/DIS
 - youtubedl-android 0.18.1, Apache-2.0: https://github.com/yausername/youtubedl-android . Bundles yt-dlp and FFmpeg; upstream licenses and source: https://github.com/yt-dlp/yt-dlp and https://ffmpeg.org/legal.html .
+
+## Open motion direction and approved narration
+
+Qwen2.5-VL-3B-Instruct by Qwen (Apache 2.0) is downloaded from the official Hugging Face repository at revision `66285546d2b821cf421d4f5eb2576359d3770cd3` for user-requested Colab motion jobs. SILMA TTS 1.0.5 code is MIT; official model weights are Apache 2.0, pinned to `226dd7a65cadf51f9a6dbe3953fc89003b3844d5`. The bundled short male narration reference is the synthetic preset selected during the prior voice trial, not a recording of the user. Vocos mel-24khz is pinned to `0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21`. Models and their licenses remain with their respective authors; this app does not claim ownership or autonomous model training.

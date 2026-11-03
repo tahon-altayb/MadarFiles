@@ -1,5 +1,5 @@
 /* Declarative motion clock. Shared unchanged by Android preview and cloud renderer. */
-(function(root,factory){const product=typeof module==='object'?require('./product'):root.MadarProduct;const api=factory(product);if(typeof module==='object')module.exports=api;else root.MadarMotion=api;})(typeof globalThis==='object'?globalThis:this,function(product){
+(function(root,factory){const product=typeof module==='object'?require('./product'):root.MadarProduct;const creative=typeof module==='object'?require('./creative'):root.MadarCreative;const api=factory(product,creative);if(typeof module==='object')module.exports=api;else root.MadarMotion=api;})(typeof globalThis==='object'?globalThis:this,function(product,creative){
 'use strict';
 const effects=['fade','rise','slide','zoom','pan','reveal'];
 const palettes={paper:['#f2ece0','#263033','#9a7339','#fbf8f0','#737873'],night:['#192426','#f4eee2','#c9a76b','#243437','#adb7b1'],sand:['#ded1b9','#26373c','#815e32','#f1e7d5','#626d6a']};
@@ -9,11 +9,11 @@ const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const finite=(x,a,b)=>typeof x==='number'&&Number.isFinite(x)&&x>=a&&x<=b;
 function text(s,max){return typeof s==='string'&&s.trim().length>0&&s.length<=max&&!/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(s);}
 function validate(p,exporting=false){
- if(!p||p.version!==1||!palettes[p.theme]||!['9:16','16:9','1:1'].includes(p.aspect)||!['none','google','recording'].includes(p.voiceMode)||!text(p.title,80)||!Array.isArray(p.scenes)||p.scenes.length<1||p.scenes.length>20)throw Error('مشروع موشن غير صالح');
+ if(!p||p.version!==1||!palettes[p.theme]||!['9:16','16:9','1:1'].includes(p.aspect)||!['none','google','silma','recording'].includes(p.voiceMode)||!text(p.title,80)||!Array.isArray(p.scenes)||p.scenes.length<1||p.scenes.length>20)throw Error('مشروع موشن غير صالح');
  if(p.product)product.validate(p.product);let end=0,totalText=0;const ids=new Set();
  for(const s of p.scenes){
-  if(!/^[a-f0-9]{12}$/.test(s.id)||!text(s.title,60)||!text(s.narration,1000)||!effects.includes(s.effect)||!['fade','slide'].includes(s.transition)||!['none','steps','timeline','map','voice','ship','product'].includes(s.graphic||'steps')||!finite(s.seconds,1,120)||!Array.isArray(s.highlights)||s.highlights.length>12)throw Error('راجع إعدادات المشاهد');
-  if(s.graphic==='product'&&(!p.product||!product.stages.includes(s.productStage)||s.productStage==='percent'&&!p.product.confirmedPercent))throw Error('إعداد مشهد المنتج غير صالح');if(ids.has(s.id))throw Error('معرّف مشهد مكرر');ids.add(s.id);totalText+=s.narration.length;
+  if(!/^[a-f0-9]{12}$/.test(s.id)||!text(s.title,60)||!text(s.narration,1000)||!effects.includes(s.effect)||!['fade','slide'].includes(s.transition)||!['none','steps','timeline','map','voice','ship','product','creative'].includes(s.graphic||'steps')||!finite(s.seconds,1,120)||!Array.isArray(s.highlights)||s.highlights.length>12)throw Error('راجع إعدادات المشاهد');
+  if(s.graphic==='creative')creative.validate(s.composition);if(s.graphic==='product'&&(!p.product||!product.stages.includes(s.productStage)||s.productStage==='percent'&&!p.product.confirmedPercent))throw Error('إعداد مشهد المنتج غير صالح');if(ids.has(s.id))throw Error('معرّف مشهد مكرر');ids.add(s.id);totalText+=s.narration.length;
   if(s.imageSeconds!==undefined&&!finite(s.imageSeconds,.3,10))throw Error('مدة ظهور الصورة بين 0.3 و10 ثوانٍ');
   if(s.image&&!/^asset_[a-f0-9]{32}\.jpg$/.test(s.image))throw Error('صورة مشهد غير صالحة');
   if(typeof s.credit!=='string'||s.credit.length>700||typeof s.imageAnchor!=='string'||s.imageAnchor.length>120||typeof s.imageQuery!=='string'||s.imageQuery.length>180)throw Error('بيانات الصورة غير صالحة');
@@ -58,7 +58,7 @@ function graphic(ctx,s,x,y,w,h,gold,muted,time){
  wrap(ctx,'رسم توضيحي',x+w-18,y+h-30,w-36,20,muted);ctx.restore();
 }
 function draw(ctx,p,time,images={}){
- const selected=p.scenes.find(s=>time>=s.start&&time<s.end)||p.scenes[p.scenes.length-1];if(selected?.graphic==='product'){product.draw(ctx,p,selected,time,images);return;}
+ const selected=p.scenes.find(s=>time>=s.start&&time<s.end)||p.scenes[p.scenes.length-1];if(selected?.graphic==='creative'){creative.draw(ctx,p,selected,time,images);return;}if(selected?.graphic==='product'){product.draw(ctx,p,selected,time,images);return;}
  const wide=p.aspect==='16:9',square=p.aspect==='1:1',W=wide?1920:1080,H=wide?1080:square?1080:1920;const k=W/1080;ctx.save();ctx.scale(k,k);const h=H/k;const [bg,ink,gold,card,muted]=palettes[p.theme]||palettes.paper;ctx.fillStyle=bg;ctx.fillRect(0,0,1080,h);
  const s=p.scenes.find(s=>time>=s.start&&time<s.end)||p.scenes[p.scenes.length-1];if(!s){ctx.restore();return;}
  const index=p.scenes.indexOf(s),local=Math.max(0,time-s.start),ease=1-Math.pow(1-clamp(local/.45,0,1),3);ctx.globalAlpha=ease;if(s.transition==='slide')ctx.translate((1-ease)*35,0);
@@ -73,5 +73,5 @@ function draw(ctx,p,time,images={}){
  if(p.captions&&s.words?.length){const words=s.words.filter(w=>time>=w.start-.05&&time<w.end+.15);if(words.length)wrap(ctx,words.map(w=>w.text).join(' '),540,h-65,850,short?26:36,ink,'center',1);}
  ctx.restore();
 }
-return {product,effects,palettes,norm,tokens,validate,draft,match,phrase,align,bind,manualReview,draw};
+return {product,creative,effects,palettes,norm,tokens,validate,draft,match,phrase,align,bind,manualReview,draw};
 });

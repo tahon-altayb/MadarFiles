@@ -3,6 +3,7 @@ import hashlib,json,math,os,re,shutil,subprocess,sys,threading,time,wave
 from pathlib import Path
 CHUNK=750_000
 os.environ['ORT_DISABLE_TELEMETRY']='1'
+os.environ['OTEL_SDK_DISABLED']='true'
 os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
 ROOT=Path(__file__).resolve().parent
 os.chdir(ROOT)
@@ -15,13 +16,13 @@ def sha(path):
     with path.open('rb') as f:
         for b in iter(lambda:f.read(65536),b''):h.update(b)
     return h.hexdigest()
-def pack(path):
+def pack(path,prefix="result"):
     n=0
     with path.open('rb') as f:
         while True:
             data=f.read(CHUNK)
             if not data:break
-            Path(f'result_{n}.bin').write_bytes(data);n+=1
+            Path(f'{prefix}_{n}.bin').write_bytes(data);n+=1
     if n<1 or path.stat().st_size>128*1024*1024:raise ValueError('OUTPUT_SIZE')
     return {'size':path.stat().st_size,'sha256':sha(path),'chunks':n}
 def node_binary():
@@ -84,17 +85,18 @@ def align(request,node):
         return None
     status('audio',22)
     names=['recording.media'] if mode=='recording' else [f'speech_{i}.wav' for i in range(len(p['scenes']))]
-    joined=[]
+    joined=[];master_rate=24000 if mode=='silma' else 16000
     for i,name in enumerate(names):
         out=f'normalized_{i}.wav';run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','900.1' if mode=='recording' else '90.1','-ac','1','-ar','16000','-c:a','pcm_s16le',out],120)
         with wave.open(out,'rb') as w:
             if w.getnchannels()!=1 or w.getsampwidth()!=2 or w.getframerate()!=16000:raise ValueError('AUDIO_FORMAT')
             data=w.readframes(w.getnframes())
         if not 3200<=len(data)<=(28_800_000 if mode=='recording' else 2_880_000):raise ValueError('AUDIO_DURATION')
-        joined.append(data)
-        if mode!='recording':joined.append(bytes(8000))
+        master=f'master_{i}.wav';run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','900.1' if mode=='recording' else '90.1','-ac','1','-ar',str(master_rate),'-c:a','pcm_s16le',master],120)
+        with wave.open(master,'rb') as m:joined.append(m.readframes(m.getnframes()))
+        if mode!='recording':joined.append(bytes(master_rate//2))
         files.append(out)
-    with wave.open('voice.wav','wb') as w:w.setparams((1,2,16000,0,'NONE',''));w.writeframes(b''.join(joined))
+    with wave.open('voice.wav','wb') as w:w.setparams((1,2,master_rate,0,'NONE',''));w.writeframes(b''.join(joined))
     status('install',26);binary=asr_python();Path('asr-inputs.json').write_text(json.dumps(files));Path('asr-run.py').write_text(ASR_CODE)
     status('align',36);run([binary,'asr-run.py'],1500)
     if mode=='recording':
@@ -105,7 +107,9 @@ def render(request,node):
     p=request['project'];Path('project.json').write_text(json.dumps(p,ensure_ascii=False))
     run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],30)
     public=ROOT/'public';public.mkdir(exist_ok=True)
-    for name in ['Cairo.ttf','voice.wav']+[s['image'] for s in p['scenes'] if s.get('image')]:
+    names=set(s['image'] for s in p['scenes'] if s.get('image'))
+    names.update(e['asset'] for s in p['scenes'] for e in s.get('composition',{}).get('elements',[]) if e.get('kind') in ['image','device'])
+    for name in ['Cairo.ttf','voice.wav']+sorted(names):
         if not Path(name).is_file():
             if name=='voice.wav' and p['voiceMode']=='none':continue
             raise ValueError('ASSET_MISSING')
@@ -123,15 +127,53 @@ def render(request,node):
     width=1920 if p['aspect']=='16:9' else 1080;height=1920 if p['aspect']=='9:16' else 1080
     if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none'):raise ValueError('OUTPUT_FORMAT')
     return path
+def inference_python():
+    target=ROOT.parent/'madar-motion-director-v1';binary=target/'bin/python'
+    if not (target/'ready').exists():
+        # Colab's default Python can change. Keep model dependencies in their own 3.11 environment.
+        run([sys.executable,'-m','pip','install','--disable-pip-version-check','uv==0.8.22'],180)
+        run([sys.executable,'-m','uv','venv','--python','3.11',target],240)
+        run([sys.executable,'-m','uv','pip','install','--python',binary,'torch==2.6.0','torchaudio==2.6.0','torchvision==0.21.0','--index-url','https://download.pytorch.org/whl/cu124'],600)
+        run([sys.executable,'-m','uv','pip','install','--python',binary,'silma-tts==1.0.5','transformers==4.51.3','accelerate==1.6.0','bitsandbytes==0.46.1','qwen-vl-utils==0.0.11','huggingface-hub==0.30.2','numpy==1.26.4'],750)
+        (target/'ready').write_text('1')
+    return binary
+
+def compose(request,node):
+    from sources import collect
+    p=request['project'];brief=p.get('creativeRequest')
+    if not isinstance(brief,dict):raise ValueError('BRIEF_MISSING')
+    status('sources',21);generated=collect(brief);Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
+    status('director',24);binary=inference_python();env=os.environ.copy();env['MADAR_NODE']=str(node)
+    run([binary,'director.py'],1200,env=env)
+    p=json.loads(Path('project.json').read_text());request['project']=p
+    Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
+    if p['voiceMode']=='silma':
+        status('speech',46);run([binary,'speech.py'],900,env=env)
+    align(request,node);p=json.loads(Path('project.json').read_text());request['project']=p
+    # Do not report guessed alignment as complete. The editor can recover this project for review.
+    checked=subprocess.run([str(node),'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+    result=render(request,node) if checked.returncode==0 else None
+    extras=[]
+    if p['voiceMode']!='none':extras.append('voice.wav')
+    extras.extend(generated)
+    return result,extras
+
 def main():
     if not re.fullmatch('madar_[a-f0-9]{32}',ROOT.name) and os.environ.get('MADAR_MOTION_QA')!='1':raise ValueError('JOB_PATH')
     request=json.loads(Path('request.json').read_text());mode=request['mode']
-    if request.get('protocol')!=1 or mode not in ['align','render']:raise ValueError('PROTOCOL')
+    if request.get('protocol')!=1 or mode not in ['align','render','compose']:raise ValueError('PROTOCOL')
     status('verify',18);assemble(request);node=node_binary()
     run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('request.json')).project);"],30)
-    result=align(request,node) if mode=='align' else render(request,node)
+    extras=[]
+    if mode=='compose':result,extras=compose(request,node)
+    else:
+        if mode=='align' and request['project']['voiceMode']=='silma':
+            Path('project.json').write_text(json.dumps(request['project'],ensure_ascii=False));status('speech',22);run([inference_python(),'speech.py'],900)
+        result=align(request,node) if mode=='align' else render(request,node)
     project=json.loads(Path('project.json').read_text());manifest=pack(result) if result else None
-    status('verify',95);atomic('result.json',{'protocol':1,'project':project,'file':manifest,'mode':mode});status('done',100)
+    extra_files=[]
+    for i,name in enumerate(extras):extra_files.append(dict(name=name,**pack(Path(name),f'asset_{i}')))
+    status('verify',95);atomic('result.json',{'protocol':1,'project':project,'file':manifest,'mode':mode,'assets':extra_files});status('done',100)
 if __name__=='__main__':
     try:main()
     except BaseException as error:

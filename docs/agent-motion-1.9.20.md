@@ -1,0 +1,11 @@
+# Madar 1.9.20: execution in chat and visual direction
+
+The previous chat motion command opened a product studio. It now creates a foreground Colab task, keeps the conversation visible, reports scoped progress, and returns an inline MP4. Follow-up motion instructions create a revision and preserve the prior project and output. Clear supported file commands route locally before calling a language model; complex requests retain the existing local/Gemini planner and bounded action schema.
+
+Motion accepts a brief, up to eight owned image references and two public page URLs. It reads page text and an available OpenGraph image; inaccessible pages fail explicitly. Image/URL content cannot supply executable code. A pinned Qwen2.5-VL-3B model plans a storyboard and independently composes each shot using a bounded scene graph. Device screenshots, imagery, icons, typography and primitive motion share one Canvas renderer in preview and export. This is separate from the existing product template, which remains available.
+
+The approved synthetic male reference is bundled with SILMA TTS 1.0.5 (model revision 226dd7a65cadf51f9a6dbe3953fc89003b3844d5). The user can select it, attach narration, or render without voice. No music is added. SILMA output retains its 24k master; measured ASR uses a separate 16k copy. A recording whose text cannot be matched must be reviewed rather than reported as correctly synchronized. Colab GPU availability and session limits still apply. This feature does not train model weights or generate new footage/images; screenshots are real inputs and diagrams are vectors.
+
+Raw product form inputs save separately from the project, including incomplete/multiline information. Example fill requires confirmation when information is present and keeps a persistent undo snapshot. Theme changes and project reloads do not refill the example over raw input.
+
+Verification covers shared timing, product regression, native draft persistence and scene-graph bounds, browser draft recovery/undo, scoped chat progress/results, inline playback, voice selection, cancellation, and follow-up revisions. Model inference and GPU/session behavior require separate runtime evidence; passing interface tests alone does not establish creative quality.
