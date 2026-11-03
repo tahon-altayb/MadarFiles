@@ -40,9 +40,9 @@ function draw(ctx,p,s,time,images){
  const bg=dark?pal[1]:pal[0],ink=dark?pal[0]:pal[1],gold=pal[2],soft=dark?pal[1]:pal[3],muted=dark?'#D0C3A2':pal[4];ctx.save();ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);const k=Math.min(W/1080,H/1920);ctx.translate((W-1080*k)/2,(H-1920*k)/2);ctx.scale(k,k);
  for(let i=0;i<210;i++){ctx.globalAlpha=.08;circle(ctx,(i*193+17)%1080,(i*277+31)%1920,1,gold);}ctx.globalAlpha=1;
  words(ctx,d.brand,540,110,800,35,ink,700,1);line(ctx,[[260,136],[340,136]],gold,2);line(ctx,[[740,136],[820,136]],gold,2);
- const t=Math.max(0,time-s.start),duration=s.end-s.start,q=ease(t/.65),exit=clamp((s.end-time)/.23),img=images[s.image];ctx.globalAlpha=exit;
+ const t=Math.max(0,time-s.start),duration=s.end-s.start,q=ease(t/.65),exit=clamp((s.end-time)/.23),img=images[s.image];ctx.globalAlpha=exit*ease(t/.3);if(s.transition==='slide')ctx.translate((1-q)*65,0);
  function title(text,sub=''){const y=285+(1-q)*35,height=words(ctx,text,540,y,920,text.length>24?68:88,ink,800,2);if(sub)words(ctx,sub,540,Math.max(455,y+height+24),880,43,muted,500,2);}
- function product(x,y,w,h){photo(ctx,img,x,y+(1-q)*110,w,h,q);if(!img){ctx.globalAlpha*=.6;ctx.strokeStyle=gold;ctx.lineWidth=3;ctx.setLineDash([12,12]);ctx.strokeRect(x+w*.2,y+70,w*.6,h-100);ctx.setLineDash([]);words(ctx,'أرفق صورة المنتج',x+w/2,y+h/2,w*.7,38,muted,500,2);ctx.globalAlpha=exit;}}
+ function product(x,y,w,h){ctx.save();if(s.effect==='slide')ctx.translate((1-q)*60,0);if(s.effect==='pan')ctx.translate(Math.sin(t*.6)*8,0);if(s.effect==='zoom'){ctx.translate(x+w/2,y+h/2);ctx.scale(.94+.06*q,.94+.06*q);ctx.translate(-x-w/2,-y-h/2);}if(s.effect==='reveal'){ctx.beginPath();ctx.rect(x+w*(1-q),y,w*q,h);ctx.clip();}photo(ctx,img,x,y+(s.effect==='rise'?(1-q)*110:0),w,h,q);ctx.restore();if(!img){ctx.globalAlpha*=.6;ctx.strokeStyle=gold;ctx.lineWidth=3;ctx.setLineDash([12,12]);ctx.strokeRect(x+w*.2,y+70,w*.6,h-100);ctx.setLineDash([]);words(ctx,'أرفق صورة المنتج',x+w/2,y+h/2,w*.7,38,muted,500,2);ctx.globalAlpha=exit;}}
  if(s.productStage==='opening'||s.productStage==='closing'){
   const closing=s.productStage==='closing';title(d.name,closing?'':`من ${d.brand}`);circle(ctx,540,1060,360*q,soft);circle(ctx,540,1060,410,null,gold,1.5);
   if(d.motif==='grain'){wheat(ctx,95,1050,.9,-.32,gold,progress(t,.5,2.6));wheat(ctx,900,1050,.9,.32,gold,progress(t,.65,2.8));}
