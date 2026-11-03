@@ -27,7 +27,13 @@ with tempfile.TemporaryDirectory(prefix='madar-motion-render-') as tmp:
   return tuple(data[:3])
  during=pixel(.9);before=pixel(.1);after=pixel(2)
  assert all(abs(a-b)<15 for a,b in zip(during,(112,65,35))),(before,during,after)
- assert before[0]>150 and after[0]>150,(before,during,after)
+ # Compare with the same moving scene at the same times, without the photo.
+ # This avoids mistaking the gold illustration underneath for the paper background.
+ p['scenes'][0]['image']='';(job/'project.json').write_text(json.dumps(p,ensure_ascii=False));subprocess.run(['node','render.cjs'],cwd=job,check=True,timeout=300)
+ baseline_before=pixel(.1);baseline_during=pixel(.9);baseline_after=pixel(2)
+ assert max(abs(a-b) for a,b in zip(before,baseline_before))<10,(before,baseline_before)
+ assert max(abs(a-b) for a,b in zip(after,baseline_after))<10,(after,baseline_after)
+ assert sum(abs(a-b) for a,b in zip(during,baseline_during))>50,(during,baseline_during)
  env=os.environ.copy();env['MADAR_MOTION_NODE_MODULES']=str(job/'node_modules')
  subprocess.run(['node',str(root/'qa/motion-ui.test.cjs')],cwd=root,env=env,check=True,timeout=60)
 print('PASS: real shared-canvas Remotion worker, verified chunk download, full MP4 decode, 3 aspect ratios, 3 themes, audio/no-audio exports and timed photo appearance')

@@ -17,6 +17,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -44,7 +47,7 @@ jobs:
           exit "$MADAR_UI_FAILED"
       - name: Test actual Jupyter kernel execution
         run: |
-          python3 -m pip install --disable-pip-version-check jupyter_server==2.17.0 ipykernel==6.29.5 websocket-client==1.8.0
+          python3 -m pip install --disable-pip-version-check numpy==2.2.6 jupyter_server==2.17.0 ipykernel==6.29.5 websocket-client==1.8.0
           python3 qa/colab-jupyter.test.py
       - name: Test real Whisper inference and production options
         timeout-minutes: 8
