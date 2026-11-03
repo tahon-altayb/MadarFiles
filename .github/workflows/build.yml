@@ -1,7 +1,7 @@
 name: Build MadarFiles APK
 on:
   push:
-    branches: [features/motion-studio-20261102, main, master, fixes/usability-arabic-20261021, fixes/translation-20261021, development/gemini-studio-20261026, fixes/player-seek-background-20261030, fixes/player-rewind-20261030, features/cloud-censor-20261031]
+    branches: [features/product-motion-20261103, features/motion-studio-20261102, main, master, fixes/usability-arabic-20261021, fixes/translation-20261021, development/gemini-studio-20261026, fixes/player-seek-background-20261030, fixes/player-rewind-20261030, features/cloud-censor-20261031]
   workflow_dispatch:
 permissions:
   contents: read
@@ -74,6 +74,7 @@ jobs:
       - name: Check motion timeline and cloud contract
         run: |
           node qa/motion-clock.test.cjs
+          node qa/product-motion.test.cjs
           python3 qa/motion-cloud.test.py
       - name: Compile and lint before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:lintDebug :app:testDebugUnitTest
@@ -210,7 +211,7 @@ jobs:
           MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
         run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease
       - name: Verify update package and signing certificate
-        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 53 --version-name 1.9.18 --firebase-config app/google-services.json
+        run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 54 --version-name 1.9.19 --firebase-config app/google-services.json
       - name: Prepare APK
         run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.18.apk
       - name: Download installed-version baseline for upgrade test

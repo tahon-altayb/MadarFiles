@@ -4,7 +4,7 @@ import os,json,subprocess,tempfile,hashlib,shutil,math
 root=Path(__file__).resolve().parents[1];assets=root/'app/src/main/assets/motion';evidence=root/'qa/evidence/motion';evidence.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='madar-motion-render-') as tmp:
  job=Path(tmp)/('madar_'+'a'*32);job.mkdir()
- for name in ['core.js','Root.tsx','render.cjs','worker.py','package.json','Cairo.ttf']:shutil.copyfile(assets/name,job/name)
+ for name in ['core.js','product.js','Root.tsx','render.cjs','worker.py','package.json','Cairo.ttf']:shutil.copyfile(assets/name,job/name)
  subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','anullsrc=r=16000:cl=mono','-t','2.5',str(job/'voice.wav')],check=True)
  data=(job/'voice.wav').read_bytes();(job/'voice.wav.part_0').write_bytes(data)
  p={'version':1,'id':'b'*32,'title':'رحلة السفينة','theme':'paper','aspect':'9:16','voiceMode':'google','voice':'Charon','ready':True,'duration':2.5,'scenes':[{'id':'c'*12,'title':'أبحرت السفينة','narration':'أبحرت السفينة','seconds':2.5,'start':0,'end':2.5,'effect':'rise','transition':'fade','graphic':'ship','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[{'text':'أبحرت السفينة','anchor':'أبحرت السفينة','role':'bottom','group':0,'start':.5,'end':2.4,'manual':True}],'words':[]}]}

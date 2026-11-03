@@ -2,6 +2,8 @@
 import hashlib,json,math,os,re,shutil,subprocess,sys,threading,time,wave
 from pathlib import Path
 CHUNK=750_000
+os.environ['ORT_DISABLE_TELEMETRY']='1'
+os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
 ROOT=Path(__file__).resolve().parent
 os.chdir(ROOT)
 def atomic(name,data):
