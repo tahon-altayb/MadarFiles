@@ -25,7 +25,7 @@ public class MotionStartupTest {
   Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();String folder="madar_"+"a".repeat(32);ColabDiagnostics diagnostic=new ColabDiagnostics(c,"MOTION_COMPOSE");
   MotionCloud.WorkerProgress watch=new MotionCloud.WorkerProgress(folder,diagnostic,(p,m)->{});
   JSONObject state=new JSONObject().put("job",folder).put("stage","director").put("progress",24).put("heartbeat",1);
-  assertFalse(watch.accept(state));watch.lastBeat=System.nanoTime()-java.util.concurrent.TimeUnit.MINUTES.toNanos(3);
+  assertTrue("Live owned supervisor proves startup, before video completion",watch.started(state));assertFalse(watch.accept(state));watch.lastBeat=System.nanoTime()-java.util.concurrent.TimeUnit.MINUTES.toNanos(3);
   try{watch.accept(state);fail();}catch(java.io.IOException e){assertTrue(e.getMessage().contains("MOTION_HEARTBEAT"));}
   assertFalse(watch.accept(state.put("heartbeat",2)));
   try{watch.accept(state.put("job","unowned"));fail();}catch(java.io.IOException e){assertTrue(e.getMessage().contains("MOTION_JOB_PATH"));}

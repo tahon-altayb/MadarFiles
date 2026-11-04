@@ -24,6 +24,7 @@ final class MotionCloud {
  static final class WorkerProgress {
   final String folder;final ColabDiagnostics diagnostic;final Progress progress;long beat=-1,lastBeat=System.nanoTime();
   WorkerProgress(String folder,ColabDiagnostics diagnostic,Progress progress){this.folder=folder;this.diagnostic=diagnostic;this.progress=progress;}
+  boolean started(JSONObject state)throws Exception{accept(state);return true;}
   boolean accept(JSONObject state)throws Exception{
    if(!folder.equals(state.optString("job")))throw new IOException("Colab · MOTION_JOB_PATH");
    String key=state.optString("stage");
@@ -69,7 +70,7 @@ final class MotionCloud {
      // permits one safe re-submission if the channel loses its acknowledgement.
      for(int attempt=0;;attempt++){
       try(ColabKernel.Session channel=runtime.openKernel(kernelId,diagnostic::record)){
-       channel.execute(code,()->watch.accept(ColabRuntime.parseJson(runtime.getText(folder+"/status.json",65536))));break;
+       channel.execute(code,()->watch.started(ColabRuntime.parseJson(runtime.getText(folder+"/status.json",65536))));break;
       }catch(IOException error){if(attempt>=1||!retryStart(error.getMessage()))throw error;diagnostic.issue(error);diagnostic.record("MOTION_START_RETRY");progress.update(18,"استعادة بدء الموشن؛ لم يُنشأ طلب جديد");}
      }
      long lastRest=System.nanoTime(),missingSince=lastRest;
