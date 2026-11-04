@@ -138,15 +138,21 @@ def director_python():
     return binary
 
 def inference_python():
-    target=ROOT.parent/'madar-motion-speech-v2';binary=target/'bin/python'
-    if not (target/'ready').exists():
-        # Colab's default Python can change. Keep model dependencies in their own 3.11 environment.
-        run([sys.executable,'-m','pip','install','--disable-pip-version-check','uv==0.8.22'],180)
-        run([sys.executable,'-m','uv','venv','--python','3.11',target],240)
-        run([sys.executable,'-m','uv','pip','install','--python',binary,'torch==2.6.0','torchaudio==2.6.0','torchvision==0.21.0','numpy==1.26.4','--index-url','https://download.pytorch.org/whl/cu124'],600)
-        run([sys.executable,'-m','uv','pip','install','--python',binary,'silma-tts==1.0.5','transformers==4.51.3','accelerate==1.6.0','bitsandbytes==0.46.1','huggingface-hub==0.30.2','numpy==1.26.4'],750)
-        (target/'ready').write_text('1')
-    return binary
+    sys.path.insert(0,str(ROOT))
+    import speech_runtime
+    return speech_runtime.python()
+
+def speech(prepare=False):
+    sys.path.insert(0,str(ROOT))
+    import speech_runtime
+    speech_runtime.execute(inference_python(),prepare)
+
+def checkpoint(project,assets):
+    extra=[]
+    for i,name in enumerate(assets):
+        if not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',name):raise ValueError('REFERENCE_PATH')
+        extra.append(dict(name=name,**pack(Path(name),f'checkpoint_asset_{i}')))
+    atomic('checkpoint.json',{'protocol':1,'project':project,'assets':extra})
 
 def recording_transcript():
     status('align',22);run(['ffmpeg','-v','error','-y','-i','recording.media','-vn','-t','900.1','-ac','1','-ar','16000','-c:a','pcm_s16le','recording-asr.wav'],120)
@@ -160,20 +166,33 @@ def recording_transcript():
 def compose(request,node):
     p=request['project'];brief=p.get('creativeRequest')
     if not isinstance(brief,dict):raise ValueError('BRIEF_MISSING')
+    if p['voiceMode']=='silma':
+        for attempt in range(2):
+            try:speech(prepare=True);break
+            except ValueError as error:
+                if attempt or str(error) not in ['SPEECH_NETWORK','SPEECH_HTTP_429','SPEECH_HTTP_500','SPEECH_HTTP_502','SPEECH_HTTP_503','SPEECH_HTTP_504']:raise
+                status('speech_install',19)
     status('sources',21)
-    if p['voiceMode']=='recording':brief['recordingWords']=recording_transcript()
+    if p['voiceMode']=='recording' and p.get('motionCheckpoint')!='directed':brief['recordingWords']=recording_transcript()
     Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
-    status('director',24);binary=director_python();env=os.environ.copy();env['MADAR_NODE']=str(node)
-    try:run([binary,'director.py'],1800,env=env)
-    except subprocess.CalledProcessError:
-        state=json.loads(Path('progress.json').read_text())
-        raise ValueError(state.get('code','DIRECTOR_FAILED'))
-    generated=json.loads(Path('source-assets.json').read_text())
-    if not isinstance(generated,list) or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in generated):raise ValueError('REFERENCE_PATH')
-    p=json.loads(Path('project.json').read_text());request['project']=p
+    env=os.environ.copy();env['MADAR_NODE']=str(node)
+    if p.get('motionCheckpoint')=='directed':
+        generated=list(brief.get('images',[]))
+        Path('project.json').write_text(json.dumps(p,ensure_ascii=False))
+        run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')));"],30)
+    else:
+        status('director',24);binary=director_python()
+        try:run([binary,'director.py'],1800,env=env)
+        except subprocess.CalledProcessError:
+            state=json.loads(Path('progress.json').read_text())
+            raise ValueError(state.get('code','DIRECTOR_FAILED'))
+        generated=json.loads(Path('source-assets.json').read_text())
+        if not isinstance(generated,list) or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in generated):raise ValueError('REFERENCE_PATH')
+        p=json.loads(Path('project.json').read_text());request['project']=p
+    checkpoint(p,generated)
     Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
     if p['voiceMode']=='silma':
-        status('speech',46);run([inference_python(),'speech.py'],900,env=env)
+        status('speech',46);speech()
     align(request,node);p=json.loads(Path('project.json').read_text());request['project']=p
     # Do not report guessed alignment as complete. The editor can recover this project for review.
     checked=subprocess.run([str(node),'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
@@ -193,7 +212,7 @@ def main():
     if mode=='compose':result,extras=compose(request,node)
     else:
         if mode=='align' and request['project']['voiceMode']=='silma':
-            Path('project.json').write_text(json.dumps(request['project'],ensure_ascii=False));status('speech',22);run([inference_python(),'speech.py'],900)
+            Path('project.json').write_text(json.dumps(request['project'],ensure_ascii=False));status('speech',22);speech()
         result=align(request,node) if mode=='align' else render(request,node)
     project=json.loads(Path('project.json').read_text());manifest=pack(result) if result else None
     extra_files=[]
@@ -202,5 +221,7 @@ def main():
 if __name__=='__main__':
     try:main()
     except BaseException as error:
-        code=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z_]{1,40}',str(error)) else 'WORKER_FAILED'
-        atomic('progress.json',{'stage':'failed','progress':0,'code':code});raise SystemExit(1)
+        code=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z0-9_]{1,40}',str(error)) else 'WORKER_FAILED'
+        try:prior=json.loads(Path('progress.json').read_text())
+        except (OSError,ValueError):prior={}
+        atomic('progress.json',{'stage':'failed','progress':0,'code':code,'failureStage':prior.get('stage',''),'detail':prior.get('detail','')});raise SystemExit(1)
