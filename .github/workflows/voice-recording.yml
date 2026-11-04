@@ -1,0 +1,59 @@
+name: Verify approved voice and complete recording motion
+on:
+  push:
+    branches: [qa/voice-recording-20261104]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: motion-generated-idea
+          run-id: 41855082950
+          github-token: ${{ github.token }}
+          path: generated-project
+      - run: |
+          sudo apt-get -qq update
+          sudo apt-get install -y -qq ffmpeg
+          python3 qa/motion-voices-real.py --mode voice --source generated-project
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verified-male-motion
+          path: qa/evidence/voices/voice/
+  recording:
+    needs: voice
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-male-motion
+          path: generated-voice
+      - run: |
+          sudo apt-get -qq update
+          sudo apt-get install -y -qq ffmpeg
+          python3 qa/motion-voices-real.py --mode recording --source generated-voice
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verified-recording-motion
+          path: qa/evidence/voices/recording/
