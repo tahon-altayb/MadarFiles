@@ -38,7 +38,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
           script: |
-            gradle --no-daemon -PvalidationBuild=true :app:installDebug :app:installDebugAndroidTest
+            gradle --no-daemon -PvalidationBuild=true :app:testDebugUnitTest :app:installDebug :app:installDebugAndroidTest
             adb shell wm density 180
             bash qa/tail-continuity.sh
       - uses: actions/upload-artifact@v4
