@@ -15,3 +15,12 @@ for(const aspect of ['9:16','16:9','1:1'])for(const images of [[],[image]]){
  assert.deepEqual(C.assets({composition:noPhoto}),[],'A conceptual shot must not force an unrelated photograph');
 }
 console.log('PASS content-preserving adaptive layouts, photo/illustration choice, bounds and distinct composition across three aspects');
+
+assert.equal(C.semanticIcon({title:'التدقيق اللغوي',caption:'مراجعة النص قبل الطباعة'}),'book');
+assert.equal(C.semanticIcon({title:'عمل دقيق في دقيقة',caption:'تنظيم الملفات'}),'file');
+assert.equal(C.semanticIcon({title:'دقيق القمح البلدي',caption:'خبز كامل الحبة'}),'grain');
+assert.equal(C.semanticIcon({title:'فائدة بالدقيق البلدي'}),'grain');
+console.log('PASS Arabic topic illustrations: proofreading and minutes never become wheat; real food references remain supported');
+
+assert.equal(C.semanticIcon({title:'تنفيذ أوامر الملفات داخل المحادثة'}),'chat');
+C.validate(C.compose({title:'نتيجتك داخل المحادثة',caption:'أرفق ملفك واكتب طلبك.',reference:-1},{index:1}));
