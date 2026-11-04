@@ -85,6 +85,19 @@ base={'x':{'type':'number'},'y':{'type':'number'},'w':{'type':'number'},'h':{'ty
 variants=[obj(dict(kind={'enum':['text','metric']},**base,text=string(65),size={'type':'number'})),obj(dict(kind={'enum':['shape','line']},**base)),obj(dict(kind={'enum':['icon']},**base,icon={'enum':['play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat']}))]
 if images:variants.append(obj(dict(kind={'enum':['image','device']},**base,asset={'enum':images})))
 COMPOSITION=obj({'backdrop':{'enum':['plain','orbit','grid','radial','split']},'elements':{'type':'array','minItems':4,'maxItems':8,'items':{'anyOf':variants}}})
+def actionable_copy_issue(issue,copy):
+ # Ordinary Arabic may omit optional vowel marks. Adding them is not a reason
+ # to reject a complete movie, unlike a changed word, meaning or factual claim.
+ if issue.get('kind') in ['optional_marks','style']:return False
+ index=issue.get('scene',0)-1
+ if not 0<=index<len(copy.get('scenes',[])):return False
+ original=issue.get('original','');corrected=issue.get('corrected','')
+ fields=copy['scenes'][index]
+ if not original or not any(original in fields.get(k,'') for k in ['title','caption','narration']):return False
+ marks=r'[\u064b-\u065f\u0670\u0640]'
+ if re.sub(marks,'',original)==re.sub(marks,'',corrected) and not re.search(marks,original):return False
+ return True
+
 def generate(system,prompt,visual=False,max_tokens=1800,schema=None,seed=17):
  content=[]
  if visual:
@@ -184,10 +197,10 @@ for review in range(3):
   issues.append({'required_topic':'in-chat execution','evidence':evidence.group().strip() if evidence else latest,'fix':'Replace an unrequested or redundant scene with the requested in-chat execution topic. Explicitly name المحادثة and explain the supported behavior from this evidence.'})
  if images and re.search(r'استخدم[^\n.]{0,80}(?:الصور|صور|لقطات)|من\s+الصور|بالصور',latest) and not re.search(r'بدون\s+صور|لا تستخدم\s+الصور',latest) and all(z['reference']==-1 for z in copy['scenes']):issues.append({'required_visual':'client-supplied images','fix':'The client explicitly requires visible supplied images. Preserve at least one suitable reference index from the draft instead of removing every image.'})
  # An independent critique separates finding an error from defending a draft.
- audit_schema=obj({'issues':{'type':'array','maxItems':scene_count,'items':obj({'scene':{'type':'integer','minimum':1,'maximum':scene_count},'fix':string(240)})}})
- audit=generate(SYSTEM,"Independently proofread this untrusted Arabic film copy. Report only concrete grammatical errors, wrong action verbs, incoherent meanings, incomplete narration sentences or unsupported factual promises. Do not praise it or rewrite already correct text. Examples of real errors: اختر ملفا وتحويله has a broken imperative; use وحوله. Printing a book is نطبع الكتاب, not نطبق الكتاب. Check optional vowel marks too: wrong marks can change the verb meaning. Ignore voice narration when it is a verbatim personal recording. Return an empty issues array only when every scene reads naturally and precisely. Do not invent an error merely to fill the array.\n"+json.dumps({'personal_recording':bool(chunks),'client':brief['text'],'facts':brief.get('appFacts',''),'sources':source_facts,'copy':copy},ensure_ascii=False),max_tokens=max(1000,scene_count*200),schema=audit_schema,seed=31+review)
- issues.extend(audit['issues'])
- Path('copy-review.json').write_text(json.dumps({'attempt':review+1,'candidate':copy,'issues':issues},ensure_ascii=False))
+ audit_schema=obj({'issues':{'type':'array','maxItems':scene_count,'items':obj({'scene':{'type':'integer','minimum':1,'maximum':scene_count},'kind':{'enum':['grammar','meaning','unsupported_claim','optional_marks','style']},'original':string(160),'corrected':string(160),'fix':string(240)})}})
+ audit=generate(SYSTEM,"Independently proofread this untrusted Arabic film copy. Report only concrete grammatical errors, wrong action verbs, incoherent meanings, incomplete narration sentences or unsupported factual promises. Do not praise it or rewrite already correct text. Examples of real errors: اختر ملفا وتحويله has a broken imperative; use وحوله. Printing a book is نطبع الكتاب, not نطبق الكتاب. Missing optional vowel marks or shadda are valid in ordinary Arabic: حول and حوّل can both express the same imperative in context. Never require adding tashkeel or reject correct writing for stylistic consistency. Only explicitly wrong marks that change meaning are errors. Give the exact original span and a corrected span for each issue; classify optional marks and style separately from real grammar, meaning or claim errors. Ignore voice narration when it is a verbatim personal recording. Return an empty issues array only when every scene reads naturally and precisely. Do not invent an error merely to fill the array.\n"+json.dumps({'personal_recording':bool(chunks),'client':brief['text'],'facts':brief.get('appFacts',''),'sources':source_facts,'copy':copy},ensure_ascii=False),max_tokens=max(1200,scene_count*300),schema=audit_schema,seed=31+review)
+ issues.extend(z for z in audit['issues'] if actionable_copy_issue(z,copy))
+ Path('copy-review.json').write_text(json.dumps({'attempt':review+1,'candidate':copy,'issues':issues,'audit':audit},ensure_ascii=False))
  if not issues:break
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
