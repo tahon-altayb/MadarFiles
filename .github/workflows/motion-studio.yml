@@ -22,6 +22,7 @@ jobs:
           node qa/motion-clock.test.cjs
           node qa/product-motion.test.cjs
           python3 qa/motion-cloud.test.py
+          python3 qa/motion-sources.test.py
           python3 qa/motion-render.test.py
           python3 qa/product-render.test.py
       - uses: actions/upload-artifact@v4

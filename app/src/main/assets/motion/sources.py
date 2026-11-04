@@ -38,7 +38,10 @@ def collect(brief):
   if len(brief.get('images',[]))+len(new)<8 and parser.images:
    # A landing page may provide a product photo. Keep it separate from verified user images.
    from PIL import Image,ImageOps
-   image_data,_,_=fetch(urllib.parse.urljoin(resolved,parser.images[0]),8_000_000,['image/'])
-   image=Image.open(io.BytesIO(image_data));image.load();image=ImageOps.exif_transpose(image).convert('RGB');image.thumbnail((1800,1800))
-   name='asset_'+hashlib.sha256(image_data).hexdigest()[:32]+'.jpg';image.save(name,quality=92);new.append(name)
+   try:
+    image_data,_,_=fetch(urllib.parse.urljoin(resolved,parser.images[0]),8_000_000,['image/'])
+    image=Image.open(io.BytesIO(image_data));image.load();image=ImageOps.exif_transpose(image).convert('RGB');image.thumbnail((1800,1800))
+    name='asset_'+hashlib.sha256(image_data).hexdigest()[:32]+'.jpg';image.save(name,quality=92);new.append(name)
+   except (OSError,ValueError,Image.DecompressionBombError):
+    sources[-1]['imageUnavailable']=True  # Valid page facts can still drive typography and vectors.
  brief['sources']=sources;brief['images']=list(dict.fromkeys(brief.get('images',[])+new));return new

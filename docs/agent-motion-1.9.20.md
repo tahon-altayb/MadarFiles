@@ -9,3 +9,5 @@ The approved synthetic male reference is bundled with SILMA TTS 1.0.5 (model rev
 Raw product form inputs save separately from the project, including incomplete/multiline information. Example fill requires confirmation when information is present and keeps a persistent undo snapshot. Theme changes and project reloads do not refill the example over raw input.
 
 Verification covers shared timing, product regression, native draft persistence and scene-graph bounds, browser draft recovery/undo, scoped chat progress/results, inline playback, voice selection, cancellation, and follow-up revisions. Model inference and GPU/session behavior require separate runtime evidence; passing interface tests alone does not establish creative quality.
+
+Follow-up verification fixes restore existing editor audio mixing while keeping motion music-free, scope motion follow-ups so image edits still reach their tools, request missing recording/page-range inputs inside chat, and keep all words when continuous speech crosses scene boundaries. Optional unavailable page artwork no longer discards otherwise readable page facts.
