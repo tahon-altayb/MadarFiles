@@ -1,0 +1,71 @@
+name: Verify and sign the final motion asset update
+on:
+  push:
+    branches: [qa/final-asset-update-20261104]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  generation:
+    runs-on: ubuntu-22.04
+    container: ubuntu:24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [idea, images, page]
+    steps:
+      - name: Prepare container dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq git ca-certificates curl libgomp1 libnuma1 ffmpeg
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+          export MADAR_CHROME_PATH="$(node -p "require('playwright').chromium.executablePath()")"
+          python3 qa/motion-generation.test.py --case ${{ matrix.case }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-generated-${{ matrix.case }}
+          path: qa/evidence/generation/${{ matrix.case }}/
+  package:
+    needs: generation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: MadarFiles-1.9.20-APK
+          run-id: 41869742153
+          github-token: ${{ github.token }}
+          path: base-release
+      - name: Verify unchanged application payload and sign the final asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MADAR_KEYSTORE_BASE64: ${{ secrets.MADAR_KEYSTORE_BASE64 }}
+          MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+          MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+          MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+        run: python3 qa/final-asset-update.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-final-MadarFiles-APK
+          path: |
+            MadarFiles-1.9.20-update.apk
+            release-proof.json
+          if-no-files-found: error
