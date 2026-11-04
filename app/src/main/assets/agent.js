@@ -65,7 +65,7 @@
   const explicitCancel=/^(?:إلغاء|الغاء|ألغ|الغي)\s+(?:طلب\s+)?(?:الموشن|الإعلان|الاعلان)[.!؟\s]*$/.test(text);
   if(isMotionRequest(text)&&!resume){delete thread.motionPending;save();return false;}
   if(waiting.paused&&!resume&&!explicitCancel)return false;
-  const otherTool=(/^(?:حول|حوّل|اضغط|قص|اقص|استخرج|ادمج|ترجم|نظف|نقّ|حسن|حسّن|ارفع|خفض|احذف|أزل|ازل|افصل|افتح|حمّل|حمل|نزّل|نزل|ارسم|صمم|صمّم)(?=$|[\s،])/.test(text)&&/صور|صورة|فيديو|مقطع|ملف|PDF|صوت|تسجيل|نص|مستند|موسيقى|خلفية|QR/i.test(text))||/^(?:عدل|عدّل|غير|غيّر).*الصورة/.test(text)||/^(?:سوي|أنشئ|انشئ|اصنع|أريد|اريد|أبغى|ابغى)\s+.*(?:كود QR|رمز QR|باركود)/i.test(text);
+  const otherTool=(/^(?:حول|حوّل|اضغط|قص|اقص|استخرج|ادمج|ترجم|نظف|نقّ|حسن|حسّن|ارفع|خفض|احذف|أزل|ازل|افصل|افتح|حمّل|حمل|نزّل|نزل|ارسم|صمم|صمّم|أضف|اضف)(?=$|[\s،])/.test(text)&&/صور|صورة|فيديو|مقطع|ملف|PDF|صوت|تسجيل|نص|مستند|موسيقى|خلفية|QR/i.test(text))||/^(?:عدل|عدّل|غير|غيّر).*الصورة/.test(text)||/^(?:سوي|أنشئ|انشئ|اصنع|أريد|اريد|أبغى|ابغى)\s+.*(?:كود QR|رمز QR|باركود)/i.test(text);
   if(otherTool){waiting.paused=true;if(record)line(text,'user');input.value='';line('طلب الموشن محفوظ. يمكنك الرجوع إليه بكتابة «كمل الموشن».');save(true);return 'recorded';}
   if(record)line(text,'user');input.value='';
   if(explicitCancel||/^(?:إلغاء|الغاء|ألغ|الغي|توقف|اترك الطلب)[.!؟\s]*$/.test(text)){delete thread.motionPending;save(true);line('ألغيت طلب الموشن المعلّق.');return true;}

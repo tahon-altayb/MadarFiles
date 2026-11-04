@@ -24,3 +24,12 @@ console.log('PASS Arabic topic illustrations: proofreading and minutes never bec
 
 assert.equal(C.semanticIcon({title:'تنفيذ أوامر الملفات داخل المحادثة'}),'chat');
 C.validate(C.compose({title:'نتيجتك داخل المحادثة',caption:'أرفق ملفك واكتب طلبك.',reference:-1},{index:1}));
+
+// A huge nominal font inside a short box still shrinks to unreadable text.
+const bad=C.compose({title:'عنوان واضح',caption:'جملة عربية واضحة تدعم موضوع المشهد',reference:-1},{aspect:'16:9'});
+bad.elements.find(e=>e.kind==='text').h=.03;
+assert.throws(()=>C.validateDesign(bad,{title:'عنوان واضح'},'16:9'),/shrink Arabic/);
+const orphan=C.compose({title:'عنوان واضح',caption:'وصف واضح',reference:-1},{aspect:'16:9'});
+orphan.elements.push({kind:'shape',x:.07,y:.01,w:.4,h:.1,color:'card',motion:'fade',delay:0});
+assert.throws(()=>C.validateDesign(orphan,{title:'عنوان واضح'},'16:9'),/Empty decorative/);
+console.log('PASS newly planned layouts reject unreadable text boxes and empty decorative cards');

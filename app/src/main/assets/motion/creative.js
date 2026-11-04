@@ -5,6 +5,16 @@ const kinds=['text','shape','image','device','icon','line','metric'],motions=['r
 const colors=['ink','accent','card','muted','background'];
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));const num=(v,a,b)=>typeof v==='number'&&Number.isFinite(v)&&v>=a&&v<=b;
 function assets(s){return [...new Set((s.composition?.elements||[]).filter(e=>['image','device'].includes(e.kind)).map(e=>e.asset).filter(Boolean))];}
+// Bind editable labels to the same elements used by preview and export. Persist the role
+// so a later title change cannot accidentally select a matching supporting caption.
+function textBindings(scene){
+ const elements=(scene.composition?.elements||[]).filter(e=>['text','metric'].includes(e.kind));
+ const heading=elements.find(e=>e.textRole==='heading')||elements.find(e=>e.text===scene.title)||elements.slice().sort((a,b)=>b.size-a.size)[0];
+ if(heading)heading.textRole='heading';
+ const supporting=elements.filter(e=>e!==heading);for(const e of supporting)e.textRole='supporting';
+ return {heading,supporting};
+}
+function setTitle(scene,value){const {heading}=textBindings(scene);scene.title=value;if(heading)heading.text=value;}
 function validate(c){
  if(!c||!['plain','orbit','grid','radial','split'].includes(c.backdrop)||!Array.isArray(c.elements)||!c.elements.length||c.elements.length>16)throw Error('تكوين المشهد غير صالح');
  for(const e of c.elements){if(!kinds.includes(e.kind)||!motions.includes(e.motion)||!colors.includes(e.color)||!num(e.x,0,.96)||!num(e.y,0,.96)||!num(e.w,.02,1)||!num(e.h,.005,1)||e.x+e.w>1.001||e.y+e.h>1.001||!num(e.delay,0,.7))throw Error('عنصر خارج حدود المشهد');
@@ -14,6 +24,20 @@ function validate(c){
  }
  // Text blocks cannot collide with each other; decorative layers may deliberately overlap.
  const text=c.elements.filter(e=>['text','metric'].includes(e.kind));for(let i=0;i<text.length;i++)for(let j=i+1;j<text.length;j++){const a=text[i],b=text[j];if(Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)>.008&&Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)>.008)throw Error('النصوص متداخلة');}
+ return c;
+}
+// Stricter checks apply only to newly planned layouts; imported projects remain editable.
+function validateDesign(c,shot,aspect='9:16'){
+ validate(c);const ratio=aspect==='16:9'?9/16:aspect==='1:1'?1:16/9;
+ const meaningful=c.elements.filter(e=>['text','metric','icon','image','device'].includes(e.kind));
+ if(!c.elements.some(e=>['icon','image','device'].includes(e.kind)&&e.w*e.h>=.025))throw Error('Give the topic a visible purposeful illustration');
+ for(const e of c.elements){
+  if(['text','metric'].includes(e.kind)){
+   const min=e.text===shot.title?48:28,lines=Math.max(1,Math.ceil(e.text.length*min*.55/(e.w*1080)));
+   if(e.h*1080*ratio<lines*min*1.55)throw Error('Text box would shrink Arabic below mobile reading size');
+  }
+  if(e.kind==='shape'&&e.w*e.h>.035&&!meaningful.some(v=>Math.max(0,Math.min(v.x+v.w,e.x+e.w)-Math.max(v.x,e.x))*Math.max(0,Math.min(v.y+v.h,e.y+e.h)-Math.max(v.y,e.y))>=Math.min(v.w*v.h,e.w*e.h)*.25))throw Error('Empty decorative card without content');
+ }
  return c;
 }
 // Match complete Arabic words (with ordinary clitics), so التدقيق cannot become دقيق القمح.
@@ -89,4 +113,4 @@ function draw(ctx,p,s,time,images){
  ctx.fillStyle=accent;ctx.fillRect(W*.06,H*.955,W*.88*progress,Math.max(2,H*.002));
  ctx.restore();
 }
-return {validate,compose,draw,assets,semanticIcon,kinds,motions};});
+return {validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions};});

@@ -32,6 +32,27 @@ const initial={version:1,id:'a'.repeat(32),title:'مشروعي الجديد',the
   await page.evaluate(()=>{const p=window.__calls.filter(c=>c.action==='save').at(-1).project;window.receive({type:'project',project:p,projects:[{id:p.id,title:p.title}]});});assert.equal(await page.evaluate(()=>document.querySelectorAll('.issue').length),0);
   await page.evaluate(()=>document.getElementById('pickProductImage').click());assert.equal(await page.evaluate(()=>window.__calls.at(-1).action),'pickProductImage');
   await page.setViewport({width:412,height:915,deviceScaleFactor:1,isMobile:true,hasTouch:true,isLandscape:false});await page.evaluate(()=>{scrollTo(0,0);});shot=await page._client().send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(out,'product-studio-mobile.png'),Buffer.from(shot.value.data,'base64'));
-  console.log('PASS: shipped Arabic UI, 3-scene editing/persistence, timed preview, explicit cloud opt-in, mobile and desktop layout');
+  // Editing generated creative labels must affect the actual renderer without
+  // discarding a prepared recording or its measured word clock.
+  const prepared=await page.evaluate(project=>{
+   const p=structuredClone(project),s=p.scenes[0];p.id='f'.repeat(32);p.voiceMode='recording';p.ready=true;p.duration=3;p.audio='voice.wav';p.audioRevision=7;
+   Object.assign(s,{graphic:'creative',title:'عنوان أصلي',narration:'هذا تسجيل شخصي',seconds:3,start:0,end:3,words:[{text:'هذا',start:0,end:.6},{text:'تسجيل',start:.7,end:1.3},{text:'شخصي',start:1.4,end:2.1}]});
+   s.composition=MadarCreative.compose({title:s.title,caption:'نص داعم أصلي',narration:s.narration,reference:-1});
+   window.receive({type:'project',project:p,projects:[{id:p.id,title:p.title}]});const seek=document.getElementById('seek');seek.value='1.5';seek.dispatchEvent(new Event('input'));return p;
+  },initial);
+  const beforeLabelEdit=await page.evaluate(()=>document.getElementById('canvas').toDataURL());
+  await page.evaluate(()=>{
+   for(const [label,value] of [['عنوان المشهد','عنوان جديد واضح'],['النص الداعم 1','وصف جديد للمشهد']]){const e=document.querySelector(`[aria-label="${label}"]`);e.value=value;e.dispatchEvent(new Event('input'));}
+   document.getElementById('exportProject').click();
+  });
+  const edited=await page.evaluate(()=>({project:window.__calls.filter(c=>c.action==='save').at(-1).project,frame:document.getElementById('canvas').toDataURL()}));
+  assert.notEqual(edited.frame,beforeLabelEdit);assert.equal(edited.project.scenes[0].title,'عنوان جديد واضح');
+  const labels=edited.project.scenes[0].composition.elements.filter(e=>['text','metric'].includes(e.kind));
+  assert.equal(labels.find(e=>e.textRole==='heading').text,'عنوان جديد واضح');assert.equal(labels.find(e=>e.textRole==='supporting').text,'وصف جديد للمشهد');
+  assert.equal(edited.project.ready,true);assert.equal(edited.project.audioRevision,7);assert.equal(edited.project.audio,'voice.wav');assert.deepEqual(edited.project.scenes[0].words,prepared.scenes[0].words);
+  await page.evaluate(p=>{window.receive({type:'project',project:p,projects:[{id:p.id,title:p.title}]});const select=document.querySelector('[aria-label="الرسم عندما لا تظهر صورة"]');select.value='steps';select.dispatchEvent(new Event('change'));const back=document.querySelector('[aria-label="الرسم عندما لا تظهر صورة"]');back.value='creative';back.dispatchEvent(new Event('change'));document.getElementById('exportProject').click();},edited.project);
+  assert.equal(await page.evaluate(()=>document.querySelector('[aria-label="النص الداعم 1"]').value),'وصف جديد للمشهد');
+  assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c.action==='save').at(-1).project.scenes[0].graphic),'creative');
+  console.log('PASS: shipped Arabic UI, creative title/caption persistence with prepared audio, 3-scene editing/persistence, timed preview, explicit cloud opt-in, mobile and desktop layout');
  }finally{if(browser)await browser.close({silent:true});server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
