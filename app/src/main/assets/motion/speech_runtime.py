@@ -3,9 +3,10 @@ import collections,json,os,re,subprocess,sys,threading
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 
-def publish(stage,detail=''):
+def publish(stage,detail='',scene=0,total=0):
     value={'stage':stage,'progress':19 if stage.startswith('speech_') else 46}
     if detail:value['detail']=detail
+    if scene:value.update(scene=scene,total=total)
     p=ROOT/'progress.json.tmp';p.write_text(json.dumps(value));p.replace(ROOT/'progress.json')
 
 def classify(text):

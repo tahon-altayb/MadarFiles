@@ -1,5 +1,5 @@
 """Madar motion: bounded owned inputs, measured word clocks, static renderer only."""
-import hashlib,json,math,os,re,shutil,subprocess,sys,threading,time,wave
+import collections,hashlib,json,math,os,re,shutil,subprocess,sys,threading,time,wave
 from pathlib import Path
 CHUNK=750_000
 os.environ['ORT_DISABLE_TELEMETRY']='1'
@@ -10,7 +10,28 @@ os.chdir(ROOT)
 def atomic(name,data):
     tmp=Path(name+'.tmp');tmp.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8');tmp.replace(name)
 def status(stage,progress):atomic('progress.json',{'stage':stage,'progress':progress})
-def run(args,timeout=600,**kw):return subprocess.run([str(x) for x in args],check=True,timeout=timeout,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,**kw)
+def run(args,timeout=600,**kw):
+    command=[str(x) for x in args];tail=collections.deque(maxlen=16)
+    process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,**kw)
+    def drain():
+        while True:
+            b=process.stdout.read(4096)
+            if not b:break
+            tail.append(b)
+    reader=threading.Thread(target=drain,daemon=True);reader.start()
+    try:code=process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill();process.wait();reader.join(5);Path('worker-error.log').write_bytes(b''.join(tail));raise
+    reader.join(5)
+    if code:
+        Path('worker-error.log').write_bytes(b''.join(tail));raise subprocess.CalledProcessError(code,command)
+    return subprocess.CompletedProcess(command,code)
+
+def isolated_env():
+    env=os.environ.copy()
+    for key in ['PYTHONPATH','PYTHONHOME','PYTHONSTARTUP']:env.pop(key,None)
+    return env
+
 def sha(path):
     h=hashlib.sha256()
     with path.open('rb') as f:
@@ -100,7 +121,7 @@ def align(request,node):
     status('install',26);binary=asr_python();Path('asr-inputs.json').write_text(json.dumps(files));Path('asr-run.py').write_text(ASR_CODE)
     status('align',36)
     if mode=='recording' and Path('recording-segments.json').is_file():shutil.copyfile('recording-segments.json','segments.json')
-    else:run([binary,'asr-run.py'],1500)
+    else:run([binary,'-I','asr-run.py'],1500,env=isolated_env())
     if mode=='recording':
         segments=json.loads(Path('segments.json').read_text());segments[0]['whole']=True;Path('segments.json').write_text(json.dumps(segments))
     run([node,'-e',"const fs=require('fs'),C=require('./core');const p=C.align(JSON.parse(fs.readFileSync('request.json')).project,JSON.parse(fs.readFileSync('segments.json')));fs.writeFileSync('project.json',JSON.stringify(p));"],60)
@@ -147,18 +168,18 @@ def speech(prepare=False):
     import speech_runtime
     speech_runtime.execute(inference_python(),prepare)
 
-def checkpoint(project,assets):
+def checkpoint(project,assets,phase="directed"):
     extra=[]
     for i,name in enumerate(assets):
-        if not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',name):raise ValueError('REFERENCE_PATH')
+        if not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg|speech_[0-6]\.wav',name):raise ValueError('REFERENCE_PATH')
         extra.append(dict(name=name,**pack(Path(name),f'checkpoint_asset_{i}')))
-    atomic('checkpoint.json',{'protocol':1,'project':project,'assets':extra})
+    atomic('checkpoint.json',{'protocol':1,'project':project,'assets':extra,'phase':phase})
 
 def recording_transcript():
     status('align',22);run(['ffmpeg','-v','error','-y','-i','recording.media','-vn','-t','900.1','-ac','1','-ar','16000','-c:a','pcm_s16le','recording-asr.wav'],120)
     with wave.open('recording-asr.wav','rb') as w:
         if not .1<=w.getnframes()/w.getframerate()<=900:raise ValueError('AUDIO_DURATION')
-    binary=asr_python();Path('asr-inputs.json').write_text(json.dumps(['recording-asr.wav']));Path('asr-run.py').write_text(ASR_CODE);run([binary,'asr-run.py'],1500)
+    binary=asr_python();Path('asr-inputs.json').write_text(json.dumps(['recording-asr.wav']));Path('asr-run.py').write_text(ASR_CODE);run([binary,'-I','asr-run.py'],1500,env=isolated_env())
     segments=json.loads(Path('segments.json').read_text());words=segments[0]['words']
     if len(words)<4:raise ValueError('RECORDING_NO_WORDS')
     Path('recording-segments.json').write_text(json.dumps(segments));return [w['text'] for w in words]
@@ -166,33 +187,34 @@ def recording_transcript():
 def compose(request,node):
     p=request['project'];brief=p.get('creativeRequest')
     if not isinstance(brief,dict):raise ValueError('BRIEF_MISSING')
-    if p['voiceMode']=='silma':
+    if p['voiceMode']=='silma' and p.get('motionCheckpoint')!='voiced':
         for attempt in range(2):
             try:speech(prepare=True);break
             except ValueError as error:
                 if attempt or str(error) not in ['SPEECH_NETWORK','SPEECH_HTTP_429','SPEECH_HTTP_500','SPEECH_HTTP_502','SPEECH_HTTP_503','SPEECH_HTTP_504']:raise
                 status('speech_install',19)
     status('sources',21)
-    if p['voiceMode']=='recording' and p.get('motionCheckpoint')!='directed':brief['recordingWords']=recording_transcript()
+    if p['voiceMode']=='recording' and p.get('motionCheckpoint') not in ['directed','voiced']:brief['recordingWords']=recording_transcript()
     Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
     env=os.environ.copy();env['MADAR_NODE']=str(node)
-    if p.get('motionCheckpoint')=='directed':
+    if p.get('motionCheckpoint') in ['directed','voiced']:
         generated=list(brief.get('images',[]))
         Path('project.json').write_text(json.dumps(p,ensure_ascii=False))
         run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')));"],30)
     else:
         status('director',24);binary=director_python()
-        try:run([binary,'director.py'],1800,env=env)
+        try:run([binary,'-I','director.py'],1800,env=env)
         except subprocess.CalledProcessError:
             state=json.loads(Path('progress.json').read_text())
             raise ValueError(state.get('code','DIRECTOR_FAILED'))
         generated=json.loads(Path('source-assets.json').read_text())
         if not isinstance(generated,list) or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in generated):raise ValueError('REFERENCE_PATH')
         p=json.loads(Path('project.json').read_text());request['project']=p
-    checkpoint(p,generated)
+    if p.get('motionCheckpoint')!='voiced':checkpoint(p,generated)
     Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
     if p['voiceMode']=='silma':
-        status('speech',46);speech()
+        if p.get('motionCheckpoint')!='voiced':status('speech',46);speech()
+        checkpoint(p,generated+[f'speech_{i}.wav' for i in range(len(p['scenes']))],phase='voiced')
     align(request,node);p=json.loads(Path('project.json').read_text());request['project']=p
     # Do not report guessed alignment as complete. The editor can recover this project for review.
     checked=subprocess.run([str(node),'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
@@ -221,7 +243,7 @@ def main():
 if __name__=='__main__':
     try:main()
     except BaseException as error:
-        code=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z0-9_]{1,40}',str(error)) else 'WORKER_FAILED'
+        code=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z0-9_]{1,40}',str(error)) else 'WORKER_TIMEOUT' if isinstance(error,subprocess.TimeoutExpired) else 'WORKER_PROCESS' if isinstance(error,subprocess.CalledProcessError) else 'WORKER_FILE' if isinstance(error,FileNotFoundError) else 'WORKER_IMPORT' if isinstance(error,ImportError) else 'WORKER_FAILED'
         try:prior=json.loads(Path('progress.json').read_text())
         except (OSError,ValueError):prior={}
         atomic('progress.json',{'stage':'failed','progress':0,'code':code,'failureStage':prior.get('stage',''),'detail':prior.get('detail','')});raise SystemExit(1)

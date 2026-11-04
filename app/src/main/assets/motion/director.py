@@ -1,6 +1,7 @@
 """Pinned local vision runtime. The model emits bounded scene data, never executable code."""
 import os,json,re,subprocess,sys,uuid,time,hashlib,base64,socket,atexit,tarfile,urllib.request,urllib.error
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from huggingface_hub import hf_hub_download
 os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
 def report_error(kind,value,traceback):
@@ -11,7 +12,10 @@ sys.excepthook=report_error
 MODEL='unsloth/Qwen3.5-9B-GGUF';REVISION='3885219b6810b007914f3a7950a8d1b469d598a5'
 RUNTIME='b12089';RUNTIME_SHA='f3cd7d5d34dee97be7137b749723ac10228055b85336fb56f1d5d0c80ebb737d'
 DIRECTOR_STARTED=time.monotonic()
-ROOT=Path.cwd();request=json.loads(Path('request.json').read_text());p=request['project'];brief=p['creativeRequest']
+ROOT=Path.cwd()
+def stage(name,progress=24,scene=0,total=0):
+ tmp=Path('progress.json.tmp');tmp.write_text(json.dumps({'stage':name,'progress':progress,'scene':scene,'total':total,'engine':globals().get('active_engine','')}));tmp.replace('progress.json')
+request=json.loads(Path('request.json').read_text());p=request['project'];brief=p['creativeRequest']
 if not isinstance(brief.get('text'),str) or not 1<=len(brief['text'])<=6000:raise ValueError('BRIEF_SIZE')
 from sources import collect
 Path('progress.json').write_text(json.dumps({'stage':'sources','progress':21}))
@@ -20,21 +24,8 @@ images=brief.get('images',[])
 if not isinstance(images,list) or len(images)>8 or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in images):raise ValueError('REFERENCE_PATH')
 Path('progress.json').write_text(json.dumps({'stage':'director','progress':24}))
 if os.uname().machine not in ['x86_64','amd64']:raise ValueError('RUNTIME_PLATFORM')
-target=ROOT.parent/('madar-motion-llama-'+RUNTIME);binary=target/('llama-'+RUNTIME)/'llama-server'
-if not binary.is_file():
- target.mkdir(parents=True,exist_ok=True);archive=target/'runtime.tar.gz'
- url=f'https://github.com/ggml-org/llama.cpp/releases/download/{RUNTIME}/llama-{RUNTIME}-bin-ubuntu-x64.tar.gz'
- with urllib.request.urlopen(url,timeout=45) as source,archive.open('wb') as output:
-  total=0
-  while True:
-   b=source.read(65536)
-   if not b:break
-   total+=len(b)
-   if total>128*1024*1024:raise ValueError('RUNTIME_SIZE')
-   output.write(b)
- if hashlib.sha256(archive.read_bytes()).hexdigest()!=RUNTIME_SHA:raise ValueError('RUNTIME_HASH')
- with tarfile.open(archive) as tar:tar.extractall(target,filter='data')
- if not binary.is_file():raise ValueError('RUNTIME_MISSING')
+stage('director_download');from director_runtime import options,threads,offloaded
+engines=options()
 weights=hf_hub_download(MODEL,'Qwen3.5-9B-UD-Q4_K_XL.gguf',revision=REVISION)
 vision=hf_hub_download(MODEL,'mmproj-F16.gguf',revision=REVISION)
 # Verify the exact redistributed files whose license and upstream provenance were reviewed.
@@ -50,9 +41,9 @@ try:
  if limit.isdigit() and int(limit)<=9*1024**3:context_size=8192
 except OSError:pass
 key=uuid.uuid4().hex;log=Path('director-runtime.log').open('wb')
-server=subprocess.Popen([str(binary),'-m',weights,'--mmproj',vision,'--host','127.0.0.1','--port',str(port),'--api-key',key,'-c',str(context_size),'-ctk','q8_0','-ctv','q8_0','-fa','on','--image-max-tokens','384','-np','1','-t',str(min(4,os.cpu_count() or 2)),'-tb',str(min(4,os.cpu_count() or 2)),'-ngl','0','--no-webui'],stdout=log,stderr=log)
+server=None
 def close_server():
- if server.poll() is None:
+ if server is not None and server.poll() is None:
   server.terminate()
   try:server.wait(timeout=10)
   except subprocess.TimeoutExpired:server.kill();server.wait(timeout=5)
@@ -71,13 +62,34 @@ def local_request(route,data=None,timeout=600):
   message=e.read(2000).decode(errors='replace').lower()
   if 'context' in message:raise ValueError('DIRECTOR_CONTEXT') from e
   raise ValueError('DIRECTOR_FAILED') from e
-deadline=time.monotonic()+120
-while True:
- if server.poll() is not None:raise ValueError('RUNTIME_START')
- try:local_request('/health',timeout=3);break
- except (OSError,ValueError):
-  if time.monotonic()>deadline:raise ValueError('RUNTIME_START')
-  time.sleep(.3)
+for engine in engines:
+ stage('director_load')
+ selected_context=min(context_size,8192) if engine['gpu'] else context_size
+ try:
+  server=subprocess.Popen([str(engine['binary']),'-m',weights,'--mmproj',vision,'--host','127.0.0.1','--port',str(port),'--api-key',key,'-c',str(selected_context),'-ctk','q8_0','-ctv','q8_0','-fa','on','--image-max-tokens','384','-np','1','-t',str(threads()),'-tb',str(threads()),'-ngl','99' if engine['gpu'] else '0','--no-webui'],env=engine['env'],stdout=log,stderr=log)
+ except OSError:
+  if engine['gpu']:continue
+  raise ValueError('RUNTIME_START')
+ deadline=time.monotonic()+120;healthy=False
+ while server.poll() is None and time.monotonic()<deadline:
+  try:local_request('/health',timeout=3);healthy=True;break
+  except (OSError,ValueError):time.sleep(.3)
+ log.flush()
+ if healthy and engine['gpu']:
+  try:
+   probe=local_request('/v1/chat/completions',{'model':'local','messages':[{'role':'user','content':'اكتب نعم'}],'max_tokens':8,'temperature':0,'chat_template_kwargs':{'enable_thinking':False}},timeout=45)
+   healthy=bool(probe.get('choices'))
+  except (OSError,ValueError):healthy=False
+ if healthy and (not engine['gpu'] or offloaded(Path('director-runtime.log').read_text(errors='replace'))):
+  active_engine='cuda' if engine['gpu'] else 'cpu'
+  Path('director-engine.json').write_text(json.dumps({'active':active_engine,'verified':True,'threads':threads()}))
+  stage('director_'+active_engine);context_size=selected_context;break
+ if server.poll() is None:
+  server.terminate()
+  try:server.wait(timeout=10)
+  except subprocess.TimeoutExpired:server.kill();server.wait(timeout=5)
+ if not engine['gpu']:raise ValueError('RUNTIME_START')
+else:raise ValueError('RUNTIME_START')
 def string(limit):return {'type':'string','minLength':1,'maxLength':limit}
 def obj(properties):return {'type':'object','properties':properties,'required':list(properties),'additionalProperties':False}
 SHOT=obj({'title':string(45),'narration':string(220),'caption':string(95),'visual':string(140),'reference':{'enum':[-1]+list(range(len(images)))}})
@@ -150,8 +162,9 @@ scene_seconds=max(1,min(120,int(duration_match[-1].group(1))/scene_count)) if du
 STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
 feedback=''
 for attempt in range(3):
+ stage('director_plan')
  try:
-  story=generate(SYSTEM,f"Create {scene_count} distinct Arabic scenes about the client's specific topic. Return title (film title) and scenes. Each scene has title (short meaningful audience headline), narration (one natural Arabic sentence, 8-16 words), caption (a short complete Arabic sentence adding information beyond the headline), visual (layout and movement of existing images, vector shapes and typography), reference (appropriate image index or -1). Build a coherent progression with a useful ending. Marketing calls to action belong only in requested advertisements. For stories follow the event sequence. Never name a scene Hook, Benefit, Usage, Explanation or Closing. Never describe invented controls inside a screenshot. If app_facts exists, this is SOFTWARE used by the viewer, not an agency, shop, human team or delivery service. Use only those actual capabilities; no service or timing promises. If exact_scene_narrations exists preserve each verbatim in order. "+feedback+"\nCLIENT DATA:\n"+json.dumps(context,ensure_ascii=False),visual=True,max_tokens=scene_count*450)
+  story=generate(SYSTEM,f"Create {scene_count} distinct Arabic scenes about the client's specific topic. Return title (film title) and scenes. Each scene has title (short meaningful audience headline), narration (one natural Arabic sentence, 8-16 words), caption (a short complete Arabic sentence adding information beyond the headline), visual (layout and movement of existing images, vector shapes and typography), reference (appropriate image index or -1). Build a coherent progression with a useful ending. Marketing calls to action belong only in requested advertisements. For stories follow the event sequence. Never name a scene Hook, Benefit, Usage, Explanation or Closing. Never describe invented controls inside a screenshot. If app_facts exists, this is SOFTWARE used by the viewer, not an agency, shop, human team or delivery service. Use only those actual capabilities; no service or timing promises. If exact_scene_narrations exists preserve each verbatim in order. "+feedback+"\nCLIENT DATA:\n"+json.dumps(context,ensure_ascii=False),visual=not bool(reference_facts),max_tokens=scene_count*450)
  except ValueError:
   feedback='The previous response was invalid JSON. Return a complete object.';continue
  Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False))
@@ -218,7 +231,7 @@ Path('story.json').write_text(json.dumps(story,ensure_ascii=False))
 SCHEMA='''Output {"backdrop":"plain|orbit|grid|radial|split","elements":[...]}. Every element has kind, x,y,w,h (normalized 0..1), color (ink|accent|card|muted|background), motion (rise|left|right|scale|draw|fade), delay (0..0.7 fraction of initial 5 sec). Bounds x+w<=1,y+h<=1. Keep a .06 outer safe margin, use y=.08.. .91. Between 4 and 8 elements. Kind text/metric: text <=75 chars, size 20..110 in a 1080px wide canvas. Text blocks must NOT overlap. Allocate h >= size/1080*1.6*expectedLines / aspectHeightRatio. Short 1-5 word headlines, not narration paragraphs. kind image/device: asset must be an EXACT provided filename. Show screenshots inside device frames; do not crop. kind shape is a rounded color panel. kind icon: icon=play|file|audio|check|spark|arrow|grain|book|shield|image|phone|chat. kind line is a horizontal accent line. Draw order follows array. Background panels precede text and icons. Always visible text contrast ink over background/card or background over ink. At least two text elements (a striking heading and a brief supporting statement), and one purposeful visual. Use large whitespace, aligned groups, staggered entries. No text outside safe area. Do not put large empty boxes, tiny unreadable text, overlapping screenshots, extraneous counters, or unrelated decorative shapes. Do not repeat the same geometry for every scene.'''
 scenes=[];prior=[]
 for i,shot in enumerate(story['scenes']):
- tmp=Path('progress.json.tmp');tmp.write_text(json.dumps({'stage':'design','progress':24+i*3}));tmp.replace('progress.json')
+ stage('design',24+i*3,i+1,len(story['scenes']))
  prompt={'shot':shot,'scene_index':i,'aspect':story.get('aspect','9:16'),'available_assets':([] if shot['reference']==-1 else [images[shot['reference']]]),'previous_shots':prior,'concept':story.get('concept','')}
  error=''
  # Preserve the reviewed story when CPU planning has used most of its budget.
@@ -237,5 +250,5 @@ for i,shot in enumerate(story['scenes']):
   composition=json.loads(subprocess.check_output([os.environ['MADAR_NODE'],'-e',"const C=require('./creative'),fs=require('fs');process.stdout.write(JSON.stringify(C.compose(JSON.parse(fs.readFileSync('shot.json')),JSON.parse(process.argv[1]))));",json.dumps({'aspect':aspect,'images':images,'index':i,'seed':seed})],text=True,timeout=30))
  sid=uuid.uuid4().hex[:12];s={'id':sid,'title':shot['title'],'narration':shot['narration'],'seconds':max(1,min(120,float(shot.get('seconds',6)))),'graphic':'creative','composition':composition,'effect':'rise','transition':'slide' if i%2 else 'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','illustration':False,'highlights':[],'words':[]}
  scenes.append(s);prior.append({'title':s['title'],'geometry':[(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in composition['elements']]})
-p.pop('product',None);p.pop('result',None);p.update(title=str(story['title'])[:80],theme=story['theme'] if story.get('theme') in ['night','paper','sand'] else 'night',aspect=story['aspect'] if story.get('aspect') in ['9:16','16:9','1:1'] else '9:16',scenes=scenes,ready=False,direction={'concept':str(story.get('concept',''))[:1000],'model':MODEL,'revision':REVISION,'layoutMode':'validated_scene_graph','runtime':RUNTIME,'context':context_size,'theme':theme,'aspect':aspect,'sources':brief.get('sources',[])})
+p.pop('product',None);p.pop('result',None);p.update(title=str(story['title'])[:80],theme=story['theme'] if story.get('theme') in ['night','paper','sand'] else 'night',aspect=story['aspect'] if story.get('aspect') in ['9:16','16:9','1:1'] else '9:16',scenes=scenes,ready=False,direction={'concept':str(story.get('concept',''))[:1000],'model':MODEL,'revision':REVISION,'layoutMode':'validated_scene_graph','engine':active_engine,'engineVerified':True,'runtime':RUNTIME,'context':context_size,'theme':theme,'aspect':aspect,'sources':brief.get('sources',[])})
 Path('project.json').write_text(json.dumps(p,ensure_ascii=False));subprocess.run([os.environ['MADAR_NODE'],'-e',"const C=require('./core'),fs=require('fs');let p=JSON.parse(fs.readFileSync('project.json'));C.draft(p);fs.writeFileSync('project.json',JSON.stringify(p));"],check=True,timeout=30)

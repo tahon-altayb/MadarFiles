@@ -23,7 +23,27 @@ with tempfile.TemporaryDirectory(prefix='madar-real-voice-') as tmp:
   assert abs(float(info['format']['duration'])-p['duration'])<.15
   subprocess.run(['ffmpeg','-v','error','-i',str(movie),'-f','null','-'],check=True)
   (out/'proof.json').write_text(json.dumps({'resume_without_direction':True,'isolated_parent_python':True,'coverage':[s['coverage'] for s in p['scenes']],'duration':p['duration'],'decoded':True}))
+  # Resume the retained per-scene audio in a new owned job. Neither speech nor
+  # direction may execute again; real ASR and rendering must still finish.
+  saved=json.loads((job/'checkpoint.json').read_text());assert saved['phase']=='voiced'
+  resumed=Path(tmp)/('madar_'+'b'*32);resumed.mkdir()
+  for f in assets.iterdir():
+   if f.is_file():shutil.copyfile(f,resumed/f.name)
+  for name in ['director.py','speech.py']:(resumed/name).write_text("raise RuntimeError('COMPLETED_PHASE_MUST_NOT_REPLAY')")
+  project=saved['project'];project['motionCheckpoint']='voiced';manifest=[]
+  for i,item in enumerate(saved['assets']):
+   data=b''.join((job/f'checkpoint_asset_{i}_{n}.bin').read_bytes() for n in range(item['chunks']));assert hashlib.sha256(data).hexdigest()==item['sha256'];manifest.append(item)
+   for n in range(item['chunks']):(resumed/f"{item['name']}.part_{n}").write_bytes(data[n*750000:(n+1)*750000])
+  (resumed/'request.json').write_text(json.dumps({'protocol':1,'mode':'compose','project':project,'files':manifest},ensure_ascii=False))
+  resumed_run=subprocess.run(['python3','worker.py'],cwd=resumed,env=env,timeout=1200)
+  if resumed_run.returncode:
+   for name in ['progress.json','worker-error.log']:
+    if (resumed/name).exists():shutil.copyfile(resumed/name,out/('resumed-'+name))
+   raise RuntimeError((resumed/'progress.json').read_text())
+  final=json.loads((resumed/'result.json').read_text());assert final['project']['ready'];assert (resumed/'voice.wav').read_bytes()==(job/'voice.wav').read_bytes()
+  meta=final['file'];data=b''.join((resumed/f'result_{n}.bin').read_bytes() for n in range(meta['chunks']));assert hashlib.sha256(data).hexdigest()==meta['sha256'];(out/'resumed.mp4').write_bytes(data);subprocess.run(['ffmpeg','-v','error','-i',str(out/'resumed.mp4'),'-f','null','-'],check=True)
+  proof=json.loads((out/'proof.json').read_text());proof['resume_without_speech']=True;(out/'proof.json').write_text(json.dumps(proof))
   print('PASS actual cold approved CPU voice, isolated parent modules, directed-project resume without planning, measured words, production H264/AAC and complete decode')
  finally:
-  for name in ['project.json','voice.wav','progress.json','checkpoint.json','speech-error.json','speech-install.log','result.json']:
+  for name in ['project.json','voice.wav','progress.json','checkpoint.json','speech-error.json','speech-install.log','worker-error.log','result.json']:
    if (job/name).exists():shutil.copyfile(job/name,out/name)

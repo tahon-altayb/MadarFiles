@@ -78,6 +78,7 @@ jobs:
           node qa/creative-layout.test.cjs
           python3 qa/motion-copy.test.py
           python3 qa/motion-cloud.test.py
+          python3 qa/motion-runtime.test.py
           python3 qa/motion-sources.test.py
       - name: Compile and lint before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:lintDebug :app:testDebugUnitTest

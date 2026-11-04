@@ -16,6 +16,7 @@ from huggingface_hub import snapshot_download,hf_hub_download
 REV='226dd7a65cadf51f9a6dbe3953fc89003b3844d5'
 snapshot_download('silma-ai/silma-tts',revision=REV,allow_patterns=['model.pt','config.yaml','vocab.txt'])
 for f in ['config.yaml','pytorch_model.bin']:hf_hub_download('charactr/vocos-mel-24khz',filename=f,revision='0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21')
+publish('speech_load')
 import onnxruntime as ort
 ort.disable_telemetry_events()
 import numpy as np,torch
@@ -35,7 +36,7 @@ if '--prepare' in sys.argv:
  Path('voice-probe.wav').unlink(missing_ok=True);raise SystemExit(0)
 p=json.loads(Path('project.json').read_text())
 for i,s in enumerate(p['scenes']):
- publish('speech_infer',str(i+1))
+ publish('speech_infer',scene=i+1,total=len(p['scenes']))
  text=s['narration'].replace('بر الطيبات','بُرّ الطَّيِّباتْ')
  wav,sr,_=model.infer(ref_file='male-reference.wav',ref_text=ref_text,gen_text=text,file_wave=f'speech_{i}.wav',seed=17+i,nfe_step=16,speed=.92,cfg_strength=2,cross_fade_duration=.10,normalize_numbers=False,force_tashkeel=False)
  if sr!=24000 or not np.isfinite(wav).all() or len(wav)<2400 or np.max(np.abs(wav))<.005:raise ValueError('SPEECH_INVALID')
