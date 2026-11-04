@@ -11,3 +11,7 @@ Raw product form inputs save separately from the project, including incomplete/m
 Verification covers shared timing, product regression, native draft persistence and scene-graph bounds, browser draft recovery/undo, scoped chat progress/results, inline playback, voice selection, cancellation, and follow-up revisions. Model inference and GPU/session behavior require separate runtime evidence; passing interface tests alone does not establish creative quality.
 
 Follow-up verification fixes restore existing editor audio mixing while keeping motion music-free, scope motion follow-ups so image edits still reach their tools, request missing recording/page-range inputs inside chat, and keep all words when continuous speech crosses scene boundaries. Optional unavailable page artwork no longer discards otherwise readable page facts.
+
+Reference images are described before text-only copy review so each scene can select a relevant unchanged image or purposeful vectors. Page-derived copy follows the same restrictions on unsupported instant-processing and quality promises as app-fact copy.
+
+A repeated full-device regression exposed a stalled final AudioTrack quantum. A bounded silent drain guard is recorded separately from content frames; it never advances the media clock or causes new PCM to be skipped after a refill. The existing tail/pause/refill test now runs both default playback and non-default speed/pitch, retaining every exact-frame assertion.

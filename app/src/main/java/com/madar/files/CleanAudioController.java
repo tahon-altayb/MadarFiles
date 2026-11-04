@@ -13,7 +13,7 @@ final class CleanAudioController implements AutoCloseable {
  interface Status {void show(String text,boolean waiting);}
  private final Context context;private final AudioManager manager;private final AudioFocusRequest focus;private boolean focused,hasFocusRequest;private final ExoPlayer video;private final LiveSeparation.Session session;private final Status status;
  private final Handler main=new Handler(Looper.getMainLooper());private final HandlerThread feederThread=new HandlerThread("madar-clean-audio",android.os.Process.THREAD_PRIORITY_AUDIO);private final Handler feeder;
- private final AudioTrack audio;private final Object audioLock=new Object();private RandomAccessFile input;private long cursor,baseFrame,pausedLimit;private volatile boolean closed;private boolean wanted,adjusting,rebuffered,reserveApproved;private volatile boolean playing,feedAllowed;private float volume=1,speed=1,pitch=1;private volatile String failure="";private long lastUi,lastSync,driftSince,refillAfter;
+ private final AudioTrack audio;private final AudioContentClock outputClock=new AudioContentClock();private long observedHead=-1,headChangedAt,guardAt=-1;private int guardWritten;private final Object audioLock=new Object();private RandomAccessFile input;private long cursor,baseFrame,pausedLimit;private volatile boolean closed;private boolean wanted,adjusting,rebuffered,reserveApproved;private volatile boolean playing,feedAllowed;private float volume=1,speed=1,pitch=1;private volatile String failure="";private long lastUi,lastSync,driftSince,refillAfter;
  private boolean seeking;private final java.util.ArrayDeque<Boolean> ownPlayChanges=new java.util.ArrayDeque<>();private final java.util.ArrayDeque<Long> ownSeeks=new java.util.ArrayDeque<>();
  // Diagnostics used by the native continuity regression tests (no source audio is recorded).
  int resetCount,syncSeekCount;private long lastPlayed;
@@ -39,7 +39,7 @@ final class CleanAudioController implements AutoCloseable {
  private void seekVideo(long target){if(video.getCurrentPosition()==target)return;if(ownSeeks.size()>=32)ownSeeks.removeFirst();ownSeeks.addLast(target);video.seekTo(target);}
  private void setVideoPlaying(boolean value){if(video.getPlayWhenReady()==value)return;ownPlayChanges.addLast(value);video.setPlayWhenReady(value);}
  private void pause(){feedAllowed=false;adjusting=true;try{setVideoPlaying(false);synchronized(audioLock){if(playing){playedLocked();pausedLimit=cursor;refillAfter=SystemClock.elapsedRealtime()+100;}audio.pause();playing=false;}}finally{adjusting=false;}}
- void move(long positionMs){pause();seeking=true;synchronized(audioLock){audio.flush();resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,positionMs/1000.0);if(session.done)at=Math.min(session.ready(),at);cursor=Math.max(0,Math.round((at-start)*44100));session.requestedFrame=cursor;baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;reserveApproved=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
+ void move(long positionMs){pause();seeking=true;synchronized(audioLock){audio.flush();outputClock.reset();observedHead=-1;guardAt=-1;guardWritten=0;resetCount++;double start=session.offsetUs/1e6,at=Math.max(start,positionMs/1000.0);if(session.done)at=Math.min(session.ready(),at);cursor=Math.max(0,Math.round((at-start)*44100));session.requestedFrame=cursor;baseFrame=cursor;lastPlayed=cursor;pausedLimit=cursor;rebuffered=false;reserveApproved=false;seekVideo(Math.round((start+cursor/44100.0)*1000));}driftSince=0;lastSync=SystemClock.elapsedRealtime();}
  private final BroadcastReceiver noisy=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent intent){if(!closed)setWanted(false);}};
  private void requestFocus(){if(hasFocusRequest)return;hasFocusRequest=true;focused=manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;if(!focused){hasFocusRequest=false;wanted=false;failure="الصوت مشغول بتطبيق آخر؛ اضغط تشغيل للمحاولة";}}
  void setWanted(boolean value){if(closed)return;wanted=value;if(value){failure="";requestFocus();}else{pause();if(hasFocusRequest)manager.abandonAudioFocusRequest(focus);hasFocusRequest=false;focused=false;}}
@@ -52,12 +52,23 @@ final class CleanAudioController implements AutoCloseable {
  int underruns(){synchronized(audioLock){return audio.getUnderrunCount();}}
  // A paused/starved hardware counter can still report its last output quantum.
  // Prefilling a new PCM prefix must not turn that stale quantum into heard words.
- private long playedLocked(){long head=baseFrame+(audio.getPlaybackHeadPosition()&0xffffffffL);return lastPlayed=Math.max(lastPlayed,Math.min(playing?cursor:pausedLimit,head));}
+ private long playedLocked(){long head=baseFrame+outputClock.contentAt(audio.getPlaybackHeadPosition()&0xffffffffL);return lastPlayed=Math.max(lastPlayed,Math.min(playing?cursor:pausedLimit,head));}
  private final Runnable feed=new Runnable(){@Override public void run(){if(closed)return;try{synchronized(audioLock){
   if(session.pcm!=null&&input==null)input=new RandomAccessFile(session.pcm,"r");
-  if(input!=null&&feedAllowed){long head=audio.getPlaybackHeadPosition()&0xffffffffL;if(baseFrame+head>cursor)baseFrame=cursor-head;byte[] bytes=feedBuffer;for(int i=0;i<16&&session.availableEnd(cursor)>cursor;i++){int count=(int)Math.min(bytes.length/4,session.availableEnd(cursor)-cursor)*4;input.seek(cursor*4);input.readFully(bytes,0,count);int n=audio.write(bytes,0,count,AudioTrack.WRITE_NON_BLOCKING);if(n<0)throw new IOException("AudioTrack write "+n);if(n%4!=0)throw new IOException("إطار صوت غير مكتمل");cursor+=n/4;if(n<count)break;}}
+  if(input!=null&&feedAllowed){long rawHead=audio.getPlaybackHeadPosition()&0xffffffffL;long head=outputClock.contentAt(rawHead);long now=SystemClock.elapsedRealtime();if(rawHead!=observedHead){observedHead=rawHead;headChangedAt=now;}if(baseFrame+head>cursor)baseFrame=cursor-head;byte[] bytes=feedBuffer;for(int i=0;i<16&&session.availableEnd(cursor)>cursor;i++){int count=(int)Math.min(bytes.length/4,session.availableEnd(cursor)-cursor)*4;input.seek(cursor*4);input.readFully(bytes,0,count);int n=audio.write(bytes,0,count,AudioTrack.WRITE_NON_BLOCKING);if(n<0)throw new IOException("AudioTrack write "+n);if(n%4!=0)throw new IOException("إطار صوت غير مكتمل");cursor+=n/4;outputClock.contentWritten(n/4);if(n<count)break;}
+   // Some output sinks retain their final render quantum until another write.
+   // If a committed prefix stalls at its tail, a bounded silent guard drains it.
+   // Its frames are tracked separately, so they cannot be reported as heard PCM
+   // or skipped over when the next prefix is appended after a pause.
+   long remaining=cursor-playedLocked();
+   if(playing&&remaining>0&&remaining<=drainSilence.length/4&&session.availableEnd(cursor)==cursor&&now-headChangedAt>=250){
+    if(guardAt!=cursor){guardAt=cursor;guardWritten=0;}
+    int count=drainSilence.length-guardWritten*4;
+    if(count>0){int n=audio.write(drainSilence,0,count,AudioTrack.WRITE_NON_BLOCKING);if(n<0||n%4!=0)throw new IOException("AudioTrack drain "+n);guardWritten+=n/4;outputClock.paddingWritten(n/4);}
+   }
+  }
  }}catch(Exception error){failure="تعذرت متابعة الصوت المنظّف: "+error.getMessage();}if(!closed)feeder.postDelayed(this,10);}};
- private final byte[] feedBuffer=new byte[16384];
+ private final byte[] feedBuffer=new byte[16384],drainSilence=new byte[2205*4];
  private final Runnable tick=new Runnable(){@Override public void run(){if(closed)return;try{
   video.setVolume(0);long frames=playedFrames();session.playedFrames=frames;double played=session.offsetUs/1e6+frames/44100.0,ready=session.offsetUs/1e6+session.availableEnd(frames)/44100.0;long now=SystemClock.elapsedRealtime();
   if(!failure.isEmpty()){wanted=false;pause();}
@@ -73,7 +84,7 @@ final class CleanAudioController implements AutoCloseable {
    // Only arm prefill when resuming is intended; never submit a tiny refill
    // into the final hardware quantum of a paused/starved AudioTrack.
    feedAllowed=true;
-   if(queued>0&&(queued>=Math.min(8820,session.availableEnd(frames)-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;reserveApproved=true;seeking=false;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
+   if(queued>0&&(queued>=Math.min(8820,session.availableEnd(frames)-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-outputClock.contentAt(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;reserveApproved=true;seeking=false;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
   }
   if(playing){
    if(frames>=session.availableEnd(frames)){reserveApproved=false;pause();rebuffered=true;session.requestedFrame=frames;if(session.done&&frames>=session.frames)wanted=false;}
