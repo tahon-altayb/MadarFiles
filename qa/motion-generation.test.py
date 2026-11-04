@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix='madar-generation-') as tmp:
    files.append({'name':target,'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'chunks':math.ceil(len(data)/750000)})
    for n in range(files[-1]['chunks']):(job/f'{target}.part_{n}').write_bytes(data[n*750000:(n+1)*750000])
   brief='أنشئ إعلان موشن من 4 مشاهد لتطبيق مدار للصور والفيديو والصوت وPDF. أبرز تحويل الملفات وأدوات PDF وتنفيذ الطلبات المدعومة داخل المحادثة. استخدم صور التطبيق المرفقة كما هي، وغيّر توزيع النص والصورة والحركة بين المشاهد. لا تضف أرقامًا أو وعودًا غير مذكورة. عمودي 9:16، مدة 24 ثانية، بدون تعليق صوتي أو موسيقى.'
-  facts='مدار: أدوات ملفات وصور وفيديو وصوت وPDF. تحويل الصيغ وضغط الملفات، استخراج النص، تحويل PDF إلى Word ودمج PDF وصور إلى PDF، تحرير الفيديو وفصل الموسيقى مع خيارات محلية وColab. الخدمات السحابية تحتاج اتصالًا وقد تتطلب تسجيل الدخول؛ ليست كل العمليات محلية أو بلا حدود.'
+  facts='مدار: أدوات ملفات وصور وفيديو وصوت وPDF. ينفذ أوامر الملفات المدعومة داخل المحادثة، ويسأل عن المدخلات الناقصة ويعيد الملفات الناتجة فيها. تحويل الصيغ وضغط الملفات، استخراج النص، تحويل PDF إلى Word ودمج PDF وصور إلى PDF، تحرير الفيديو وفصل الموسيقى مع خيارات محلية وColab. الخدمات السحابية تحتاج اتصالًا وقد تتطلب تسجيل الدخول؛ ليست كل العمليات محلية أو بلا حدود.'
  else:
   brief='أنشئ موشن تعليميًا عربيًا من 4 مشاهد عن رحلة صناعة الكتاب: كتابة المسودة، مراجعة النص، تصميم الصفحات، ثم الطباعة. اشرح وظيفة كل مرحلة ببساطة. رسوم متجهة ومخططات بسيطة، بدون صور فوتوغرافية. خلفية فاتحة هادئة وألوان دافئة. أفقي 16:9، مدة 20 ثانية، بدون تعليق صوتي أو موسيقى.';facts=''
  project={'version':1,'id':'e'*32,'title':'اختبار توليد حقيقي','theme':'night','aspect':'9:16','voiceMode':'none','creativeRequest':{'text':brief,'images':images,'appFacts':facts},'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
@@ -30,5 +30,6 @@ with tempfile.TemporaryDirectory(prefix='madar-generation-') as tmp:
  subprocess.run(['ffmpeg','-v','error','-i',str(video),'-f','null','-'],check=True)
  geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in p['scenes']};assert len(geometry)>=3,'Repeated geometry'
  if images:assert any(e.get('asset') in images for s in p['scenes'] for e in s['composition']['elements']),'References unused'
+ if images:assert any('محادث' in z['title']+z['narration']+z['caption'] for z in json.loads((job/'story.json').read_text())['scenes']),'Requested chat topic missing'
  for i,scene in enumerate(p['scenes']):subprocess.run(['ffmpeg','-v','error','-y','-ss',str((scene['start']+scene['end'])/2),'-i',str(video),'-frames:v','1',str(evidence/f'scene-{i+1}.png')],check=True)
  (evidence/'result.json').write_text(json.dumps(result,ensure_ascii=False));print('PASS real licensed model, production compose/chunk protocol, distinct scenes, exact aspect/duration, silent H264 and complete decode')

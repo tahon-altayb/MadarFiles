@@ -43,13 +43,13 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0}={}){
  }else if(square){
   elements=[text(title,.08,.07,.84,.19,68,0),e('line',.08,.29,.19,.006,'accent','draw',.05),media(style%2?.48:.08,.34,.43,.49,.07),text(body,style%2?.08:.56,.37,.36,.34,30,.13),e('icon',style%2?.18:.68,.79,.12,.10,'accent','scale',.2,{icon:iconId})];
  }else if(style===0){
-  elements=[text(title,.08,.07,.84,.15,78,0),e('line',.08,.245,.22,.005,'accent','draw',.04),text(body,.08,.285,.84,.10,34,.10),media(.20,.415,.60,.48,.12),e('icon',.83,.90,.07,.04,'accent','scale',.22,{icon:'check'})];
+  elements=[text(title,.08,.07,.84,.15,78,0),e('line',.08,.245,.22,.005,'accent','draw',.04),text(body,.08,.285,.84,.10,44,.10),media(.20,.415,.60,.48,.12),e('icon',.83,.90,.07,.04,'accent','scale',.22,{icon:'check'})];
  }else if(style===1){
-  elements=[e('shape',.43,.075,.51,.80,'card','fade',0),text(title,.48,.13,.41,.23,64,.02),e('line',.48,.39,.20,.005,'accent','draw',.07),text(body,.48,.445,.41,.23,32,.12),media(.065,.15,.32,.61,.08),e('icon',.67,.76,.12,.07,'accent','scale',.24,{icon:iconId})];
+  elements=[e('shape',.43,.075,.51,.80,'card','fade',0),text(title,.48,.13,.41,.23,64,.02),e('line',.48,.39,.20,.005,'accent','draw',.07),text(body,.48,.445,.41,.23,40,.12),media(.065,.15,.32,.61,.08),e('icon',.67,.76,.12,.07,'accent','scale',.24,{icon:iconId})];
  }else if(style===2){
-  elements=[text(title,.08,.07,.84,.17,74,0),media(.10,.275,.80,.45,.06),e('shape',.06,.76,.88,.16,'card','rise',.10),text(body,.10,.79,.80,.10,34,.14),e('line',.70,.235,.22,.005,'accent','draw',.07)];
+  elements=[text(title,.08,.07,.84,.17,74,0),media(.10,.275,.80,.45,.06),e('shape',.06,.76,.88,.16,'card','rise',.10),text(body,.10,.79,.80,.10,44,.14),e('line',.70,.235,.22,.005,'accent','draw',.07)];
  }else{
-  elements=[e('shape',.06,.065,.88,.38,'card','fade',0),text(title,.10,.10,.80,.17,76,.02),text(body,.10,.295,.80,.11,34,.10),media(.16,.49,.68,.40,.14),e('line',.08,.925,.30,.005,'accent','draw',.22)];
+  elements=[e('shape',.06,.065,.88,.38,'card','fade',0),text(title,.10,.10,.80,.17,76,.02),text(body,.10,.295,.80,.11,44,.10),media(.16,.49,.68,.40,.14),e('line',.08,.925,.30,.005,'accent','draw',.22)];
  }
  return validate({backdrop:['plain','split','grid','orbit'][style],elements});
 }

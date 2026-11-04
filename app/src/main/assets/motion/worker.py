@@ -138,12 +138,12 @@ def director_python():
     return binary
 
 def inference_python():
-    target=ROOT.parent/'madar-motion-speech-v1';binary=target/'bin/python'
+    target=ROOT.parent/'madar-motion-speech-v2';binary=target/'bin/python'
     if not (target/'ready').exists():
         # Colab's default Python can change. Keep model dependencies in their own 3.11 environment.
         run([sys.executable,'-m','pip','install','--disable-pip-version-check','uv==0.8.22'],180)
         run([sys.executable,'-m','uv','venv','--python','3.11',target],240)
-        run([sys.executable,'-m','uv','pip','install','--python',binary,'torch==2.6.0','torchaudio==2.6.0','torchvision==0.21.0','--index-url','https://download.pytorch.org/whl/cu124'],600)
+        run([sys.executable,'-m','uv','pip','install','--python',binary,'torch==2.6.0','torchaudio==2.6.0','torchvision==0.21.0','numpy==1.26.4','--index-url','https://download.pytorch.org/whl/cu124'],600)
         run([sys.executable,'-m','uv','pip','install','--python',binary,'silma-tts==1.0.5','transformers==4.51.3','accelerate==1.6.0','bitsandbytes==0.46.1','huggingface-hub==0.30.2','numpy==1.26.4'],750)
         (target/'ready').write_text('1')
     return binary
