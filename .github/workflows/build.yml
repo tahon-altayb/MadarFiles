@@ -75,6 +75,7 @@ jobs:
         run: |
           node qa/motion-clock.test.cjs
           node qa/product-motion.test.cjs
+          node qa/creative-layout.test.cjs
           python3 qa/motion-cloud.test.py
           python3 qa/motion-sources.test.py
       - name: Compile and lint before expensive model checks

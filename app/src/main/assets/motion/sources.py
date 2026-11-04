@@ -21,15 +21,21 @@ def public_url(url):
 class Redirect(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,req,fp,code,msg,headers,newurl):public_url(newurl);return super().redirect_request(req,fp,code,msg,headers,newurl)
 def fetch(url,limit,mimes):
- public_url(url);opener=urllib.request.build_opener(Redirect())
- with opener.open(urllib.request.Request(url,headers={'User-Agent':'MadarMotion/1.0 (public page preview)'}),timeout=25) as response:
-  mime=response.headers.get_content_type()
-  if not any(mime.startswith(t) for t in mimes):raise ValueError('SOURCE_TYPE')
-  data=response.read(limit+1)
-  if len(data)>limit:raise ValueError('SOURCE_SIZE')
-  return data,response.geturl(),response.headers.get_content_charset() or 'utf-8'
+ try:public_url(url)
+ except OSError as e:raise ValueError('SOURCE_UNAVAILABLE') from e
+ opener=urllib.request.build_opener(Redirect())
+ try:
+  with opener.open(urllib.request.Request(url,headers={'User-Agent':'MadarMotion/1.0 (public page preview)'}),timeout=25) as response:
+   mime=response.headers.get_content_type()
+   if not any(mime.startswith(t) for t in mimes):raise ValueError('SOURCE_TYPE')
+   data=response.read(limit+1)
+   if len(data)>limit:raise ValueError('SOURCE_SIZE')
+   return data,response.geturl(),response.headers.get_content_charset() or 'utf-8'
+ except OSError as e:raise ValueError('SOURCE_UNAVAILABLE') from e
+
 def collect(brief):
  urls=list(dict.fromkeys(re.findall(r'https?://[^\s<>"\u060c]+',brief['text'])))[:2];sources=[];new=[]
+ if re.search(r'(?:بدون|تجاهل|اترك)\s+الرابط',brief['text']):urls=[]
  for url in urls:
   data,resolved,encoding=fetch(url.rstrip(').,!?؛'),2_000_000,['text/html','text/plain']);parser=Page();parser.feed(data.decode(encoding,errors='replace'))
   content='\n'.join(parser.text)[:12000]

@@ -13,3 +13,6 @@ assert brief['sources'][0]['url'].startswith('https://example.com')
 assert len(brief['sources'][0]['text'])>60
 assert brief['sources'][0]['provenance']=='public_page_claims_not_independently_verified'
 print('PASS: actual HTTPS page facts, provenance, no fabricated imagery, private/credential/port URL rejection')
+
+ignored={'text':'اعتمد على وصفي بدون الرابط http://127.0.0.1/','images':[]}
+assert module.collect(ignored)==[] and ignored['sources']==[]
