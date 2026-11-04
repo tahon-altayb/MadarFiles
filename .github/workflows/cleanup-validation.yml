@@ -1,0 +1,25 @@
+name: Stop superseded generation validation
+on:
+  push:
+    branches: [qa/ci-cleanup-20261104]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release the obsolete generation slot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/tahon-altayb/MadarFiles/actions/runs/41868587026 > previous-run.json
+          python3 - <<'PY'
+          import json,subprocess
+          r=json.load(open('previous-run.json'))
+          if r['head_sha']=='45b92e85e8ed7e6e6b0bbc0493f2c371c55e29a0' and r['status'] not in ['completed']:
+              subprocess.run(['gh','api','--method','POST','repos/tahon-altayb/MadarFiles/actions/runs/41868587026/cancel'],check=True)
+              print('Stopped only the superseded generation run; the final commit can now be validated.')
+          else:
+              print('Obsolete run already finished; no cancellation needed.')
+          PY
