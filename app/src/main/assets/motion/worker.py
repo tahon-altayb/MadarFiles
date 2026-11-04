@@ -129,14 +129,22 @@ def render(request,node):
     width=1920 if p['aspect']=='16:9' else 1080;height=1920 if p['aspect']=='9:16' else 1080
     if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none'):raise ValueError('OUTPUT_FORMAT')
     return path
+def director_python():
+    target=ROOT.parent/'madar-motion-director-gguf-v1';binary=target/'bin/python'
+    if not (target/'ready').exists():
+        run([sys.executable,'-m','venv','--without-pip',target],60)
+        run([sys.executable,'-m','pip','--python',binary,'install','--disable-pip-version-check','--timeout','30','--retries','1','huggingface-hub==0.36.2','Pillow==11.3.0','socksio==1.0.0'],300)
+        (target/'ready').write_text('1')
+    return binary
+
 def inference_python():
-    target=ROOT.parent/'madar-motion-director-v4';binary=target/'bin/python'
+    target=ROOT.parent/'madar-motion-speech-v1';binary=target/'bin/python'
     if not (target/'ready').exists():
         # Colab's default Python can change. Keep model dependencies in their own 3.11 environment.
         run([sys.executable,'-m','pip','install','--disable-pip-version-check','uv==0.8.22'],180)
         run([sys.executable,'-m','uv','venv','--python','3.11',target],240)
         run([sys.executable,'-m','uv','pip','install','--python',binary,'torch==2.6.0','torchaudio==2.6.0','torchvision==0.21.0','--index-url','https://download.pytorch.org/whl/cu124'],600)
-        run([sys.executable,'-m','uv','pip','install','--python',binary,'silma-tts==1.0.5','xgrammar==0.1.27','triton==3.2.0','transformers==4.57.6','accelerate==1.6.0','bitsandbytes==0.48.2','qwen-vl-utils==0.0.14','huggingface-hub==0.36.2','numpy==1.26.4'],750)
+        run([sys.executable,'-m','uv','pip','install','--python',binary,'silma-tts==1.0.5','transformers==4.51.3','accelerate==1.6.0','bitsandbytes==0.46.1','huggingface-hub==0.30.2','numpy==1.26.4'],750)
         (target/'ready').write_text('1')
     return binary
 
@@ -150,18 +158,22 @@ def recording_transcript():
     Path('recording-segments.json').write_text(json.dumps(segments));return [w['text'] for w in words]
 
 def compose(request,node):
-    from sources import collect
     p=request['project'];brief=p.get('creativeRequest')
     if not isinstance(brief,dict):raise ValueError('BRIEF_MISSING')
-    status('sources',21);generated=collect(brief);
+    status('sources',21)
     if p['voiceMode']=='recording':brief['recordingWords']=recording_transcript()
     Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
-    status('director',24);binary=inference_python();env=os.environ.copy();env['MADAR_NODE']=str(node)
-    run([binary,'director.py'],1200,env=env)
+    status('director',24);binary=director_python();env=os.environ.copy();env['MADAR_NODE']=str(node)
+    try:run([binary,'director.py'],1800,env=env)
+    except subprocess.CalledProcessError:
+        state=json.loads(Path('progress.json').read_text())
+        raise ValueError(state.get('code','DIRECTOR_FAILED'))
+    generated=json.loads(Path('source-assets.json').read_text())
+    if not isinstance(generated,list) or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in generated):raise ValueError('REFERENCE_PATH')
     p=json.loads(Path('project.json').read_text());request['project']=p
     Path('request.json').write_text(json.dumps(request,ensure_ascii=False))
     if p['voiceMode']=='silma':
-        status('speech',46);run([binary,'speech.py'],900,env=env)
+        status('speech',46);run([inference_python(),'speech.py'],900,env=env)
     align(request,node);p=json.loads(Path('project.json').read_text());request['project']=p
     # Do not report guessed alignment as complete. The editor can recover this project for review.
     checked=subprocess.run([str(node),'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
