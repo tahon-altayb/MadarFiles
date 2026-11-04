@@ -3,20 +3,25 @@ import ipaddress,json,re,socket,urllib.parse,urllib.request,hashlib,io
 from html.parser import HTMLParser
 from pathlib import Path
 class Page(HTMLParser):
- def __init__(self):super().__init__();self.skip=0;self.text=[];self.images=[];self.focus=[];self.focus_depth=0
+ def __init__(self):super().__init__();self.skip=0;self.text=[];self.images=[];self.focus=[];self.focus_depth=0;self.article=[];self.article_depth=0
  def handle_starttag(self,tag,attrs):
   a=dict(attrs)
   if tag in ['main','article']:self.focus_depth+=1
+  if tag=='article':self.article_depth+=1
   if tag in ['script','style','noscript','svg']:self.skip+=1
   if tag=='meta' and a.get('property') in ['og:image','twitter:image'] and a.get('content'):self.images.append(a['content'])
  def handle_endtag(self,tag):
   if tag in ['main','article']:self.focus_depth=max(0,self.focus_depth-1)
+  if tag=='article':self.article_depth=max(0,self.article_depth-1)
   if tag in ['script','style','noscript','svg']:self.skip=max(0,self.skip-1)
  def handle_data(self,data):
   if not self.skip and data.strip():
    self.text.append(data.strip())
    if self.focus_depth:self.focus.append(data.strip())
+   if self.article_depth:self.article.append(data.strip())
  def content(self):
+  article='\n'.join(self.article)
+  if len(article)>=60:return article
   focus='\n'.join(self.focus)
   return focus if len(focus)>=60 else '\n'.join(self.text)
 def normalized_url(url):

@@ -26,12 +26,19 @@ with tempfile.TemporaryDirectory(prefix='madar-generation-') as tmp:
  for name in ['progress.json','project.json','story.json','director-runtime.log','director-response.txt','director-response.json','story-candidate.json','copy-review.json']:
   if (job/name).exists():shutil.copyfile(job/name,evidence/name)
  if execution.returncode:raise RuntimeError((job/'progress.json').read_text())
- result=json.loads((job/'result.json').read_text());p=result['project'];meta=result['file'];assert meta and p['ready'];assert p['direction']['model']=='Qwen/Qwen3-VL-8B-Instruct-GGUF';assert len(p['scenes'])==4
+ result=json.loads((job/'result.json').read_text());p=result['project'];meta=result['file'];assert meta and p['ready'];assert p['direction']['model']=='unsloth/Qwen3.5-9B-GGUF';assert len(p['scenes'])==4
  combined=b''.join((job/f'result_{n}.bin').read_bytes() for n in range(meta['chunks']));assert len(combined)==meta['size'] and hashlib.sha256(combined).hexdigest()==meta['sha256']
  video=evidence/'motion.mp4';video.write_bytes(combined);info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(video)]));assert not any(s['codec_type']=='audio' for s in info['streams']);assert p['aspect']==('9:16' if images else '16:9');assert abs(float(info['format']['duration'])-(24 if images else 20))<.1
  subprocess.run(['ffmpeg','-v','error','-i',str(video),'-f','null','-'],check=True)
  geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in p['scenes']};assert len(geometry)>=3,'Repeated geometry'
+ # Known real-generation regressions must fail QA even if an MP4 was encoded.
+ import re
+ story=json.loads((job/'story.json').read_text());copy_text=re.sub(r'[\u064b-\u065f\u0670\u0640]','',json.dumps(story,ensure_ascii=False))
+ for shot in story['scenes']:assert len(re.findall(r'[ء-يA-Za-z0-9٠-٩]+',re.sub(r'[\u064b-\u065f\u0670\u0640]','',shot['narration'])))>=6,'Narration was compressed to a label'
+ if args.case=='idea':assert not re.search(r'نطبق\s+الكتاب',copy_text),'Printing verb was replaced with apply'
+ assert not re.search(r'اختر.{0,28}وتحويله',copy_text),'Broken Arabic imperative'
  if args.case=='page':
+  assert 'PDF' in p['direction']['sources'][0]['text'] and 'الصفحات' in p['direction']['sources'][0]['text'],'Relevant document facts were lost behind navigation'
   assert p['direction']['sources'] and 'MadarFiles' in p['direction']['sources'][0]['url'],'Public page was not read'
   assert len(p['direction']['sources'][0]['text'])>=60,'Source content missing'
  if images:assert any(e.get('asset') in images for s in p['scenes'] for e in s['composition']['elements']),'References unused'
