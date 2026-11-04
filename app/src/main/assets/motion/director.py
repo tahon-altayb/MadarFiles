@@ -10,6 +10,7 @@ def report_error(kind,value,traceback):
 sys.excepthook=report_error
 MODEL='unsloth/Qwen3.5-9B-GGUF';REVISION='3885219b6810b007914f3a7950a8d1b469d598a5'
 RUNTIME='b12089';RUNTIME_SHA='f3cd7d5d34dee97be7137b749723ac10228055b85336fb56f1d5d0c80ebb737d'
+DIRECTOR_STARTED=time.monotonic()
 ROOT=Path.cwd();request=json.loads(Path('request.json').read_text());p=request['project'];brief=p['creativeRequest']
 if not isinstance(brief.get('text'),str) or not 1<=len(brief['text'])<=6000:raise ValueError('BRIEF_SIZE')
 from sources import collect
@@ -220,7 +221,9 @@ for i,shot in enumerate(story['scenes']):
  tmp=Path('progress.json.tmp');tmp.write_text(json.dumps({'stage':'design','progress':24+i*3}));tmp.replace('progress.json')
  prompt={'shot':shot,'scene_index':i,'aspect':story.get('aspect','9:16'),'available_assets':([] if shot['reference']==-1 else [images[shot['reference']]]),'previous_shots':prior,'concept':story.get('concept','')}
  error=''
- for attempt in range(1):
+ # Preserve the reviewed story when CPU planning has used most of its budget.
+ # The same validated adaptive layouts already handle invalid model geometry.
+ for attempt in range(1 if time.monotonic()-DIRECTOR_STARTED<1200 else 0):
   try:
    composition=generate(SYSTEM,SCHEMA+'\nUse exactly shot.title and shot.caption as the two visible text elements. Do not rewrite either text. Design this shot. Correct any validation feedback: '+error+'\n'+json.dumps(prompt,ensure_ascii=False),max_tokens=2200,schema=COMPOSITION)
   except ValueError:

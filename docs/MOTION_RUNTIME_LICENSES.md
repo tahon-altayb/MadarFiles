@@ -11,3 +11,5 @@ The image-aware director uses `Qwen/Qwen3.5-9B` weights repackaged by Unsloth in
 Licensing and schema validation do not establish creative quality. Real storyboards, reference-image direction and MP4 output require separate review.
 
 The Qwen3-VL-8B candidate was rejected after real Arabic copy review found grammatical errors and unsupported page-derived promises. Qwen3.5 is evaluated against those real regressions; an encoded MP4 alone is not sufficient. Downloaded language weights are verified against SHA256 `6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293`; the F16 projector against `f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f`. Non-thinking generation follows the upstream general-task sampling settings.
+
+Layout inference starts only within the first 20 minutes of direction, including model setup and copy review. If that budget is consumed, remaining scenes use the existing validated adaptive composition engine with the reviewed text, relevant owned assets and distinct layouts. This preserves useful output within the worker deadline without skipping text, geometry or final-video validation.
