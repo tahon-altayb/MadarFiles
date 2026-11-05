@@ -9,6 +9,16 @@
   if(/تصلح|اصلاح|تطور|تضيف ميزه/.test(t)&&/نفسك|نفسه|ذاتيا|التطبيق/.test(t))return 'أقدر أشخّص أعطال التشغيل المدعومة، وأستعيد الاتصال أو المحاولة المحفوظة عندما يكون ذلك آمنًا. إضافة قدرة غير موجودة أو تعديل كود أندرويد تحتاج تطويرًا واختبارات وتحديثًا موقّعًا؛ لن أدّعي أنني أضفت ميزة لم تُنفذ.';
   return null;
  }
+
+ function motionFeedback(text,context={}){
+  const t=normalize(text);if(!context.project||context.relevant===false||question(t)||/^(?:طيب\s*)?(?:لا\s*(?:تعدل|تغير|تسوي|ابي|اريد)|ما\s*(?:ابي|ابغى|اريد))/.test(t)||/(?:موشن|اعلان|فيديو|مشروع)\s+جديد/.test(t))return false;
+  const explicit=/الموشن|المشهد|الاعلان|الفيديو السابق/.test(t);
+  if(!explicit&&/(?:\b(?:pdf|qr|docx|jpg|png|webp)\b|باركود|كيو\s*ار|ترجم|ترجمه|استخرج|استخراج|اعزل|ازاله الخلفيه|شيل الخلفيه|ارفع اضاء|تدوير)/i.test(t))return false;
+  const edit=/خلي|خلها|غير|عدل|رتب|قدم|بدل|استبدل|احذف|اكتب|تكتب|حط|اضف|ضيف|ابيها|ابغاها/.test(t),target=/صور|صوره|شعار|لقطه|مشهد|عنوان|النص|الكتابه|المكتوب|البدايه|النهايه/.test(t);
+  const points=t.match(/(?:^|[\s،؛])(?:اولا|ثانيا|ثالثا|رابعا|خامسا|سادسا|[1-6١-٦][).:-])(?=\s|[،:.-])/g)||[];
+  return edit&&target&&(points.length>=2||/(?:اول شي|اول لقطه|في البدايه|بالبدايه|في النهايه|بالنهايه)/.test(t));
+ }
+
  const excluded=new Set(['onlineAudioConsent','onlineTextConsent','onlineDocumentConsent','geminiPlanApproved','documentPlanApproved','pdfPassword','pdfPasswordConfirm','seek']);
  function options(plan,form,kind){
   if(['ask','chat','history','deleteRecent','qr','player','preview','mute','audio','editor','generateImage','motionStudio','imageBatch','mergePdf','imagesPdf','protectPdf'].includes(plan.tool))return [];
@@ -33,5 +43,5 @@
   let matched=false;for(const f of pending.fields){if(!f.options)continue;for(const [value,label]of f.options){const n=normalize(label);if(t===normalize(value)||t===n||t.length>=4&&n.includes(t)){f.value=value;matched=true;break;}}}
   return matched?'changed':null;
  }
- return {normalize,question,facts,options,render,reply};
+ return {normalize,question,facts,motionFeedback,options,render,reply};
 });
