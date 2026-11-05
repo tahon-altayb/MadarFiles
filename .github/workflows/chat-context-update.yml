@@ -1,0 +1,132 @@
+name: Build chat context update
+'on':
+  push:
+    branches:
+    - delivery/chat-context-20261105
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: chat-context-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Test chat revisions, references and standalone tools
+      run: 'npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
+
+        export NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules"
+
+        node qa/interface.test.cjs
+
+        node qa/agent-conversation.test.cjs
+
+        node qa/agent-motion.test.cjs
+
+        node qa/upgrade.test.cjs
+
+        node qa/workspace-plus.test.cjs
+
+        '
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Prepare preinstalled Android SDK
+      timeout-minutes: 10
+      run: python3 scripts/ensure_android.py
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.9'
+    - name: Restore processing build assets
+      uses: actions/cache/restore@v4
+      with:
+        path: 'app/vendor
+
+          app/src/main/jniLibs
+
+          app/src/main/assets/models
+
+          '
+        key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
+        restore-keys: 'madar-engines-v1-
+
+          '
+    - name: Prepare offline model and native assets
+      run: 'python3 scripts/prepare_models.py
+
+        python3 scripts/prepare_vision.py
+
+        python3 scripts/prepare_lame.py
+
+        python3 scripts/prepare_containers.py
+
+        '
+    - name: Load signing key from GitHub Secrets
+      env:
+        MADAR_KEYSTORE_BASE64: ${{ secrets.MADAR_KEYSTORE_BASE64 }}
+        MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+        MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+        MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+      run: "python3 - <<'PYKEY'\nimport os,base64,pathlib,hashlib,subprocess\nvalue=os.environ.get('MADAR_KEYSTORE_BASE64','')\nrequired=['MADAR_KEYSTORE_BASE64','MADAR_STORE_PASSWORD','MADAR_KEY_PASSWORD','MADAR_KEY_ALIAS']\n\
+        missing=[name for name in required if not os.environ.get(name)]\nif missing:\n    raise SystemExit('Configure signing Secrets\
+        \ first: '+', '.join(missing)+'. Never generate a replacement release key.')\ndest=pathlib.Path('.signing/madar-development.keystore')\n\
+        dest.parent.mkdir(mode=0o700,exist_ok=True)\ndest.write_bytes(base64.b64decode(value,validate=True))\ndest.chmod(0o600)\ncert=subprocess.check_output(['keytool','-exportcert','-keystore',str(dest),'-alias',os.environ['MADAR_KEY_ALIAS'],'-storepass:env','MADAR_STORE_PASSWORD'])\n\
+        expected='753b13a984815b725b41a8f2ae2ef07d9d9e8cc64811cbff004d5da8ccedfb5e'\nif hashlib.sha256(cert).hexdigest()!=expected:\n\
+        \    raise SystemExit('Signing key is not the original update key; build stopped')\nPYKEY\n"
+    - name: Load required Firebase project configuration
+      env:
+        MADAR_FIREBASE_CONFIG: ${{ secrets.MADAR_FIREBASE_CONFIG }}
+      run: "python3 - <<'PYFIREBASE'\nimport os,json,pathlib\nvalue=os.environ.get('MADAR_FIREBASE_CONFIG','').strip()\nif not value:\n\
+        \    raise SystemExit('MADAR_FIREBASE_CONFIG is required for this managed Gemini release')\nconfig=json.loads(value)\nassert\
+        \ config.get('project_info',{}).get('project_id')=='madar-2ab2e', 'Firebase project mismatch'\nclients=[c for c in config.get('client',[])\
+        \ if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.madar.files']\nassert len(clients)==1,\
+        \ 'Firebase Android package mismatch'\nassert clients[0].get('api_key',[{}])[0].get('current_key'), 'Firebase client key missing'\n\
+        assert clients[0].get('client_info',{}).get('mobilesdk_app_id'), 'Firebase app ID missing'\ndest=pathlib.Path('app/google-services.json')\n\
+        dest.write_text(value)\ndest.chmod(0o600)\nprint('Verified Firebase project and Android client configuration; values withheld.')\n\
+        PYFIREBASE\n"
+    - name: Compile, lint, test and sign update
+      env:
+        MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+        MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+        MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+      run: 'gradle --no-daemon -PvalidationBuild=true :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest
+
+        gradle --no-daemon :app:lintRelease :app:assembleRelease
+
+        '
+    - name: Verify update package and signing certificate
+      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 61 --version-name 1.9.26 --firebase-config
+        app/google-services.json
+    - name: Prepare APK
+      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.26.apk
+    - name: Upload verified update APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: MadarFiles-1.9.26-APK
+        path: MadarFiles-1.9.26.apk
+        if-no-files-found: error
+        retention-days: 30
+    - name: Save validation reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: chat-context-verification
+        path: 'app/build/reports/
+
+          app/build/test-results/
+
+          qa/evidence/'
+        if-no-files-found: ignore
+    - name: Remove temporary signing material
+      if: always()
+      run: rm -f .signing/madar-development.keystore app/google-services.json
