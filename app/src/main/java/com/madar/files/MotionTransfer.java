@@ -44,7 +44,7 @@ final class MotionTransfer {
   if(extras!=null){
    diagnostic.record("MOTION_FETCH_ASSETS");if(extras.length()>9)throw new IOException("Colab · MOTION_TRANSFER_INVALID");long total=0;Set<String> seen=new HashSet<>();
    for(int i=0;i<extras.length();i++){
-    MusicSeparator.check(cancel);JSONObject extra=extras.getJSONObject(i);String name=extra.getString("name");
+    ColabProbe.check(cancel);JSONObject extra=extras.getJSONObject(i);String name=extra.getString("name");
     if(!name.matches("voice\\.wav|asset_[a-f0-9]{32}\\.jpg")||!seen.add(name))throw new IOException("Colab · MOTION_TRANSFER_INVALID");
     long size=extra.getLong("size");int count=extra.getInt("chunks");String hash=extra.getString("sha256");validateMeta(size,count,hash,32L*1024*1024);if((total+=size)>96L*1024*1024)throw new IOException("Colab · MOTION_TRANSFER_INVALID");
     File dest=MotionProject.asset(c,id,name);
@@ -52,7 +52,7 @@ final class MotionTransfer {
     if(name.equals("voice.wav"))updated.put("audio","voice.wav").put("audioRevision",System.currentTimeMillis());
    }
   }
-  MusicSeparator.check(cancel);updated.put("agentTask",original.optString("agentTask"));updated.remove("motionTransfer");
+  ColabProbe.check(cancel);updated.put("agentTask",original.optString("agentTask"));updated.remove("motionTransfer");
   MotionProject.save(c,updated);original.remove("motionTransfer");diagnostic.record("MOTION_RESULT_VERIFIED");return updated;
  }
  private static void validateMeta(long size,int chunks,String hash,long maximum)throws IOException{
@@ -62,10 +62,10 @@ final class MotionTransfer {
   File temp=new File(output.getPath()+".partial");
   try{
    try(OutputStream out=new FileOutputStream(temp)){
-    for(int n=0;n<chunks;n++){MusicSeparator.check(cancel);byte[] bytes=runtime.getBinary(prefix+n+".bin",2*1024*1024);if(bytes.length!=Math.min(MotionCloud.CHUNK,size-(long)n*MotionCloud.CHUNK))throw new IOException("Colab · MOTION_OUTPUT_LENGTH");out.write(bytes);progress.update(98,"تحميل النتيجة · "+(n+1)+" / "+chunks);}
+    for(int n=0;n<chunks;n++){ColabProbe.check(cancel);byte[] bytes=runtime.getBinary(prefix+n+".bin",2*1024*1024);if(bytes.length!=Math.min(MotionCloud.CHUNK,size-(long)n*MotionCloud.CHUNK))throw new IOException("Colab · MOTION_OUTPUT_LENGTH");out.write(bytes);progress.update(98,"تحميل النتيجة · "+(n+1)+" / "+chunks);}
    }
    if(temp.length()!=size||!hash.equals(MotionProject.hash(temp)))throw new IOException("Colab · MOTION_OUTPUT_HASH");
-   MusicSeparator.check(cancel);if(!temp.renameTo(output))throw new IOException("تعذر حفظ النتيجة؛ أعد المحاولة لتنزيلها");
+   ColabProbe.check(cancel);if(!temp.renameTo(output))throw new IOException("تعذر حفظ النتيجة؛ أعد المحاولة لتنزيلها");
   }finally{temp.delete();}
  }
  private MotionTransfer(){}
