@@ -16,3 +16,6 @@ console.log('PASS: measured word anchors, repeated/missing phrases, manual revie
 // Arabic punctuation and digit variants must not shift a spoken anchor.
 assert.deepEqual(C.tokens('عام ١٢٣، ثم عام ۱۲۴.'),['عام','123','ثم','عام','124']);
 p=project();p.scenes[0].imageSeconds=11;assert.throws(()=>C.validate(p),/مدة ظهور/);
+
+// Continuous speech may have no silence at a scene boundary. Keep every word.
+{const p={version:1,id:'a'.repeat(32),title:'تسجيل متصل',theme:'paper',aspect:'9:16',voiceMode:'recording',scenes:['مدار أدواتك في','مكان واحد حول','ملفاتك وحرر صورك','ومقاطعك وأنجز أعمالك بسهولة'].map((n,i)=>({id:String(i+1).padStart(12,'0'),title:'التسجيل',narration:n,seconds:3,effect:'rise',transition:'fade',graphic:'none',image:'',imageQuery:'',imageAnchor:'',credit:'',highlights:[],words:[]}))};const words=p.scenes.flatMap(s=>s.narration.split(' ')).map((text,i)=>({text,start:i*.6,end:(i+1)*.6}));C.align(p,[{whole:true,duration:words.length*.6,words}]);assert.ok(p.scenes.every(s=>s.coverage===1&&!s.needsReview));C.validate(p,true);}

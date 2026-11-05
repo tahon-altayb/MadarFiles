@@ -30,6 +30,28 @@ public class MotionStudioTest {
   String title="مشروع عربي محفوظ";js("(()=>{const e=document.querySelector('#projectTitle');e.value='"+title+"';e.dispatchEvent(new Event('change'));})()");Thread.sleep(800);Field f=MotionStudioActivity.class.getDeclaredField("id");f.setAccessible(true);String id=(String)f.get(activity);assertEquals(title,MotionProject.load(c,id).getString("title"));assertEquals(3,MotionProject.load(c,id).getJSONArray("scenes").length());
   foreground();Bitmap screenshot=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();assertNotNull(screenshot);try(OutputStream out=new FileOutputStream(new File(c.getExternalFilesDir(null),"motion-studio.png"))){screenshot.compress(Bitmap.CompressFormat.PNG,100,out);}screenshot.recycle();
  }
+ @Test(timeout=30000) public void productStoryRunsLocallyAndNativeValidationPreservesIt()throws Exception{
+  js("document.querySelector('#productExample').click();document.querySelector('#buildProduct').click()");
+  long until=android.os.SystemClock.elapsedRealtime()+7000;while(android.os.SystemClock.elapsedRealtime()<until&&!"7".equals(js("document.querySelectorAll('#scenes .scene').length")))Thread.sleep(100);
+  assertEquals("7",js("document.querySelectorAll('#scenes .scene').length"));assertEquals("false",js("document.querySelector('#consent').checked"));
+  Field field=MotionStudioActivity.class.getDeclaredField("id");field.setAccessible(true);JSONObject p=MotionProject.load(c,(String)field.get(activity));assertEquals("none",p.getString("voiceMode"));assertEquals("بر الطيبات",p.getJSONObject("product").getString("name"));assertEquals("process",p.getJSONArray("scenes").getJSONObject(3).getString("productStage"));
+  try{MotionProject.validate(p,true);fail("The product photograph is required before exporting");}catch(IOException expected){}
+  File photo=File.createTempFile("product-fixture-",".jpg",c.getCacheDir());Bitmap bitmap=Bitmap.createBitmap(120,180,Bitmap.Config.ARGB_8888);bitmap.eraseColor(android.graphics.Color.rgb(110,80,45));try(OutputStream out=new FileOutputStream(photo)){bitmap.compress(Bitmap.CompressFormat.JPEG,95,out);}bitmap.recycle();
+  android.net.Uri uri=androidx.core.content.FileProvider.getUriForFile(c,c.getPackageName()+".files",photo);Field pending=MotionStudioActivity.class.getDeclaredField("pending");pending.setAccessible(true);pending.set(activity,"productImage");main(()->activity.onActivityResult(781,android.app.Activity.RESULT_OK,new Intent().setData(uri)));
+  until=android.os.SystemClock.elapsedRealtime()+10000;while(android.os.SystemClock.elapsedRealtime()<until){p=MotionProject.load(c,(String)field.get(activity));if(!p.getJSONArray("scenes").getJSONObject(0).getString("image").isEmpty())break;Thread.sleep(100);}
+  String image=p.getJSONArray("scenes").getJSONObject(0).getString("image");assertFalse("Image import did not finish: "+js("document.querySelector('#toast').textContent"),image.isEmpty());for(int i=0;i<7;i++)assertEquals(image,p.getJSONArray("scenes").getJSONObject(i).getString("image"));assertTrue(MotionProject.asset(c,p.getString("id"),image).isFile());MotionProject.validate(p,true);photo.delete();
+  // A reader during AtomicFile's .new write must wait, not remove the pending commit.
+  final JSONObject committed=new JSONObject(p.toString()).put("title","حفظ الصورة مكتمل");final File projectFile=MotionProject.asset(c,p.getString("id"),"project.json");final String projectId=p.getString("id");
+  java.util.concurrent.CountDownLatch writing=new java.util.concurrent.CountDownLatch(1),release=new java.util.concurrent.CountDownLatch(1),reading=new java.util.concurrent.CountDownLatch(1);
+  java.util.concurrent.ExecutorService pool=java.util.concurrent.Executors.newFixedThreadPool(2);
+  try{
+   java.util.concurrent.Future<?> writer=pool.submit(()->{synchronized(MotionProject.class){android.util.AtomicFile atomic=new android.util.AtomicFile(projectFile);FileOutputStream out=null;try{out=atomic.startWrite();out.write(committed.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));writing.countDown();if(!release.await(5,java.util.concurrent.TimeUnit.SECONDS))throw new IOException("Reader probe timed out");atomic.finishWrite(out);}catch(Exception e){if(out!=null)atomic.failWrite(out);throw new RuntimeException(e);}}});
+   assertTrue(writing.await(5,java.util.concurrent.TimeUnit.SECONDS));java.util.concurrent.Future<JSONObject> reader=pool.submit(()->{reading.countDown();return MotionProject.load(c,projectId);});assertTrue(reading.await(5,java.util.concurrent.TimeUnit.SECONDS));
+   try{reader.get(150,java.util.concurrent.TimeUnit.MILLISECONDS);fail("Reading must wait until the pending project commit completes");}catch(java.util.concurrent.TimeoutException expected){}
+   release.countDown();writer.get(5,java.util.concurrent.TimeUnit.SECONDS);assertEquals("حفظ الصورة مكتمل",reader.get(5,java.util.concurrent.TimeUnit.SECONDS).getString("title"));
+  }finally{release.countDown();pool.shutdownNow();}
+  p.getJSONObject("product").put("confirmedPercent",false);try{MotionProject.validate(p,true);fail("A percent scene requires an explicit claim");}catch(IOException expected){}
+ }
  @Test public void previewUsesMeasuredWordsAndPreservesAmbiguity()throws Exception{
   String result=js("(()=>{const C=MadarMotion;let p={version:1,id:'"+"0".repeat(32)+"',title:'تجربة',theme:'paper',aspect:'9:16',voiceMode:'google',scenes:[{id:'123456abcdef',title:'رحلة',narration:'وصلنا إلى الميناء',seconds:4,effect:'rise',transition:'fade',image:'',credit:'',imageQuery:'',imageAnchor:'',highlights:[{text:'الميناء',anchor:'الميناء',role:'top',group:0}]}]};C.align(p,[{duration:4,words:[{text:'وصلنا',start:.5,end:1},{text:'إلى',start:1.1,end:1.3},{text:'الميناء',start:2.1,end:3}]}]);return p.scenes[0].highlights[0].start;})()");assertEquals("2.1",result);
  }
@@ -42,4 +64,14 @@ public class MotionStudioTest {
   byte[] header=MotionSpeech.wavHeader(48000);java.nio.ByteBuffer b=java.nio.ByteBuffer.wrap(header).order(java.nio.ByteOrder.LITTLE_ENDIAN);assertEquals(48036,b.getInt(4));assertEquals(24000,b.getInt(24));assertEquals(48000,b.getInt(40));
   JSONObject p=MotionProject.create(c);p.getJSONArray("scenes").getJSONObject(0).put("image","../../private");try{MotionProject.validate(p,false);fail();}catch(IOException expected){}
  }
+ @Test(timeout=30000) public void incompleteProductDraftSurvivesReloadAndProjectSwitch()throws Exception{
+  js("(()=>{const e=document.getElementById('productBenefits');e.value='تفاصيل مدار\\nمعلومة لم تكتمل';e.dispatchEvent(new Event('input'));})()");
+  Field f=MotionStudioActivity.class.getDeclaredField("id");f.setAccessible(true);String id=(String)f.get(activity);long until=android.os.SystemClock.elapsedRealtime()+5000;JSONObject draft=null;while(android.os.SystemClock.elapsedRealtime()<until){draft=MotionProject.draft(c,id);if(draft!=null)break;Thread.sleep(80);}assertNotNull(draft);assertEquals("تفاصيل مدار\nمعلومة لم تكتمل",draft.getJSONObject("fields").getString("productBenefits"));
+  js("document.getElementById('theme').value='night';document.getElementById('theme').dispatchEvent(new Event('change'))");assertEquals("\"تفاصيل مدار\\nمعلومة لم تكتمل\"",js("document.getElementById('productBenefits').value"));
+  String oldOrigin=js("performance.timeOrigin");main(()->web.reload());long reloadUntil=android.os.SystemClock.elapsedRealtime()+10000;while(android.os.SystemClock.elapsedRealtime()<reloadUntil&&oldOrigin.equals(js("performance.timeOrigin")))Thread.sleep(50);assertNotEquals("WebView must load a new document before checking the restored draft",oldOrigin,js("performance.timeOrigin"));ready();assertEquals("\"تفاصيل مدار\\nمعلومة لم تكتمل\"",js("document.getElementById('productBenefits').value"));JSONObject other=MotionProject.create(c);assertNull(MotionProject.draft(c,other.getString("id")));
+ }
+ @Test public void freeSceneGraphHasNativeAndPreviewValidationParity()throws Exception{
+  JSONObject p=MotionProject.create(c);JSONObject composition=new JSONObject("{\"backdrop\":\"orbit\",\"elements\":[{\"kind\":\"text\",\"text\":\"مدار\",\"size\":80,\"x\":0.1,\"y\":0.1,\"w\":0.8,\"h\":0.2,\"color\":\"ink\",\"motion\":\"rise\",\"delay\":0}]}");p.getJSONArray("scenes").getJSONObject(0).put("graphic","creative").put("composition",composition);MotionProject.validate(p,false);assertEquals("true",js("!!MadarMotion.creative.validate("+composition+")"));composition.getJSONArray("elements").getJSONObject(0).put("x",.9);try{MotionProject.validate(p,false);fail("Off-canvas elements must be rejected");}catch(IOException expected){}
+ }
+
 }

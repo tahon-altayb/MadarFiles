@@ -11,20 +11,46 @@ import java.util.concurrent.atomic.*;
 /** Control plane + Jupyter. OAuth never goes to the runtime; proxy tokens never go to WebView. */
 final class ColabRuntime implements AutoCloseable {
  interface CloudTransport {JSONObject call(String method,String path,JSONObject body,AtomicBoolean cancel)throws Exception;}
- final Context context;final ColabCredentials.Grant grant;final AtomicBoolean cancel;private final CloudTransport transport;
+ interface GrantRenewal {ColabCredentials.Grant renew(ColabCredentials.Grant previous,AtomicBoolean stop)throws Exception;}
+ final Context context;volatile ColabCredentials.Grant grant;final AtomicBoolean cancel;private final CloudTransport transport;private final GrantRenewal grantRenewal;
+ java.util.function.Consumer<String> authEvents=code->{};
  final OkHttpClient http=new OkHttpClient.Builder().connectTimeout(20,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS).writeTimeout(90,TimeUnit.SECONDS).callTimeout(100,TimeUnit.SECONDS).retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build();
  private String runtime="",proxyToken="";private HttpUrl base;private long refreshAt;
  static final class NetworkFailure extends IOException {final String code;NetworkFailure(IOException e){super("Colab · "+(e instanceof javax.net.ssl.SSLException?"IO_TLS":e instanceof java.net.UnknownHostException?"IO_DNS":e instanceof java.net.SocketTimeoutException?"IO_TIMEOUT":"IO_NETWORK"));code=getMessage().substring(8);}}
  static final class ProtocolFailure extends IOException {ProtocolFailure(String message){super(message);}}
  static final class HttpFailure extends IOException {final int status;HttpFailure(int n){super("Colab · HTTP_"+n);status=n;}}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop){this(c,g,stop,null);}
- ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t){context=c;grant=g;cancel=stop;transport=t;}
+ ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t){this(c,g,stop,t,null);}
+ ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t,GrantRenewal renewal){context=c;grant=g;cancel=stop;transport=t;grantRenewal=renewal;}
  JSONObject cloud(String method,String path,JSONObject data,AtomicBoolean stop)throws Exception{
   ColabProbe.check(stop);
   if(!path.matches("v1beta/(runtimespecs|runtimes(\\?.*)?|runtimes/madar-[a-z0-9-]+(\\?.*)?)|v1/operations/[A-Za-z0-9_./-]+"))throw new IOException("مسار Colab غير صالح");
-  if(transport!=null)return transport.call(method,path,data,stop);
-  return request(new Request.Builder().url("https://colaboratory.googleapis.com/"+path).header("Authorization","Bearer "+grant.token).header("X-Goog-User-Project",grant.project),method,data,stop,2*1024*1024,20000);
+  for(int attempt=0;;attempt++){
+   ColabCredentials.Grant access=grant;
+   try{if(transport!=null)return transport.call(method,path,data,stop);return request(new Request.Builder().url("https://colaboratory.googleapis.com/"+path).header("Authorization","Bearer "+access.token).header("X-Goog-User-Project",access.project),method,data,stop,2*1024*1024,20000);}
+   catch(HttpFailure denied){if(denied.status!=401||attempt!=0)throw denied;renewAccess(access,stop);}
+  }
  }
+
+ private synchronized void renewAccess(ColabCredentials.Grant rejected,AtomicBoolean stop)throws Exception{
+  ColabProbe.check(stop);if(grant!=rejected)return;authEvents.accept("AUTH_REFRESH_START");
+  ColabCredentials.Grant renewed=grantRenewal==null?googleGrant(rejected,stop):grantRenewal.renew(rejected,stop);
+  ColabProbe.check(stop);if(renewed==null||renewed.token==null||renewed.token.isEmpty()||!rejected.project.equals(renewed.project))throw new IOException("Colab · AUTH_REQUIRED");
+  grant=renewed;refreshAt=0;authEvents.accept("AUTH_REFRESHED");
+ }
+ private ColabCredentials.Grant googleGrant(ColabCredentials.Grant previous,AtomicBoolean stop)throws Exception{
+  com.google.android.gms.auth.api.identity.AuthorizationClient client=com.google.android.gms.auth.api.identity.Identity.getAuthorizationClient(context);
+  awaitAuthorization(client.clearToken(com.google.android.gms.auth.api.identity.ClearTokenRequest.builder().setToken(previous.token).build()),stop);
+  com.google.android.gms.auth.api.identity.AuthorizationResult result=awaitAuthorization(client.authorize(com.google.android.gms.auth.api.identity.AuthorizationRequest.builder().setRequestedScopes(Collections.singletonList(new com.google.android.gms.common.api.Scope(ColabProbe.SCOPE))).build()),stop);
+  if(result.hasResolution()||result.getAccessToken()==null||!result.getGrantedScopes().contains(ColabProbe.SCOPE))throw new IOException("Colab · AUTH_REQUIRED");
+  return new ColabCredentials.Grant(result.getAccessToken(),previous.project);
+ }
+ private static <T> T awaitAuthorization(com.google.android.gms.tasks.Task<T> task,AtomicBoolean stop)throws Exception{
+  long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(25);
+  while(!task.isComplete()){ColabProbe.check(stop);if(System.nanoTime()>until)throw new IOException("Colab · AUTH_REQUIRED");Thread.sleep(100);}
+  ColabProbe.check(stop);if(!task.isSuccessful())throw new IOException("Colab · AUTH_REQUIRED",task.getException());return task.getResult();
+ }
+
  JSONObject request(Request.Builder builder,String method,JSONObject body,AtomicBoolean stop,int maximum)throws Exception {return request(builder,method,body,stop,maximum,100000);}
  JSONObject request(Request.Builder builder,String method,JSONObject body,AtomicBoolean stop,int maximum,long timeoutMs)throws Exception {
   ColabProbe.check(stop);RequestBody payload=body==null?null:RequestBody.create(body.toString(),MediaType.get("application/json; charset=utf-8"));Call call=http.newCall(builder.method(method,payload).build());call.timeout().timeout(timeoutMs,TimeUnit.MILLISECONDS);
@@ -50,9 +76,17 @@ final class ColabRuntime implements AutoCloseable {
   List<JSONObject> list=candidates(response);String first=Arrays.asList("T4","L4","A100").contains(preferred)?preferred:Arrays.asList("T4","L4","A100").contains(last)?last:"T4";
   List<String> order=new ArrayList<>(Arrays.asList("T4","L4","A100"));order.remove(first);order.add(0,first);list.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));return list;
  }
+ boolean resumeMotionReview(String owner)throws Exception{
+  String name=journal().getString("name",""),saved=journal().getString("reviewOwner","");if(name.isEmpty()||saved.isEmpty())return false;
+  if(!saved.equals(owner)||!grant.project.equals(journal().getString("project","")))throw new IOException("جلسة الموشن المحفوظة تخص محادثة أو حسابًا آخر");
+  if(journal().getBoolean("reviewBusy",false))throw new IOException("توجد معالجة موشن سابقة لم يؤكد اكتمالها؛ أغلق الجلسة السابقة صراحة قبل بدء محاولة جديدة");
+  if(!ownName(name))throw new IOException("معرّف جلسة الموشن غير صالح");runtime=name;
+  try{refresh();return true;}catch(HttpFailure missing){if(missing.status!=404&&missing.status!=410)throw missing;cleanupPrevious();runtime="";return false;}
+ }
+ void reviewState(String owner,boolean busy){journal().edit().putString("reviewOwner",owner).putBoolean("reviewBusy",busy).commit();}
  void create(MusicSeparator.Progress progress)throws Exception {create(progress,false);}
  void create(MusicSeparator.Progress progress,boolean music)throws Exception {
-  ColabProbe.check(cancel);MusicGpuSession.beforeRuntime(this);if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
+  ColabProbe.check(cancel);MotionGpuSession.beforeRuntime(this);MusicGpuSession.beforeRuntime(this);if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
   android.content.SharedPreferences settings=context.getSharedPreferences("colab_connection",0);
   List<JSONObject> specs=music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
   for(int i=0;i<Math.min(2,specs.size());i++){

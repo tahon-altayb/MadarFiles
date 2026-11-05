@@ -7,7 +7,7 @@ data=Path(args.audio).read_bytes();text=Path(args.transcript).read_text().replac
 assert 0<len(data)<=32*1024*1024 and 0<len(text)<=1000 and 0<len(args.anchor)<=100
 with tempfile.TemporaryDirectory(prefix='madar-motion-alignment-') as tmp:
  job=Path(tmp)/('madar_'+'d'*32);job.mkdir()
- for name in ['worker.py','core.js']:shutil.copyfile(assets/name,job/name)
+ for name in ['worker.py','core.js','product.js','creative.js']:shutil.copyfile(assets/name,job/name)
  count=(len(data)+749999)//750000
  for i in range(count):(job/f'recording.media.part_{i}').write_bytes(data[i*750000:(i+1)*750000])
  project={'version':1,'id':'e'*32,'title':'اختبار المحاذاة','theme':'paper','aspect':'9:16','voiceMode':'recording','voice':'Charon','scenes':[{'id':'f'*12,'title':'اختبار المحاذاة','narration':text,'seconds':28,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[{'text':args.anchor,'anchor':args.anchor,'role':'bottom','group':0}],'words':[]}]}

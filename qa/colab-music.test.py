@@ -134,8 +134,14 @@ def run():
                         w.write_json(marker,dict(protocol=2,service=root.name,job=job.name))
                 time.sleep(.1)
                 calls=(root/'calls.txt').read_text().splitlines();self.assertEqual(len(calls),5);self.assertEqual(len(set(calls)),5)
-                beat=json.loads((root/'service.json').read_text())['heartbeat'];time.sleep(.1)
-                service=json.loads((root/'service.json').read_text());self.assertGreater(service['heartbeat'],beat);self.assertEqual(service['stage'],'ready');self.assertEqual(service['next_batch'],5)
+                beat=json.loads((root/'service.json').read_text())['heartbeat']
+                deadline=time.monotonic()+3
+                service=json.loads((root/'service.json').read_text())
+                while service['heartbeat']<=beat and time.monotonic()<deadline:
+                    if process.poll() is not None:raise AssertionError(process.communicate()[1].decode())
+                    time.sleep(.02)
+                    service=json.loads((root/'service.json').read_text())
+                self.assertGreater(service['heartbeat'],beat);self.assertEqual(service['stage'],'ready');self.assertEqual(service['next_batch'],5)
                 self.assertEqual(process.poll(),None)
             finally:
                 process.terminate();process.communicate(timeout=5)

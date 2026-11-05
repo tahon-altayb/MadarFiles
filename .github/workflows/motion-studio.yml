@@ -1,7 +1,7 @@
 name: Validate motion studio runtime
 on:
   push:
-    branches: [features/motion-studio-20261102]
+    branches: [features/motion-studio-20261102, features/product-motion-20261103]
 permissions:
   contents: read
 concurrency:
@@ -20,8 +20,14 @@ jobs:
           sudo apt-get -qq update
           sudo apt-get install -y -qq ffmpeg
           node qa/motion-clock.test.cjs
+          node qa/product-motion.test.cjs
+          node qa/creative-layout.test.cjs
+          python3 qa/motion-copy.test.py
           python3 qa/motion-cloud.test.py
+          python3 qa/motion-runtime.test.py
+          python3 qa/motion-sources.test.py
           python3 qa/motion-render.test.py
+          python3 qa/product-render.test.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -63,9 +69,9 @@ jobs:
           script: |
             gradle --no-daemon -PvalidationBuild=true :app:installDebug :app:installDebugAndroidTest
             adb shell wm density 180
-            adb shell am instrument -w -r -e class com.madar.files.MotionStudioTest com.madar.files.validation.test/androidx.test.runner.AndroidJUnitRunner > motion-android.txt
+            adb shell am instrument -w -r -e class com.madar.files.MotionStudioTest,com.madar.files.ColabAuthorizationTest com.madar.files.validation.test/androidx.test.runner.AndroidJUnitRunner > motion-android.txt
             cat motion-android.txt
-            python3 -c "import re; s=open('motion-android.txt').read(); assert re.search(r'OK\s*\(4 tests\)',s) and not re.search(r'INSTRUMENTATION_FAILED|FAILURES!!!|INSTRUMENTATION_STATUS_CODE:\s*-\d+',s)"
+            python3 -c "import re; s=open('motion-android.txt').read(); assert re.search(r'OK\s*\(11 tests\)',s) and not re.search(r'INSTRUMENTATION_FAILED|FAILURES!!!|INSTRUMENTATION_STATUS_CODE:\s*-\d+',s)"
             adb pull /sdcard/Android/data/com.madar.files.validation/files/motion-studio.png motion-studio.png
       - uses: actions/upload-artifact@v4
         if: always()

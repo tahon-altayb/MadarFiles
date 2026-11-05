@@ -15,6 +15,19 @@ final class LocalAgent {
  static final String MODEL_SHA="2a72330b504a6596d53a2c00923c57173b10f1b83e6a541213ffec08d1fc5de8";
  static final String MODEL_URL="https://huggingface.co/litert-community/Qwen3-1.7B/resolve/79bf0667b32ae025b972e5fe555fe72ca6e8816c/Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm";
  private volatile Conversation conversation;private volatile Call download;
+ private final Object inferenceLock=new Object();private Engine warmEngine;private long verifiedModified=-1;private String verifiedPath="";private volatile boolean closed;private long cloudBackoff;private int cloudFailures;
+ volatile Progress status=(p,m)->{};
+ synchronized Engine engine(Context c,File file)throws Exception{
+  if(closed)throw new IOException("أُغلقت جلسة المساعد");
+  if(warmEngine!=null&&verifiedPath.equals(file.getAbsolutePath())&&verifiedModified==file.lastModified()&&file.length()==MODEL_BYTES)return warmEngine;
+  if(warmEngine!=null){warmEngine.close();warmEngine=null;}
+  status.update(-1,"المساعد المحلي · التحقق من النموذج لأول تشغيل");if(!digest(file).equals(MODEL_SHA)){file.delete();throw new IOException("نموذج المساعد تالف؛ أعد تنزيله");}
+  status.update(-1,"المساعد المحلي · تحميل المحرك؛ يُعاد استخدامه للأسئلة التالية");Engine value=new Engine(new EngineConfig(file.getAbsolutePath(),new Backend.CPU(),null,null,8192,null,c.getCacheDir().getAbsolutePath()));
+  try{value.initialize();}catch(Exception|LinkageError failure){value.close();throw failure;}warmEngine=value;verifiedPath=file.getAbsolutePath();verifiedModified=file.lastModified();return value;
+ }
+ void close(){closed=true;cancel();Thread release=new Thread(()->{synchronized(inferenceLock){synchronized(this){if(warmEngine!=null){warmEngine.close();warmEngine=null;}}}},"madar-agent-release");release.setDaemon(true);release.start();}
+ JSONObject provider(JSONObject plan,String name)throws Exception{return plan.put("provider",name);}
+
  interface Progress {void update(int percent,String message);}
  static File model(Context c){return new File(c.getFilesDir(),"agent-qwen3-1.7b.litertlm");}
  static boolean ready(Context c){return model(c).isFile()&&model(c).length()==MODEL_BYTES;}
@@ -37,17 +50,19 @@ final class LocalAgent {
  JSONObject plan(Context c,String user,JSONObject source,JSONArray previous,AtomicBoolean cancel)throws Exception {
   if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");
   ColabProbe.check(cancel);JSONObject direct=AgentIntents.resolve(user,source,previous);
-  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)){try{return AgentCloud.plan(c,user,source,previous,cancel);}catch(Exception cloud){ColabProbe.check(cancel);if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));if(!ready(c))throw cloud;}}
-  if(direct!=null)return AgentTools.validate(direct,source.optString("kind"));source=new JSONObject(source.toString());source.remove("_visual");
+  if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");
+  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)&&android.os.SystemClock.elapsedRealtime()>=cloudBackoff){
+   status.update(-1,"Gemini · فهم الطلب والمرفقات");try{JSONObject answer=AgentCloud.plan(c,user,source,previous,cancel);cloudFailures=0;return provider(answer,"gemini");}catch(Exception cloud){ColabProbe.check(cancel);cloudFailures++;if(cloudFailures>=2)cloudBackoff=android.os.SystemClock.elapsedRealtime()+60000;if(!ready(c))throw cloud;status.update(-1,"تعذّر المساعد المتصل؛ تجربة المحرك المحلي مرة واحدة");}
+  }
+  if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");source=new JSONObject(source.toString());source.remove("_visual");
   if(!ready(c))throw new IOException("هذا الطلب المركب يحتاج اتصال Gemini أو تنزيل النموذج المحلي؛ الأوامر المباشرة تعمل فورًا");
-  File file=model(c);if(!digest(file).equals(MODEL_SHA)){file.delete();throw new IOException("نموذج المساعد تالف؛ أعد تنزيله");}ColabProbe.check(cancel);
+  File file=model(c);ColabProbe.check(cancel);
   String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   String kind=source.optString("kind");JSONObject data=new JSONObject().put("source",source).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",history(previous)).put("userRequest",user);
-  EngineConfig config=new EngineConfig(file.getAbsolutePath(),new Backend.CPU(),null,null,8192,null,c.getCacheDir().getAbsolutePath());
-  try(Engine engine=new Engine(config)){engine.initialize();ColabProbe.check(cancel);
+  synchronized(inferenceLock){Engine engine=engine(c,file);ColabProbe.check(cancel);status.update(-1,"المساعد المحلي · فهم طلبك");
    try(Conversation chat=engine.createConversation(new ConversationConfig(Contents.Companion.of(prompt),Collections.emptyList(),Collections.emptyList(),new SamplerConfig(1,1.0,0.0,0),false,Collections.emptyList(),Collections.emptyMap(),null,false,768,new ThinkingConfig(false),true))){
     conversation=chat;ColabProbe.check(cancel);Message result=chat.sendMessage(Message.Companion.user(data.toString()),Collections.emptyMap(),null,null,null,768,new ThinkingConfig(false),ResponseFormat.Companion.json(AgentTools.schema(kind).toString()));ColabProbe.check(cancel);StringBuilder text=new StringBuilder();for(Content content:result.getContents().getContents())if(content instanceof Content.Text)text.append(((Content.Text)content).getText());
-    if(text.length()>8000)throw new IOException("رد المساعد غير مكتمل؛ اختصر الطلب");JSONObject plan=AgentTools.validate(new JSONObject(text.toString()),kind);if(c.getSharedPreferences("local_agent",0).getBoolean("learn",false)){JSONObject saved=memory(c).optJSONObject(kind+":"+plan.getString("tool"));if(saved!=null){Set<String> explicit=new HashSet<>();JSONArray fields=plan.getJSONArray("fields");for(int i=0;i<fields.length();i++)explicit.add(fields.getJSONObject(i).getString("name"));for(Iterator<String> keys=saved.keys();keys.hasNext();){String key=keys.next();if(!explicit.contains(key))fields.put(new JSONObject().put("name",key).put("value",saved.getString(key)));}}}return AgentTools.validate(plan,kind);
+    if(text.length()>8000)throw new IOException("رد المساعد غير مكتمل؛ اختصر الطلب");JSONObject plan=AgentTools.validate(new JSONObject(text.toString()),kind);if(c.getSharedPreferences("local_agent",0).getBoolean("learn",false)){JSONObject saved=memory(c).optJSONObject(kind+":"+plan.getString("tool"));if(saved!=null){Set<String> explicit=new HashSet<>();JSONArray fields=plan.getJSONArray("fields");for(int i=0;i<fields.length();i++)explicit.add(fields.getJSONObject(i).getString("name"));for(Iterator<String> keys=saved.keys();keys.hasNext();){String key=keys.next();if(!explicit.contains(key))fields.put(new JSONObject().put("name",key).put("value",saved.getString(key)));}}}return provider(AgentTools.validate(plan,kind),"local");
    }finally{conversation=null;}
   }
  }
