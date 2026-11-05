@@ -24,7 +24,7 @@ images=brief.get('images',[])
 if not isinstance(images,list) or len(images)>8 or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in images):raise ValueError('REFERENCE_PATH')
 Path('progress.json').write_text(json.dumps({'stage':'director','progress':24}))
 if os.uname().machine not in ['x86_64','amd64']:raise ValueError('RUNTIME_PLATFORM')
-stage('director_download');from director_runtime import options,threads,offloaded
+stage('director_download');from director_runtime import options,threads,offloaded,server_args,verify_cuda
 engines=options()
 weights=hf_hub_download(MODEL,'Qwen3.5-9B-UD-Q4_K_XL.gguf',revision=REVISION)
 vision=hf_hub_download(MODEL,'mmproj-F16.gguf',revision=REVISION)
@@ -66,20 +66,17 @@ for engine in engines:
  stage('director_load')
  selected_context=min(context_size,8192) if engine['gpu'] else context_size
  try:
-  server=subprocess.Popen([str(engine['binary']),'-m',weights,'--mmproj',vision,'--host','127.0.0.1','--port',str(port),'--api-key',key,'-c',str(selected_context),'-ctk','q8_0','-ctv','q8_0','-fa','on','--image-max-tokens','384','-np','1','-t',str(threads()),'-tb',str(threads()),'-ngl','99' if engine['gpu'] else '0','--no-webui'],env=engine['env'],stdout=log,stderr=log)
+  server=subprocess.Popen(server_args(engine,weights,vision,port,key,selected_context),env=engine['env'],stdout=log,stderr=log)
  except OSError:
   if engine['gpu']:continue
   raise ValueError('RUNTIME_START')
- deadline=time.monotonic()+120;healthy=False
+ deadline=time.monotonic()+180;healthy=False
  while server.poll() is None and time.monotonic()<deadline:
   try:local_request('/health',timeout=3);healthy=True;break
   except (OSError,ValueError):time.sleep(.3)
  log.flush()
  if healthy and engine['gpu']:
-  try:
-   probe=local_request('/v1/chat/completions',{'model':'local','messages':[{'role':'user','content':'اكتب نعم'}],'max_tokens':8,'temperature':0,'chat_template_kwargs':{'enable_thinking':False}},timeout=45)
-   healthy=bool(probe.get('choices'))
-  except (OSError,ValueError):healthy=False
+  verify_cuda(local_request,'director-runtime.log')
  if healthy and (not engine['gpu'] or offloaded(Path('director-runtime.log').read_text(errors='replace'))):
   active_engine='cuda' if engine['gpu'] else 'cpu'
   Path('director-engine.json').write_text(json.dumps({'active':active_engine,'verified':True,'threads':threads()}))

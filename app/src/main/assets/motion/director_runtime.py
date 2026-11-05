@@ -64,11 +64,60 @@ def options():
    gpu=install('cuda');libraries=install('cudart');binary=next(gpu.rglob('llama-server'))
    paths=sorted({str(p.parent) for root in [gpu,libraries] for p in root.rglob('*.so*')})
    env=os.environ.copy();env['LD_LIBRARY_PATH']=':'.join(paths+[env.get('LD_LIBRARY_PATH','')])
-   return [{'binary':binary,'env':env,'gpu':True}]
+   env['LLAMA_LOG_VERBOSITY']='4'
+   engine={'binary':binary,'env':env,'gpu':True}
+   require_cuda(engine)
+   return [engine]
   except (OSError,ValueError,StopIteration,tarfile.TarError) as error:
+   if isinstance(error,ValueError) and str(error).startswith('DIRECTOR_GPU_'):raise
    raise ValueError('DIRECTOR_GPU_SETUP') from error
  raise ValueError('DIRECTOR_GPU_REQUIRED')
 
 def offloaded(log):
  matches=re.findall(r'offloaded\s+(\d+)/(\d+)\s+layers\s+to\s+GPU',log,re.I)
  return bool(matches and any(int(a)>0 and int(a)==int(b) for a,b in matches))
+
+def require_cuda(engine):
+ # A CUDA-capable VM does not prove the dynamically loaded backend is usable.
+ try:
+  result=subprocess.run([str(engine['binary']),'-lv','4','--list-devices'],env=engine['env'],capture_output=True,text=True,timeout=30)
+  output=result.stdout+result.stderr
+  if result.returncode==0 and not re.search(r'^\s*CUDA0\s*:',output,re.M):
+   # Release builds silently ignore a backend that dlopen cannot load. An
+   # explicit backend load exposes the missing library/driver in this log.
+   backend=Path(engine['binary']).parent/'libggml-cuda.so'
+   if backend.is_file():
+    dependency=subprocess.run(['ldd',str(backend)],env=engine['env'],capture_output=True,text=True,timeout=15)
+    (ROOT/'director-cuda-loader.log').write_text(dependency.stdout+dependency.stderr)
+    forced={**engine['env'],'GGML_BACKEND_PATH':str(backend)}
+    result=subprocess.run([str(engine['binary']),'-lv','4','--list-devices'],env=forced,capture_output=True,text=True,timeout=30)
+    output+='\nEXPLICIT_BACKEND_LOAD\n'+result.stdout+result.stderr
+    if result.returncode==0 and re.search(r'^\s*CUDA0\s*:',result.stdout,re.M):engine['env']=forced
+  (ROOT/'director-cuda-devices.log').write_text(output)
+  if result.returncode!=0 or not re.search(r'^\s*CUDA0\s*:',output,re.M):raise ValueError('DIRECTOR_GPU_BACKEND')
+ except (OSError,subprocess.TimeoutExpired) as error:
+  (ROOT/'director-cuda-devices.log').write_text(type(error).__name__)
+  raise ValueError('DIRECTOR_GPU_BACKEND') from error
+
+def server_args(engine,weights,vision,port,key,context):
+ args=[str(engine['binary']),'-m',str(weights),'--mmproj',str(vision),'--host','127.0.0.1','--port',str(port),'--api-key',key,'-c',str(context),'-ctk','q8_0','-ctv','q8_0','-fa','on','--image-max-tokens','384','-np','1','-t',str(threads()),'-tb',str(threads()),'-ngl','99' if engine['gpu'] else '0','--no-webui','-lv','4']
+ if engine['gpu']:args+=['--device','CUDA0']
+ return args
+
+def verify_cuda(request,log_path):
+ # llama.cpp b12089 maps library INFO messages (including offload proof) to
+ # verbosity 4. Default server verbosity 3 suppresses this evidence entirely.
+ if not offloaded(Path(log_path).read_text(errors='replace')):raise ValueError('DIRECTOR_GPU_OFFLOAD')
+ timings=[]
+ for tokens,timeout in [(1,120),(2,30)]:
+  started=time.monotonic()
+  try:
+   result=request('/v1/chat/completions',{'model':'local','messages':[{'role':'user','content':'Reply OK'}],'max_tokens':tokens,'temperature':0,'chat_template_kwargs':{'enable_thinking':False}},timeout=timeout)
+   choices=result.get('choices',[])
+   if not choices or result.get('usage',{}).get('completion_tokens',0)<1:raise ValueError('DIRECTOR_GPU_PROBE_RESPONSE')
+   timings.append(round(time.monotonic()-started,3))
+   (ROOT/'director-probe.json').write_text(json.dumps({'verified':len(timings)==2,'request_seconds':timings}))
+  except (OSError,ValueError) as error:
+   code='DIRECTOR_GPU_PROBE_TIMEOUT' if isinstance(error,TimeoutError) else str(error) if isinstance(error,ValueError) and str(error).startswith('DIRECTOR_') else 'DIRECTOR_GPU_PROBE_FAILED'
+   (ROOT/'director-probe.json').write_text(json.dumps({'verified':False,'code':code,'error_type':type(error).__name__,'request_seconds':timings,'failed_request_seconds':round(time.monotonic()-started,3)}))
+   raise ValueError(code) from error
