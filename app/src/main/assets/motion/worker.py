@@ -126,8 +126,36 @@ def align(request,node):
         segments=json.loads(Path('segments.json').read_text());segments[0]['whole']=True;Path('segments.json').write_text(json.dumps(segments))
     run([node,'-e',"const fs=require('fs'),C=require('./core');const p=C.align(JSON.parse(fs.readFileSync('request.json')).project,JSON.parse(fs.readFileSync('segments.json')));fs.writeFileSync('project.json',JSON.stringify(p));"],60)
     return Path('voice.wav')
+def visual_revision(p,node):
+    names=p.get('visualRevisionAssets',[])
+    if not names:return
+    if not isinstance(names,list) or not 1<=len(names)<=8 or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',name) or not Path(name).is_file() for name in names):raise ValueError('REFERENCE_PATH')
+    Path('visual-revision.json').write_text(json.dumps(p,ensure_ascii=False))
+    code="""const fs=require('fs'),C=require('./creative');const p=JSON.parse(fs.readFileSync('visual-revision.json')),names=p.visualRevisionAssets;
+    for(let i=0;i<p.scenes.length;i++){const s=p.scenes[i];if(s.graphic!=='creative')throw Error('VISUAL_REVISION_GRAPH');
+     if(p.visualRevisionRole==='logo'){const hit=(a,b)=>Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)>.008&&Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)>.008;const blocked=s.composition.elements.filter(e=>['text','metric','image','device'].includes(e.kind));let slot;for(const y of [.80,.06,.66,.90])for(const x of [.80,.06,.45]){const box={x,y,w:.12,h:.08};if(!slot&&!blocked.some(e=>hit(e,box)))slot=box;}if(!slot)throw Error('VISUAL_REVISION_SPACE');s.composition.elements=s.composition.elements.filter(e=>!(e.kind==='icon'&&hit(e,slot)));s.composition.elements.push({kind:'image',...slot,color:'card',motion:'fade',delay:.1,asset:names[0]});C.validate(s.composition);
+     }else{const b=C.textBindings(s);if(!b.heading||b.supporting.length!==1)throw Error('VISUAL_REVISION_COPY');const group=names.filter((_,n)=>n%p.scenes.length===i);if(!group.length)group.push(names[i%names.length]);s.composition=C.compose({title:b.heading.text,caption:b.supporting[0].text,narration:s.narration,reference:0},{aspect:p.aspect,images:group,index:i});if(group.length>1){const at=s.composition.elements.findIndex(e=>['image','device'].includes(e.kind)),box=s.composition.elements[at],cols=Math.ceil(Math.sqrt(group.length)),rows=Math.ceil(group.length/cols),gap=.008;const media=group.map((asset,n)=>({...box,asset,x:box.x+(n%cols)*(box.w/cols),y:box.y+Math.floor(n/cols)*(box.h/rows),w:box.w/cols-gap,h:box.h/rows-gap,delay:Math.min(.65,.1+n*.04)}));s.composition.elements.splice(at,1,...media);C.validate(s.composition);}}
+    }delete p.visualRevisionAssets;delete p.visualRevisionRole;fs.writeFileSync('visual-revision.json',JSON.stringify(p));"""
+    run([node,'-e',code],30)
+    revised=json.loads(Path('visual-revision.json').read_text());p.clear();p.update(revised)
+
+def sound_effects(p,path):
+    if p.get('soundEffects','none')!='soft':return
+    import array,random
+    rate=24000;length=math.ceil(p['duration']*30)/30;data=array.array('h',[0])*int(math.ceil(length*rate));rng=random.Random(7341)
+    for scene in p['scenes']:
+        start=int(scene['start']*rate);span=min(int(.16*rate),len(data)-start);previous=0.0
+        for n in range(max(0,span)):
+            previous=.8*previous+.2*rng.uniform(-1,1);envelope=math.sin(math.pi*n/max(1,span-1))**2;data[start+n]=int(previous*2200*envelope)
+    if sys.byteorder!='little':data.byteswap()
+    with wave.open('motion-effects.wav','wb') as out:out.setparams((1,2,rate,0,'NONE',''));out.writeframes(data.tobytes())
+    args=['ffmpeg','-v','error','-y','-i',str(path),'-i','motion-effects.wav']
+    if p['voiceMode']!='none':args+=['-filter_complex','[0:a][1:a]amix=inputs=2:normalize=0:duration=first[a]','-map','0:v:0','-map','[a]']
+    else:args+=['-map','0:v:0','-map','1:a:0']
+    args+=['-c:v','copy','-c:a','aac','-b:a','192k','-t',str(length),'-movflags','+faststart','output-effects.mp4'];run(args,120);Path('output-effects.mp4').replace(path)
+
 def render(request,node):
-    p=request['project'];Path('project.json').write_text(json.dumps(p,ensure_ascii=False))
+    p=request['project'];visual_revision(p,node);Path('project.json').write_text(json.dumps(p,ensure_ascii=False))
     run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],30)
     public=ROOT/'public';public.mkdir(exist_ok=True)
     names=set(s['image'] for s in p['scenes'] if s.get('image'))
@@ -143,12 +171,12 @@ def render(request,node):
     env=os.environ.copy();env['PATH']=str(Path(node).parent)+os.pathsep+env.get('PATH','')
     run([npm,'install','--no-audit','--no-fund','--ignore-scripts'],750,env=env)
     status('render',45);run([node,'render.cjs'],1500,env=env)
-    path=Path('output.mp4')
+    path=Path('output.mp4');sound_effects(p,path)
     info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(path)],timeout=30))
     expected=math.ceil(p['duration']*30)/30
     video=[s for s in info['streams'] if s['codec_type']=='video'];audio=[s for s in info['streams'] if s['codec_type']=='audio']
     width=1920 if p['aspect']=='16:9' else 1080;height=1920 if p['aspect']=='9:16' else 1080
-    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none'):raise ValueError('OUTPUT_FORMAT')
+    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none' or p.get('soundEffects')=='soft'):raise ValueError('OUTPUT_FORMAT')
     return path
 def director_python():
     target=ROOT.parent/'madar-motion-director-gguf-v1';binary=target/'bin/python'

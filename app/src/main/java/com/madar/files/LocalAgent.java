@@ -15,7 +15,7 @@ final class LocalAgent {
  static final String MODEL_SHA="2a72330b504a6596d53a2c00923c57173b10f1b83e6a541213ffec08d1fc5de8";
  static final String MODEL_URL="https://huggingface.co/litert-community/Qwen3-1.7B/resolve/79bf0667b32ae025b972e5fe555fe72ca6e8816c/Qwen3-1.7B_dynamic_wi4b32_afp32.litertlm";
  private volatile Conversation conversation;private volatile Call download;
- private Engine warmEngine;private long verifiedModified=-1;private String verifiedPath="";private volatile boolean closed;private long cloudBackoff;private int cloudFailures;
+ private final Object inferenceLock=new Object();private Engine warmEngine;private long verifiedModified=-1;private String verifiedPath="";private volatile boolean closed;private long cloudBackoff;private int cloudFailures;
  volatile Progress status=(p,m)->{};
  synchronized Engine engine(Context c,File file)throws Exception{
   if(closed)throw new IOException("أُغلقت جلسة المساعد");
@@ -25,7 +25,7 @@ final class LocalAgent {
   status.update(-1,"المساعد المحلي · تحميل المحرك؛ يُعاد استخدامه للأسئلة التالية");Engine value=new Engine(new EngineConfig(file.getAbsolutePath(),new Backend.CPU(),null,null,8192,null,c.getCacheDir().getAbsolutePath()));
   try{value.initialize();}catch(Exception|LinkageError failure){value.close();throw failure;}warmEngine=value;verifiedPath=file.getAbsolutePath();verifiedModified=file.lastModified();return value;
  }
- void close(){closed=true;cancel();Thread release=new Thread(()->{synchronized(this){if(warmEngine!=null){warmEngine.close();warmEngine=null;}}},"madar-agent-release");release.setDaemon(true);release.start();}
+ void close(){closed=true;cancel();Thread release=new Thread(()->{synchronized(inferenceLock){synchronized(this){if(warmEngine!=null){warmEngine.close();warmEngine=null;}}}},"madar-agent-release");release.setDaemon(true);release.start();}
  JSONObject provider(JSONObject plan,String name)throws Exception{return plan.put("provider",name);}
 
  interface Progress {void update(int percent,String message);}
@@ -59,8 +59,7 @@ final class LocalAgent {
   File file=model(c);ColabProbe.check(cancel);
   String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   String kind=source.optString("kind");JSONObject data=new JSONObject().put("source",source).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",history(previous)).put("userRequest",user);
-  Engine engine=engine(c,file);
-  {ColabProbe.check(cancel);status.update(-1,"المساعد المحلي · فهم طلبك");
+  synchronized(inferenceLock){Engine engine=engine(c,file);ColabProbe.check(cancel);status.update(-1,"المساعد المحلي · فهم طلبك");
    try(Conversation chat=engine.createConversation(new ConversationConfig(Contents.Companion.of(prompt),Collections.emptyList(),Collections.emptyList(),new SamplerConfig(1,1.0,0.0,0),false,Collections.emptyList(),Collections.emptyMap(),null,false,768,new ThinkingConfig(false),true))){
     conversation=chat;ColabProbe.check(cancel);Message result=chat.sendMessage(Message.Companion.user(data.toString()),Collections.emptyMap(),null,null,null,768,new ThinkingConfig(false),ResponseFormat.Companion.json(AgentTools.schema(kind).toString()));ColabProbe.check(cancel);StringBuilder text=new StringBuilder();for(Content content:result.getContents().getContents())if(content instanceof Content.Text)text.append(((Content.Text)content).getText());
     if(text.length()>8000)throw new IOException("رد المساعد غير مكتمل؛ اختصر الطلب");JSONObject plan=AgentTools.validate(new JSONObject(text.toString()),kind);if(c.getSharedPreferences("local_agent",0).getBoolean("learn",false)){JSONObject saved=memory(c).optJSONObject(kind+":"+plan.getString("tool"));if(saved!=null){Set<String> explicit=new HashSet<>();JSONArray fields=plan.getJSONArray("fields");for(int i=0;i<fields.length();i++)explicit.add(fields.getJSONObject(i).getString("name"));for(Iterator<String> keys=saved.keys();keys.hasNext();){String key=keys.next();if(!explicit.contains(key))fields.put(new JSONObject().put("name",key).put("value",saved.getString(key)));}}}return provider(AgentTools.validate(plan,kind),"local");

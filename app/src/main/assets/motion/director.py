@@ -165,12 +165,20 @@ SYSTEM="You direct professional Arabic motion graphics: advertising, educational
 # topics aligned to the image actually supplied, without turning OCR into narration.
 reference_facts=[]
 if images:
- catalog_schema=obj({'images':{'type':'array','minItems':len(images),'maxItems':len(images),'items':obj({'index':{'enum':list(range(len(images)))},'kind':{'enum':['tool_screen','product_photo','page_preview','illustration','other']},'description':string(240)})}})
- catalog=generate(SYSTEM,'Inspect each supplied image. Return its exact index, kind and a concise factual description of what is visibly present. Name the specific tool or subject if identifiable. Distinguish a home screen, a document-tools screen and an actual conversation screen. Do not infer hidden functions or invent controls. These are reference descriptions, not ad copy.',visual=True,max_tokens=max(600,len(images)*180),schema=catalog_schema)
+ catalog_schema=obj({'images':{'type':'array','minItems':len(images),'maxItems':len(images),'items':obj({'index':{'enum':list(range(len(images)))},'kind':{'enum':['tool_screen','product_photo','place_photo','brand_logo','page_preview','platform_icon','unrelated','illustration','other']},'description':string(240)})}})
+ catalog=generate(SYSTEM,'Inspect each supplied image. Return its exact index, kind and a concise factual description of what is visibly present. Name the specific tool or subject if identifiable. Distinguish a home screen, a document-tools screen and an actual conversation screen. Do not infer hidden functions or invent controls. These are reference descriptions, not ad copy. Platform service icons, loading placeholders and Google/Maps branding must be classified platform_icon when the client is advertising a different business. A real business brand mark is brand_logo. Photos unrelated to the client brief are unrelated. Do not confuse the hosting platform with the advertised business.',visual=True,max_tokens=max(600,len(images)*180),schema=catalog_schema)
  reference_facts=catalog['images']
  if {z['index'] for z in reference_facts}!=set(range(len(images))):raise ValueError('REFERENCE_DESCRIPTION')
  Path('reference-facts.json').write_text(json.dumps(reference_facts,ensure_ascii=False))
 
+# Public preview assets must never masquerade as the advertised business.
+rejected={images[z['index']] for z in reference_facts if z['kind'] in ['platform_icon','unrelated'] and images[z['index']] in generated}
+if rejected:
+ kept=[name for name in images if name not in rejected];indices={old:kept.index(name) for old,name in enumerate(images) if name in kept}
+ reference_facts=[dict(z,index=indices[z['index']]) for z in reference_facts if z['index'] in indices]
+ images[:]=kept;generated[:]=[name for name in generated if name not in rejected];brief['images']=images
+Path('source-assets.json').write_text(json.dumps(generated))
+if brief.get('referenceMode')=='page' and not images:raise ValueError('SOURCE_IMAGES_UNAVAILABLE')
 source_facts=[{'url':s.get('url',''),'text':s.get('text','')[:max(4000,10000//max(1,len(brief.get('sources',[]))))]} for s in brief.get('sources',[])[:2]]
 previous=brief.get('previous',{})
 previous_context={'title':previous.get('title',''),'direction':{k:previous.get('direction',{}).get(k) for k in ['concept','theme','aspect']},'scenes':[{k:s.get(k,'') for k in ['title','narration']} for s in previous.get('scenes',[])[:7]]}

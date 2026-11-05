@@ -21,7 +21,7 @@ final class AgentCloud {
   java.util.concurrent.ScheduledExecutorService timer=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
   timer.schedule(()->requestCancel.set(true),20,java.util.concurrent.TimeUnit.SECONDS);
   java.util.concurrent.ScheduledFuture<?> parent=timer.scheduleAtFixedRate(()->{if(cancel.get())requestCancel.set(true);},0,100,java.util.concurrent.TimeUnit.MILLISECONDS);
-  JSONObject response;try{response=GeminiClient.generate(c,body,requestCancel);}catch(java.util.concurrent.CancellationException timeout){ColabProbe.check(cancel);throw new IOException("AGENT_CLOUD_TIMEOUT");}finally{parent.cancel(true);timer.shutdownNow();}JSONObject candidate=response.getJSONArray("candidates").getJSONObject(0);StringBuilder result=new StringBuilder();JSONArray parts=candidate.getJSONObject("content").getJSONArray("parts");for(int i=0;i<parts.length();i++)result.append(parts.getJSONObject(i).optString("text"));
+  JSONObject response;try{response=GeminiClient.generate(c,body,requestCancel);}catch(java.util.concurrent.CancellationException timeout){ColabProbe.check(cancel);throw new IOException("لم يرد المساعد المتصل خلال 20 ثانية؛ لم يبدأ تعديل الملف، وطلبك محفوظ");}finally{parent.cancel(true);timer.shutdownNow();}JSONObject candidate=response.getJSONArray("candidates").getJSONObject(0);StringBuilder result=new StringBuilder();JSONArray parts=candidate.getJSONObject("content").getJSONArray("parts");for(int i=0;i<parts.length();i++)result.append(parts.getJSONObject(i).optString("text"));
   if(result.length()>12000)throw new IOException("اختصر طلب المساعد إلى خطوات أقل");return AgentTools.validate(new JSONObject(result.toString()),source.optString("kind"));
  }
 }

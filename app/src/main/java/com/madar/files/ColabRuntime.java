@@ -50,6 +50,14 @@ final class ColabRuntime implements AutoCloseable {
   List<JSONObject> list=candidates(response);String first=Arrays.asList("T4","L4","A100").contains(preferred)?preferred:Arrays.asList("T4","L4","A100").contains(last)?last:"T4";
   List<String> order=new ArrayList<>(Arrays.asList("T4","L4","A100"));order.remove(first);order.add(0,first);list.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));return list;
  }
+ boolean resumeMotionReview(String owner)throws Exception{
+  String name=journal().getString("name",""),saved=journal().getString("reviewOwner","");if(name.isEmpty()||saved.isEmpty())return false;
+  if(!saved.equals(owner)||!grant.project.equals(journal().getString("project","")))throw new IOException("جلسة الموشن المحفوظة تخص محادثة أو حسابًا آخر");
+  if(journal().getBoolean("reviewBusy",false))throw new IOException("توجد معالجة موشن سابقة لم يؤكد اكتمالها؛ أغلق الجلسة السابقة صراحة قبل بدء محاولة جديدة");
+  if(!ownName(name))throw new IOException("معرّف جلسة الموشن غير صالح");runtime=name;
+  try{refresh();return true;}catch(HttpFailure missing){if(missing.status!=404&&missing.status!=410)throw missing;cleanupPrevious();runtime="";return false;}
+ }
+ void reviewState(String owner,boolean busy){journal().edit().putString("reviewOwner",owner).putBoolean("reviewBusy",busy).commit();}
  void create(MusicSeparator.Progress progress)throws Exception {create(progress,false);}
  void create(MusicSeparator.Progress progress,boolean music)throws Exception {
   ColabProbe.check(cancel);MotionGpuSession.beforeRuntime(this);MusicGpuSession.beforeRuntime(this);if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
