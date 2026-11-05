@@ -15,4 +15,11 @@ assert not check(issue('نص غير موجود','تصحيح'),copy),'An invented
 assert not check(issue('حول','حوّل',scene=2),copy)
 claim={'scenes':[{'caption':'تعمل كل الأدوات دون اتصال.'}]}
 assert check(issue('دون اتصال','باستخدام اتصال','unsupported_claim'),claim)
-print('PASS: optional Arabic marks are nonblocking; real word/meaning/claim changes remain actionable')
+real={'scenes':[{'narration':'يدعم التطبيق تغيير الحاوية واستخراج الصوت وتعديل الدقة والضغط.'}]}
+assert not check(issue(real['scenes'][0]['narration'],'يدعم التطبيق تغيير الحاوية، واستخراج الصوت، وتعديل الدقة والضغط.'),real),'Actual page-generation failure was only optional list commas'
+assert not check(issue('تغيير الحاوية','تغيير  الحاوية'),real),'Extra whitespace must not reject a movie'
+assert check(issue('تغيير الحاوية','تحويل الصور'),real),'Word changes remain actionable'
+symbols={'scenes':[{'caption':'مدة 2.5 ثانية، ونسبة 20% ونطاق 2-5.'}]}
+for original,corrected in [('2.5','25'),('20%','20'),('2-5','25')]:assert check(issue(original,corrected),symbols),'Numeric symbols must not be stripped'
+assert check(issue(real['scenes'][0]['narration'],real['scenes'][0]['narration'].replace(' والضغط','، والضغط'),'unsupported_claim'),real),'Only grammar editorial edits are ignored'
+print('PASS: optional marks/list commas/whitespace are nonblocking; word, numeric-symbol, meaning and claim changes remain actionable')
