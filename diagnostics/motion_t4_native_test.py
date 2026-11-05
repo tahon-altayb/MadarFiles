@@ -10,24 +10,26 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import types
 import urllib.request
 import zipfile
 
 # Populated from the successful, pinned build before this script is published.
-PACKAGE = None
+PACKAGE = {'url': 'https://nightly.link/tahon-altayb/MadarFiles/actions/runs/42125831493/Madar-llama-b12089-native-T4.zip', 'artifact_sha256': 'f4906a9c5b2b936c87331247b7daaf639aed915e9002402b490a72dd03ded525', 'archive_sha256': 'c2148c7ae9b19efc143592f9a3ed71231010c76f06d5813ba8067b17868e52f7', 'manifest_sha256': 'fecd3375e81af9a6269efbdf35928c0cc3bc105ababc092ee4020228762ce157'}
 DIAGNOSTIC_URL = 'https://raw.githubusercontent.com/tahon-altayb/MadarFiles/8fbe29ad68a7fe1415bdee4e53d06713cea01d2b/diagnostics/motion_gpu_diagnostic.py'
 DIAGNOSTIC_SHA256 = '4f672e54a085211b686d1dff39ffcf2b642697b657a8d024b717767574f546d8'
 
 
 def bounded_download(url, maximum, digest):
-    hasher=hashlib.sha256(); data=bytearray()
+    hasher=hashlib.sha256(); data=bytearray();deadline=time.monotonic()+180
     with urllib.request.urlopen(url,timeout=60) as response:
         while True:
             block=response.read(1024*1024)
             if not block:break
             data.extend(block);hasher.update(block)
             if len(data)>maximum:raise ValueError('DOWNLOAD_SIZE')
+            if time.monotonic()>deadline:raise TimeoutError('NATIVE_DOWNLOAD_TIMEOUT')
     if hasher.hexdigest()!=digest:raise ValueError('DOWNLOAD_HASH')
     return bytes(data)
 
