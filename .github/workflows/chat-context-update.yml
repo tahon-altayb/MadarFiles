@@ -86,6 +86,15 @@ jobs:
         python3 scripts/prepare_containers.py
 
         '
+    - name: Cache verified processing build assets
+      uses: actions/cache/save@v4
+      with:
+        path: 'app/vendor
+
+          app/src/main/jniLibs
+
+          app/src/main/assets/models'
+        key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
     - name: Load signing key from GitHub Secrets
       env:
         MADAR_KEYSTORE_BASE64: ${{ secrets.MADAR_KEYSTORE_BASE64 }}
