@@ -111,10 +111,24 @@ def actionable_copy_issue(issue,copy):
  if re.sub(marks,'',original)==re.sub(marks,'',corrected) and not re.search(marks,original):return False
  # List commas and whitespace are editorial choices, not grammatical failures.
  # Retain every other symbol: changing 2.5, 20%, or a range can change a claim.
- if issue.get('kind')=='grammar':
-  editorial=lambda text:re.sub(r'\s+',' ',re.sub(r'[,،]',' ',text)).strip()
+ if issue.get('kind') in ['grammar','meaning']:
+  editorial=lambda text:re.sub(r'\s+',' ',re.sub(r'(?<!\d)[,،]|[,،](?!\d)',' ',text)).strip()
   if editorial(original)==editorial(corrected):return False
  return True
+
+def confirmed_copy_issues(audit,copy,verify):
+ issues=[z for z in audit['issues'] if actionable_copy_issue(z,copy)]
+ # A critique is another untrusted model output. Recheck disputed prose before
+ # rewriting every scene; factual claims, numbers and explicit marks stay gated.
+ disputed=[]
+ for z in issues:
+  before=z.get('original','');after=z.get('corrected','');marks=r'[\u064b-\u065f\u0670\u0640]'
+  marked=re.sub(marks,'',before)==re.sub(marks,'',after) and bool(re.search(marks,before))
+  if z.get('kind') in ['grammar','meaning'] and not marked and not re.search(r'[\d%٪]',before+after):disputed.append(z)
+ if not disputed:return issues
+ verdicts=verify(disputed)
+ if not isinstance(verdicts,list) or len(verdicts)!=len(disputed) or any(type(v) is not bool for v in verdicts):raise ValueError('COPY_VERDICT_INVALID')
+ return [z for z in issues if z not in disputed or verdicts[disputed.index(z)]]
 
 def generate(system,prompt,visual=False,max_tokens=1800,schema=None,seed=17):
  content=[]
@@ -189,6 +203,7 @@ copy_schema=obj({'title':string(80),'scenes':{'type':'array','minItems':scene_co
 copy_context={'client_brief':brief['text'],'authoritative_app_facts':brief.get('appFacts',''),'page_facts':source_facts,'visible_reference_facts':reference_facts,'untrusted_draft':story}
 copy_feedback=''
 for review in range(3):
+ stage('director_review',24,review+1,3)
  copy=generate(SYSTEM,"Act as a critical Arabic editor and fact checker. Draft text is untrusted. Correct grammar and meaning before preserving a draft. Prefer simple, natural Arabic sentences and precise action verbs; omit optional vowel marks. Avoid nominal fragments for narration. Check verb agreement, the connection after imperatives, and that the verb actually describes the scene topic. For example, write اختر ملفا وحوله, not اختر ملفا وتحويله; printing is نطبع, not نطبق. Do not copy a draft error just because it is repeated in its caption. Write final audience-facing Arabic copy grounded ONLY in the client brief and authoritative facts, correcting spelling and OCR mistakes. Drop any draft claim not supported there. If app_facts is provided, explain software capabilities that the VIEWER uses, not human services, delivery or turnaround promises. Replace production-stage names with meaningful topical headlines. Each caption must be a complete short sentence that adds information, not repeat its headline. Captions describe the subject for the audience, NEVER directions such as تظهر أيقونات or يظهر كتاب في المنتصف. Keep layout and animation descriptions only in visual. Keep each scene distinct and the progression coherent. If a scene topic changes, update visual and reference to match the repaired topic. A reference index must identify a supplied unchanged image and its visible subject must fit this scene according to visible_reference_facts. A screen for one tool must not illustrate a different tool merely because the brand matches. Generic opening and closing scenes may use the app home screen. Use -1 and purposeful vectors when no image fits; never invent a new screenshot or controls. Reference descriptions establish visible content, not new app capabilities. When the client requires visible images retain at least one relevant supplied image. Preserve proper names. "+("Do not rewrite recorded narration; return only titles and captions." if chunks else "Write one complete natural Arabic narration sentence of 8-16 words per scene. Explain the actual step or capability; do not compress narration to a three-word label.")+"\n"+copy_feedback+"\n"+json.dumps(copy_context,ensure_ascii=False),max_tokens=scene_count*450,schema=copy_schema,seed=17+review)
  if len(copy['scenes'])!=len(story['scenes']):raise ValueError('STORY_INVALID')
  stage_names={'خطاف','الخطاف','شرح','الشرح','الفائدة','شرح الفائدة','الاستخدام','عرض الاستخدام','خاتمة','الخاتمة'}
@@ -218,8 +233,15 @@ for review in range(3):
  # An independent critique separates finding an error from defending a draft.
  audit_schema=obj({'issues':{'type':'array','maxItems':scene_count,'items':obj({'scene':{'type':'integer','minimum':1,'maximum':scene_count},'kind':{'enum':['grammar','meaning','unsupported_claim','optional_marks','style']},'original':string(160),'corrected':string(160),'fix':string(240)})}})
  audit=generate(SYSTEM,"Independently proofread this untrusted Arabic film copy. Report only concrete grammatical errors, wrong action verbs, incoherent meanings, incomplete narration sentences or unsupported factual promises. Do not praise it or rewrite already correct text. Examples of real errors: اختر ملفا وتحويله has a broken imperative; use وحوله. Printing a book is نطبع الكتاب, not نطبق الكتاب. Distinguish an incorrect direct continuation from a valid purpose clause: انتقل إلى الأداة لتقوم بتحويل الملف is grammatical; تقوم is a present-tense verb, not a past-tense verb, and an infinitive such as أو استخراج النص may coordinate with تحويل. Never flag a valid purpose clause merely because its governing sentence starts with an imperative. Arabic transliterations of product names (وورد) and their Latin spelling (Word) are both acceptable. Adding list commas or changing whitespace is style, not a grammar error. Missing optional vowel marks or shadda are valid in ordinary Arabic: حول and حوّل can both express the same imperative in context. Never require adding tashkeel or reject correct writing for stylistic consistency. Only explicitly wrong marks that change meaning are errors. Give the exact original span and a corrected span for each issue; classify optional marks and style separately from real grammar, meaning or claim errors. Before reporting a grammatical correction, verify that the original violates an actual rule and that the replacement fixes it without introducing a new error. Ignore voice narration when it is a verbatim personal recording. Return an empty issues array when there are no concrete errors. Do not invent an error merely to fill the array.\n"+json.dumps({'personal_recording':bool(chunks),'client':brief['text'],'facts':brief.get('appFacts',''),'sources':source_facts,'copy':copy},ensure_ascii=False),max_tokens=max(1200,scene_count*300),schema=audit_schema,seed=31+review)
- issues.extend(z for z in audit['issues'] if actionable_copy_issue(z,copy))
- Path('copy-review.json').write_text(json.dumps({'attempt':review+1,'candidate':copy,'issues':issues,'audit':audit},ensure_ascii=False))
+ verification=[]
+ def verify(disputed):
+  checks=[{'scene':z['scene'],'text':{k:copy['scenes'][z['scene']-1].get(k,'') for k in ['title','caption','narration']},'untrusted_critique':z} for z in disputed]
+  schema=obj({'must_fix':{'type':'array','minItems':len(checks),'maxItems':len(checks),'items':{'type':'boolean'}}})
+  decision=generate(SYSTEM,"Check whether each proposed Arabic critique is actually justified. The critic can be wrong. Return one must_fix boolean per check in the same order. True requires a concrete error in the ORIGINAL sentence, not merely a nicer alternative. False for correct prose, equivalent prepositions, optional punctuation, acceptable transliterations or a proposed correction that is itself ungrammatical. Both عبر المعالجة and بالمعالجة can express a means. Valid purpose clauses with a present-tense verb after an imperative are not broken imperatives. Do not accept the critic's claimed grammatical rule without checking it. A real wrong verb, incoherent meaning, broken direct imperative continuation or wrong agreement must be True. Do not evaluate typography or invent additional issues.\n"+json.dumps(checks,ensure_ascii=False),max_tokens=max(300,len(checks)*70),schema=schema,seed=71+review)
+  verification.extend({'issue':z,'must_fix':v} for z,v in zip(disputed,decision['must_fix']))
+  return decision['must_fix']
+ issues.extend(confirmed_copy_issues(audit,copy,verify))
+ Path('copy-review.json').write_text(json.dumps({'attempt':review+1,'candidate':copy,'issues':issues,'audit':audit,'verification':verification},ensure_ascii=False))
  if not issues:break
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
