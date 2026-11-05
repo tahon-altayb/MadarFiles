@@ -32,15 +32,21 @@ with tempfile.TemporaryDirectory() as tmp:
   try:module.native_runtime(root/'other');raise AssertionError('Corrupt archive accepted')
   except ValueError as e:assert str(e)=='DOWNLOAD_HASH'
  # Exercise actual benchmark code and decode the exact PNG sent to the model.
- import base64
- from PIL import Image
+ import base64,struct,zlib
  requests=[]
  def request(route,body,timeout):
   requests.append(body)
   if isinstance(body['messages'][0]['content'],list):
    url=body['messages'][0]['content'][1]['image_url']['url'];png=base64.b64decode(url.split(',',1)[1])
-   image=Image.open(io.BytesIO(png));image.load();assert image.size==(128,128)
-   assert image.getpixel((0,0))==(224,16,16) and image.getpixel((127,127))==(16,16,224)
+   assert png[:8]==b'\x89PNG\r\n\x1a\n';offset=8;pixels=b''
+   while offset<len(png):
+    length=struct.unpack('!I',png[offset:offset+4])[0];kind=png[offset+4:offset+8];chunk=png[offset+8:offset+8+length]
+    assert zlib.crc32(kind+chunk)&0xffffffff==struct.unpack('!I',png[offset+8+length:offset+12+length])[0]
+    if kind==b'IHDR':assert struct.unpack('!2I5B',chunk)==(128,128,8,2,0,0,0)
+    if kind==b'IDAT':pixels+=chunk
+    offset+=12+length
+   pixels=zlib.decompress(pixels);assert len(pixels)==128*385
+   assert pixels[0]==0 and pixels[1:4]==bytes((224,16,16)) and pixels[-3:]==bytes((16,16,224))
   return {'choices':[{'message':{'content':'اختبار'}}],'usage':{'completion_tokens':2,'prompt_tokens':14}}
  previous=Path.cwd()
  try:

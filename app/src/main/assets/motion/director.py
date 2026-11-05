@@ -24,16 +24,14 @@ images=brief.get('images',[])
 if not isinstance(images,list) or len(images)>8 or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in images):raise ValueError('REFERENCE_PATH')
 Path('progress.json').write_text(json.dumps({'stage':'director','progress':24}))
 if os.uname().machine not in ['x86_64','amd64']:raise ValueError('RUNTIME_PLATFORM')
-stage('director_download');from director_runtime import options,threads,offloaded,server_args,verify_cuda
+stage('director_download');from director_runtime import options,threads,offloaded,server_args,verify_cuda,verify_model_file,runtime_info
 engines=options()
 weights=hf_hub_download(MODEL,'Qwen3.5-9B-UD-Q4_K_XL.gguf',revision=REVISION)
 vision=hf_hub_download(MODEL,'mmproj-F16.gguf',revision=REVISION)
 # Verify the exact redistributed files whose license and upstream provenance were reviewed.
-for file,expected in [(weights,'6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293'),(vision,'f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f')]:
- digest=hashlib.sha256()
- with open(file,'rb') as stream:
-  for block in iter(lambda:stream.read(1024*1024),b''):digest.update(block)
- if digest.hexdigest()!=expected:raise ValueError('MODEL_HASH')
+cached=[]
+for file,expected in [(weights,'6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293'),(vision,'f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f')]:cached.append(verify_model_file(file,expected))
+runtime_info(model_cached=all(cached))
 with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
 context_size=16384
 try:

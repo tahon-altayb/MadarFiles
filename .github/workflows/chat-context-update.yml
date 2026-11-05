@@ -1,9 +1,10 @@
-name: Verify and build motion GPU recovery
+name: Verify and build native T4 motion update
 'on':
   push:
     branches:
     - delivery/chat-context-20261105
     - delivery/motion-recovery-gpu-20261105
+    - delivery/motion-native-t4-20261106
 permissions:
   contents: read
   actions: read
@@ -48,6 +49,10 @@ jobs:
         command -v ffmpeg || (sudo apt-get -qq update && sudo apt-get install -y -qq ffmpeg)
 
         python3 qa/motion-runtime.test.py
+
+        python3 qa/motion-gpu-probe.test.py
+
+        python3 qa/motion-native-runtime.test.py
 
         python3 qa/motion-cloud.test.py
 
@@ -154,17 +159,17 @@ jobs:
         disable-animations: true
         emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
         script: gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest
-          -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.MotionTransferTest,com.madar.files.ColabAuthorizationTest,com.madar.files.ColabMusicTest,com.madar.files.MotionCheckpointTest
+          -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.MotionTransferTest,com.madar.files.ColabAuthorizationTest,com.madar.files.ColabMusicTest,com.madar.files.MotionCheckpointTest,com.madar.files.MotionStartupTest
     - name: Verify update package and signing certificate
-      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 62 --version-name 1.9.27 --firebase-config
+      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 63 --version-name 1.9.28 --firebase-config
         app/google-services.json
     - name: Prepare APK
-      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.27.apk
+      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.28.apk
     - name: Upload verified update APK
       uses: actions/upload-artifact@v4
       with:
-        name: MadarFiles-1.9.27-APK
-        path: MadarFiles-1.9.27.apk
+        name: MadarFiles-1.9.28-APK
+        path: MadarFiles-1.9.28.apk
         if-no-files-found: error
         retention-days: 30
     - name: Save validation reports

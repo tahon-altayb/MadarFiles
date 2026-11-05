@@ -95,8 +95,20 @@ const plansBeforeTransfer=await page.evaluate(()=>requests.filter(r=>r.action===
 for(const text of ['اعد الاتصال','اعد الاتصال بال colab وارسلي المقطع جاهز']){
  await page.locator('#agentInput').fill(text);await page.locator('#agentSend').click();await acceptChoices(page);
  const resumedTransfer=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').at(-1));assert.equal(resumedTransfer.thread,'transferRetry');assert.equal(resumedTransfer.resumeProject,'f'.repeat(32));assert.equal(resumedTransfer.voice,'none');assert.equal(resumedTransfer.prompt,silentChoice.prompt);assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan').length),plansBeforeTransfer);
+ const busyStarts=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length);
+ await page.locator('#agentInput').fill('وش المشكلة بالضبط؟');await page.locator('#agentSend').click();
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length),busyStarts);
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action!=='agentChatsSave').at(-1).action),'agentMotionStatus');
  const startsBeforeBusyRetry=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length);await page.locator('#agentInput').fill('أعد الاتصال');await page.locator('#agentSend').click();assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length),startsBeforeBusyRetry);assert.equal(await page.evaluate(()=>requests.filter(r=>r.action!=='agentChatsSave').at(-1).action),'agentMotionStatus');
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'f'.repeat(32),status:'error',checkpoint:true,transfer:true,message:'اكتملت المعالجة وتعذر تنزيل النتيجة'}),resumedTransfer);await acceptChoices(page);
+}
+// A question about the saved failure must not become a new model/planner request.
+for(const text of ['وش المشكلة بالضبط؟','وش المشكله بالضبط ?','وش السبب بالضبط؟']){
+ const starts=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length);
+ await page.locator('#agentInput').fill(text);await page.locator('#agentSend').click();await acceptChoices(page);
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan').length),plansBeforeTransfer);
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length),starts);
+ assert.match(await page.locator('#agentLog').textContent(),/اكتملت المعالجة وتعذر تنزيل النتيجة/);
 }
 // A ten-minute planning phase must not become an invented 72-minute remaining time.
 await page.clock.install({time:new Date('2026-11-05T02:00:00Z')});
