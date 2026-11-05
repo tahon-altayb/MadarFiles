@@ -15,6 +15,11 @@ public class MotionCheckpointTest {
  private JSONObject request()throws Exception{return new JSONObject().put("thread","checkpointTest").put("task","retry").put("prompt","إعلان عن صناعة الكتاب بدون موسيقى").put("voice","silma").put("attachments",new JSONArray()).put("previous","");}
  private JSONObject project(JSONObject request)throws Exception{JSONObject p=MotionProject.create(context);p.put("agentThread",request.getString("thread")).put("agentTask","failed").put("agentRequestKey",MotionCheckpoint.requestKey(request)).put("voiceMode","silma").put("direction",new JSONObject().put("layoutMode","validated_scene_graph"));MotionProject.save(context,p);return p;}
  private JSONObject envelope(JSONObject p)throws Exception{return new JSONObject().put("protocol",1).put("project",new JSONObject(p.toString())).put("assets",new JSONArray());}
+ @Test public void silentFieldOverridesStaleMaleWordingBeforeCloud()throws Exception{
+  JSONObject r=request().put("voice","none").put("prompt","إعلان موشن عمودي 30 ثانية بالصوت الرجالي المعتمد وبدون موسيقى");
+  JSONObject p=AgentMotion.create(context,r);assertEquals("none",p.getString("voiceMode"));assertEquals(r.getString("prompt"),p.getJSONObject("creativeRequest").getString("text"));
+  assertEquals("none",MotionProject.load(context,p.getString("id")).getString("voiceMode"));assertTrue(ColabDiagnostics.safe("MOTION_VOICE_NONE"));assertTrue(ColabDiagnostics.safe("SPEECH_BACKEND"));assertFalse(ColabDiagnostics.safe("MOTION_VOICE_NONE_SECRET"));
+ }
  @Test public void directionSurvivesFailureAndOnlyExactRequestResumes()throws Exception{
   JSONObject r=request(),p=project(r);MotionCheckpoint.accept(context,envelope(p),p,new AtomicBoolean(),(i,n)->{throw new AssertionError("No assets expected");});
   JSONObject saved=MotionProject.load(context,p.getString("id"));assertEquals("directed",saved.getString("motionCheckpoint"));

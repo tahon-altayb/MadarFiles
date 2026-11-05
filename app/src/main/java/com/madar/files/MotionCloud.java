@@ -38,7 +38,7 @@ final class MotionCloud {
   }
  }
  static JSONObject run(Context c,JSONObject project,String mode,ColabCredentials.Grant grant,AtomicBoolean cancel,Progress progress)throws Exception{
-  ColabDiagnostics diagnostic=new ColabDiagnostics(c,"MOTION_"+mode.toUpperCase(Locale.ROOT));
+  ColabDiagnostics diagnostic=new ColabDiagnostics(c,"MOTION_"+mode.toUpperCase(Locale.ROOT));diagnostic.record("MOTION_VOICE_"+project.optString("voiceMode").toUpperCase(Locale.ROOT));
   try{JSONObject result=execute(c,project,mode,grant,cancel,progress,diagnostic);diagnostic.record("DONE");return result;}
   catch(Exception error){diagnostic.failed(error);if(error instanceof java.util.concurrent.CancellationException)throw error;throw new IOException(message(error),error);}
  }

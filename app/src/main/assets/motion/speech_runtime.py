@@ -11,6 +11,7 @@ def publish(stage,detail='',scene=0,total=0):
 
 def classify(text):
     t=text.lower()
+    if 'matplotlib_inline' in t or 'key backend:' in t:return 'SPEECH_BACKEND'
     if any(x in t for x in ['no space left','disk quota','errno 28']):return 'SPEECH_DISK'
     if any(x in t for x in ['out of memory','cannot allocate memory','killed signal']):return 'SPEECH_MEMORY'
     for code in [401,403,404,429,500,502,503,504]:
@@ -23,7 +24,10 @@ def clean_env():
     env=os.environ.copy()
     for k in ['PYTHONPATH','PYTHONHOME','PYTHONSTARTUP','UV_PYTHON','UV_PROJECT_ENVIRONMENT','PIP_CONSTRAINT','PIP_REQUIRE_VIRTUALENV','HF_HUB_OFFLINE','TRANSFORMERS_OFFLINE','HF_TOKEN','HUGGING_FACE_HUB_TOKEN']:
         env.pop(k,None)
-    env.update(CUDA_VISIBLE_DEVICES='',HF_HOME=str(ROOT.parent/'madar-motion-speech-models-v3'),HF_HUB_DISABLE_IMPLICIT_TOKEN='1',HF_HUB_DISABLE_TELEMETRY='1',HF_HUB_DOWNLOAD_TIMEOUT='60',HF_HUB_ETAG_TIMEOUT='30',TOKENIZERS_PARALLELISM='false')
+    # Colab exports MPLBACKEND=module://matplotlib_inline.backend_inline. The
+    # isolated interpreter has no notebook backend: SILMA imports matplotlib
+    # during validation, before any audio is generated. Use its headless backend.
+    env.update(CUDA_VISIBLE_DEVICES='',MPLBACKEND='Agg',MPLCONFIGDIR=str(ROOT.parent/'madar-motion-speech-mpl'),HF_HOME=str(ROOT.parent/'madar-motion-speech-models-v3'),HF_HUB_DISABLE_IMPLICIT_TOKEN='1',HF_HUB_DISABLE_TELEMETRY='1',HF_HUB_DOWNLOAD_TIMEOUT='60',HF_HUB_ETAG_TIMEOUT='30',TOKENIZERS_PARALLELISM='false')
     return env
 
 def run_step(args,detail,timeout=600):

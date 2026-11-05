@@ -7,6 +7,9 @@ with tempfile.TemporaryDirectory(prefix='madar-generation-') as tmp:
  job=Path(tmp)/('madar_'+'d'*32);job.mkdir()
  for file in source.iterdir():
   if file.is_file():shutil.copyfile(file,job/file.name)
+ # These cases explicitly select silence. Even importing the speech runtime is
+ # a regression, regardless of whether the final renderer later drops audio.
+ (job/'speech_runtime.py').write_text("raise RuntimeError('SILENT_JOB_MUST_NOT_START_SPEECH')")
  images=[];files=[]
  if args.case=='images':
   subprocess.run(['node',str(repo/'qa/motion-reference-fixtures.cjs'),str(evidence/'references')],cwd=repo,check=True,timeout=60)

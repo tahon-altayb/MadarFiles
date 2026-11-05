@@ -26,6 +26,8 @@ jobs:
           python3 scripts/ensure_android.py
           gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug
   voice:
+    env:
+      MPLBACKEND: module://matplotlib_inline.backend_inline
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     steps:
@@ -35,7 +37,7 @@ jobs:
           node-version: '24'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
       - uses: actions/download-artifact@v4
         with:
           name: motion-generated-idea
