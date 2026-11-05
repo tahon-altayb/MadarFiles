@@ -235,10 +235,12 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Release completed Python test environments before emulator allocation
         run: |
-          # CPU inference checks have finished. Their isolated wheels and caches are
-          # no longer needed; keep the native model fixture used on the device.
-          du -sh "$RUNNER_TEMP/madar-qwen" "$HOME/.cache/pip" "$HOME/.cache/huggingface" 2>/dev/null || true
-          rm -rf "${RUNNER_TEMP:?}/madar-qwen" "$HOME/.cache/pip" "$HOME/.cache/huggingface"
+          # CPU inference checks have finished. Their environments/model caches and
+          # this disposable runner's unused .NET/Haskell SDKs can be released.
+          # Keep .ci-models and all Android build assets for the device tests.
+          du -sh "$RUNNER_TEMP/madar-qwen" "$RUNNER_TEMP/madar-fx-models" "$RUNNER_TEMP/madar-censor-models" "$HOME/.cache/pip" "$HOME/.cache/huggingface" /usr/share/dotnet /usr/local/.ghcup /opt/ghc 2>/dev/null || true
+          rm -rf "${RUNNER_TEMP:?}/madar-qwen" "${RUNNER_TEMP:?}/madar-fx-models" "${RUNNER_TEMP:?}/madar-censor-models" "$HOME/.cache/pip" "$HOME/.cache/huggingface"
+          sudo rm -rf /usr/share/dotnet /usr/local/.ghcup /opt/ghc
           df -h "$HOME"
       - name: Prepare processing emulator image with bounded retries
         timeout-minutes: 8
