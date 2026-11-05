@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='madar-generation-') as tmp:
   brief='أنشئ موشن تعليميًا عربيًا من 4 مشاهد عن رحلة صناعة الكتاب: كتابة المسودة، مراجعة النص، تصميم الصفحات، ثم الطباعة. اشرح وظيفة كل مرحلة ببساطة. رسوم متجهة ومخططات بسيطة، بدون صور فوتوغرافية. خلفية فاتحة هادئة وألوان دافئة. أفقي 16:9، مدة 20 ثانية، بدون تعليق صوتي أو موسيقى.';facts=''
  project={'version':1,'id':'e'*32,'title':'اختبار توليد حقيقي','theme':'night','aspect':'9:16','voiceMode':'none','creativeRequest':{'text':brief,'images':images,'appFacts':facts},'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
  request={'protocol':1,'mode':'compose','project':project,'files':files};(job/'request.json').write_text(json.dumps(request,ensure_ascii=False));(evidence/'input.json').write_text(json.dumps(request,ensure_ascii=False))
- execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=2400)
+ execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=2400,env={**os.environ,'MADAR_MOTION_QA':'1','MADAR_MOTION_QA_CPU':'1'})
  for name in ['progress.json','project.json','story.json','director-runtime.log','director-response.txt','director-response.json','story-candidate.json','copy-review.json','reference-facts.json']:
   if (job/name).exists():shutil.copyfile(job/name,evidence/name)
  if execution.returncode:raise RuntimeError((job/'progress.json').read_text())

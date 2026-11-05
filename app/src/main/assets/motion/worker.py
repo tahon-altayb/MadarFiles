@@ -1,5 +1,5 @@
 """Madar motion: bounded owned inputs, measured word clocks, static renderer only."""
-import collections,hashlib,json,math,os,re,shutil,subprocess,sys,threading,time,wave
+import base64,collections,hashlib,json,math,os,re,shutil,subprocess,sys,threading,time,wave
 from pathlib import Path
 CHUNK=750_000
 os.environ['ORT_DISABLE_TELEMETRY']='1'
@@ -8,7 +8,9 @@ os.environ['HF_HUB_DISABLE_TELEMETRY']='1'
 ROOT=Path(__file__).resolve().parent
 os.chdir(ROOT)
 def atomic(name,data):
-    tmp=Path(name+'.tmp');tmp.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8');tmp.replace(name)
+    encoded=json.dumps(data,ensure_ascii=False)
+    for target in ([name.replace('.json','.txt'),name] if name in ['result.json','checkpoint.json'] else [name]):
+        tmp=Path(target+'.tmp');tmp.write_text(encoded,encoding='utf-8');tmp.replace(target)
 def status(stage,progress):atomic('progress.json',{'stage':stage,'progress':progress})
 def run(args,timeout=600,**kw):
     command=[str(x) for x in args];tail=collections.deque(maxlen=16)
@@ -43,7 +45,8 @@ def pack(path,prefix="result"):
         while True:
             data=f.read(CHUNK)
             if not data:break
-            Path(f'{prefix}_{n}.bin').write_bytes(data);n+=1
+            Path(f'{prefix}_{n}.bin').write_bytes(data)
+            Path(f'{prefix}_{n}.b64.txt').write_text(base64.b64encode(data).decode('ascii'),encoding='ascii');n+=1
     if n<1 or path.stat().st_size>128*1024*1024:raise ValueError('OUTPUT_SIZE')
     return {'size':path.stat().st_size,'sha256':sha(path),'chunks':n}
 def node_binary():

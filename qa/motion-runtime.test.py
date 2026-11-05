@@ -5,7 +5,14 @@ base=Path('app/src/main/assets/motion').resolve()
 def module(name):
  spec=importlib.util.spec_from_file_location(name,base/(name+'.py'));m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 speech=module('speech_runtime');director=module('director_runtime')
-for text,expected in [('15000, 590.10.1',True),('10000, 590.10.1',False),('24000, 550.10.1',False),('not a gpu',False)]:assert director.gpu_eligible(text)==expected
+for text,expected in [('15000, 590.10.1',True),('10000, 590.10.1',False),('24000, 550.10.1',True),('15000, 525.60.13',True),('15000, 525.60.12',False),('not a gpu',False)]:assert director.gpu_eligible(text)==expected
+# Admission does not permit a cloud CPU fallback or a standalone QA_CPU flag.
+os.environ.pop('MADAR_MOTION_QA',None);os.environ['MADAR_MOTION_QA_CPU']='1'
+original=director.gpu_available;director.gpu_available=lambda:False
+try:
+ try:director.options();raise AssertionError('Cloud job fell back to CPU')
+ except ValueError as e:assert str(e)=='DIRECTOR_GPU_REQUIRED'
+finally:director.gpu_available=original;os.environ.pop('MADAR_MOTION_QA_CPU',None)
 assert director.offloaded('load_tensors: offloaded 33/33 layers to GPU')
 assert not director.offloaded('offloaded 0/33 layers to GPU')
 assert not director.offloaded('offloaded 12/33 layers to GPU')

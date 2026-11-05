@@ -14,6 +14,7 @@ final class ColabRuntime implements AutoCloseable {
  interface GrantRenewal {ColabCredentials.Grant renew(ColabCredentials.Grant previous,AtomicBoolean stop)throws Exception;}
  final Context context;volatile ColabCredentials.Grant grant;final AtomicBoolean cancel;private final CloudTransport transport;private final GrantRenewal grantRenewal;
  java.util.function.Consumer<String> authEvents=code->{};
+ java.util.function.Consumer<String> transferEvents=code->{};
  final OkHttpClient http=new OkHttpClient.Builder().connectTimeout(20,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS).writeTimeout(90,TimeUnit.SECONDS).callTimeout(100,TimeUnit.SECONDS).retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build();
  private String runtime="",proxyToken="";private HttpUrl base;private long refreshAt;
  static final class NetworkFailure extends IOException {final String code;NetworkFailure(IOException e){super("Colab · "+(e instanceof javax.net.ssl.SSLException?"IO_TLS":e instanceof java.net.UnknownHostException?"IO_DNS":e instanceof java.net.SocketTimeoutException?"IO_TIMEOUT":"IO_NETWORK"));code=getMessage().substring(8);}}
@@ -77,9 +78,12 @@ final class ColabRuntime implements AutoCloseable {
   List<String> order=new ArrayList<>(Arrays.asList("T4","L4","A100"));order.remove(first);order.add(0,first);list.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));return list;
  }
  boolean resumeMotionReview(String owner)throws Exception{
+  return resumeMotionReview(owner,false);
+ }
+ boolean resumeMotionReview(String owner,boolean completedTransfer)throws Exception{
   String name=journal().getString("name",""),saved=journal().getString("reviewOwner","");if(name.isEmpty()||saved.isEmpty())return false;
   if(!saved.equals(owner)||!grant.project.equals(journal().getString("project","")))throw new IOException("جلسة الموشن المحفوظة تخص محادثة أو حسابًا آخر");
-  if(journal().getBoolean("reviewBusy",false))throw new IOException("توجد معالجة موشن سابقة لم يؤكد اكتمالها؛ أغلق الجلسة السابقة صراحة قبل بدء محاولة جديدة");
+  if(journal().getBoolean("reviewBusy",false)&&!completedTransfer)throw new IOException("توجد معالجة موشن سابقة لم يؤكد اكتمالها؛ أغلق الجلسة السابقة صراحة قبل بدء محاولة جديدة");
   if(!ownName(name))throw new IOException("معرّف جلسة الموشن غير صالح");runtime=name;
   try{refresh();return true;}catch(HttpFailure missing){if(missing.status!=404&&missing.status!=410)throw missing;cleanupPrevious();runtime="";return false;}
  }
@@ -164,12 +168,21 @@ final class ColabRuntime implements AutoCloseable {
  }
  void put(String path,String content,String format)throws Exception{jupyter("PUT",contentPath(path,null),new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}
  String getText(String path,int max)throws Exception{return getText(path,max,100000);}
- String getText(String path,int max,long timeoutMs)throws Exception{return jupyter("GET",contentPath(path,"text"),null,max,timeoutMs).getString("content");}
+ String getText(String path,int max,long timeoutMs)throws Exception{
+  try{return jupyter("GET",contentPath(path,"text"),null,max,timeoutMs).getString("content");}
+  catch(HttpFailure missing){if(missing.status!=404||!path.matches("madar_[a-f0-9]{32}/(?:result|checkpoint)\\.json"))throw missing;transferEvents.accept("MOTION_MANIFEST_TEXT_FALLBACK");return jupyter("GET",contentPath(path.substring(0,path.length()-5)+".txt","text"),null,max,timeoutMs).getString("content");}
+ }
  byte[] getBinary(String path,int maximum)throws Exception{
-  JSONObject file=jupyter("GET",contentPath(path,"base64"),null,maximum);
+  JSONObject file;
+  try{file=jupyter("GET",contentPath(path,"base64"),null,maximum);}
+  catch(HttpFailure missing){if(missing.status!=404||!path.matches("madar_[a-f0-9]{32}/(?:result_[0-9]+|asset_[0-9]+_[0-9]+|checkpoint_asset_[0-9]+_[0-9]+)\\.bin"))throw missing;transferEvents.accept("MOTION_BINARY_TEXT_FALLBACK");return decodeTransferText(getText(path.substring(0,path.length()-4)+".b64.txt",maximum),maximum);}
   if(!file.optString("format").equals("base64")||!(file.opt("content") instanceof String))throw new ProtocolFailure("Colab · MUSIC_OUTPUT_FORMAT");
   try{return android.util.Base64.decode(file.getString("content"),android.util.Base64.DEFAULT);}
   catch(IllegalArgumentException e){throw new ProtocolFailure("Colab · MUSIC_OUTPUT_FORMAT");}
+ }
+ static byte[] decodeTransferText(String text,int maximum)throws IOException{
+  if(text.length()>maximum)throw new ProtocolFailure("Colab · RESPONSE_TOO_LARGE");
+  try{byte[] data=java.util.Base64.getDecoder().decode(text);if(data.length<1||data.length>maximum)throw new IllegalArgumentException();return data;}catch(IllegalArgumentException invalid){throw new ProtocolFailure("Colab · MOTION_OUTPUT_FORMAT");}
  }
  ColabKernel.Session openKernel(String kernel,ColabKernel.Events events)throws Exception{
   return ColabKernel.open(http,force->{if(force){refresh();JSONObject state=jupyter("GET","api/kernels/"+kernel,null,65536);if(state.optString("execution_state").equals("dead"))throw new IOException("Colab · KERNEL_DEAD");}

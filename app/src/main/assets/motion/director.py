@@ -89,7 +89,7 @@ for engine in engines:
   try:server.wait(timeout=10)
   except subprocess.TimeoutExpired:server.kill();server.wait(timeout=5)
  if not engine['gpu']:raise ValueError('RUNTIME_START')
-else:raise ValueError('RUNTIME_START')
+else:raise ValueError('DIRECTOR_GPU_VERIFY')
 def string(limit):return {'type':'string','minLength':1,'maxLength':limit}
 def obj(properties):return {'type':'object','properties':properties,'required':list(properties),'additionalProperties':False}
 SHOT=obj({'title':string(45),'narration':string(220),'caption':string(95),'visual':string(140),'reference':{'enum':[-1]+list(range(len(images)))}})

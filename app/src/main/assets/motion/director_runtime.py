@@ -1,4 +1,4 @@
-"""Pinned llama runtimes. Prefer a verified CUDA device; retain the tested CPU path."""
+"""Pinned llama runtimes. Cloud planning requires verified CUDA inference."""
 import hashlib,json,math,os,re,shutil,subprocess,tarfile,time,urllib.request
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
@@ -10,7 +10,9 @@ ASSETS={
 
 def gpu_eligible(text):
  try:
-  memory,driver=text.strip().splitlines()[0].split(',');return int(memory.strip())>=11000 and int(driver.strip().split('.')[0])>=570
+  memory,driver=text.strip().splitlines()[0].split(',')
+  version=tuple(int(n) for n in driver.strip().split('.'));version=version+(0,)*(3-len(version))
+  return int(memory.strip())>=11000 and version>=(525,60,13)
  except (ValueError,IndexError):return False
 
 def gpu_available():
@@ -51,18 +53,21 @@ def install(kind):
  return target
 
 def options():
- choices=[]
+ # CPU inference is an explicit test-only option, never a cloud fallback.
+ qa_cpu=os.environ.get('MADAR_MOTION_QA_CPU')=='1' and os.environ.get('MADAR_MOTION_QA')=='1'
+ if qa_cpu:
+  cpu=install('cpu');binary=next(cpu.rglob('llama-server'),None)
+  if binary is None:raise ValueError('RUNTIME_MISSING')
+  return [{'binary':binary,'env':os.environ.copy(),'gpu':False}]
  if gpu_available():
   try:
    gpu=install('cuda');libraries=install('cudart');binary=next(gpu.rglob('llama-server'))
    paths=sorted({str(p.parent) for root in [gpu,libraries] for p in root.rglob('*.so*')})
    env=os.environ.copy();env['LD_LIBRARY_PATH']=':'.join(paths+[env.get('LD_LIBRARY_PATH','')])
-   choices.append({'binary':binary,'env':env,'gpu':True})
-  except (OSError,ValueError,StopIteration,tarfile.TarError):
-   (ROOT/'director-engine.json').write_text(json.dumps({'requested':'cuda','active':'cpu','reason':'CUDA_SETUP_UNAVAILABLE'}))
- cpu=install('cpu');binary=next(cpu.rglob('llama-server'),None)
- if binary is None:raise ValueError('RUNTIME_MISSING')
- choices.append({'binary':binary,'env':os.environ.copy(),'gpu':False});return choices
+   return [{'binary':binary,'env':env,'gpu':True}]
+  except (OSError,ValueError,StopIteration,tarfile.TarError) as error:
+   raise ValueError('DIRECTOR_GPU_SETUP') from error
+ raise ValueError('DIRECTOR_GPU_REQUIRED')
 
 def offloaded(log):
  matches=re.findall(r'offloaded\s+(\d+)/(\d+)\s+layers\s+to\s+GPU',log,re.I)
