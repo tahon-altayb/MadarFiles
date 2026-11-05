@@ -39,15 +39,21 @@ with tempfile.TemporaryDirectory(prefix='madar-motion-render-') as tmp:
  p['scenes'][0].update(graphic='creative',image='')
  (job/'project.json').write_text(json.dumps(p,ensure_ascii=False))
  subprocess.run(['node','-e',"const fs=require('fs'),C=require('./creative');const p=JSON.parse(fs.readFileSync('project.json'));p.scenes[0].composition=C.compose({title:p.scenes[0].title,caption:'تستمر رحلة السفينة عبر البحر',narration:p.scenes[0].narration,reference:-1},{aspect:p.aspect,index:0});fs.writeFileSync('project.json',JSON.stringify(p));"],cwd=job,check=True)
- p=json.loads((job/'project.json').read_text());original_clock=[{k:s.get(k) for k in ['narration','title','start','end','words']} for s in p['scenes']]
+ p=json.loads((job/'project.json').read_text());
+ for element in p['scenes'][0]['composition']['elements']:element['delay']=.7
+ original_clock=[{k:s.get(k) for k in ['narration','title','start','end','words']} for s in p['scenes']]
+ visual_before=[{k:e.get(k) for k in ['kind','text','x','y','w','h','size','color','motion','delay']} for e in p['scenes'][0]['composition']['elements'] if e['kind'] in ['text','metric','shape','line']]
  p.update(visualRevisionAssets=[image],visualRevisionRole='photos',motionEnabled=False,soundEffects='soft')
  for name in ['director.py','speech.py','speech_runtime.py']:(job/name).write_text("raise RuntimeError('COMPLETED_PHASE_MUST_NOT_REPLAY')")
  data=(job/image).read_bytes();(job/(image+'.part_0')).write_bytes(data)
  (job/'request.json').write_text(json.dumps({'protocol':1,'mode':'render','project':p,'files':[{'name':image,'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'chunks':1}]},ensure_ascii=False))
  subprocess.run(['python3',str(job/'worker.py')],cwd=job,check=True,timeout=300)
  reviewed=json.loads((job/'result.json').read_text())['project'];assert [{k:s.get(k) for k in ['narration','title','start','end','words']} for s in reviewed['scenes']]==original_clock
+ assert visual_before==[{k:e.get(k) for k in ['kind','text','x','y','w','h','size','color','motion','delay']} for e in reviewed['scenes'][0]['composition']['elements'] if e['kind'] in ['text','metric','shape','line']]
  assert any(e.get('asset')==image for s in reviewed['scenes'] for e in s['composition']['elements'])
  output=job/'output.mp4';subprocess.run(['ffmpeg','-v','error','-i',str(output),'-f','null','-'],check=True)
+ static_pixel=subprocess.check_output(['ffmpeg','-v','error','-ss','1','-i',str(output),'-vf','crop=2:2:540:1257','-frames:v','1','-f','rawvideo','-pix_fmt','rgb24','-'])
+ assert all(abs(a-b)<15 for a,b in zip(static_pixel[:3],(112,65,35))),tuple(static_pixel[:3])
  info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(output)]));assert any(s['codec_type']=='audio' for s in info['streams'])
  import array
  decoded=array.array('h');decoded.frombytes(subprocess.check_output(['ffmpeg','-v','error','-i',str(output),'-map','0:a:0','-ar','24000','-ac','1','-f','s16le','-']))

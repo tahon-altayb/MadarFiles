@@ -13,6 +13,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Check conversational choices and existing upgrade flows
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
+          NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/upgrade.test.cjs
+          NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/agent-conversation.test.cjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
