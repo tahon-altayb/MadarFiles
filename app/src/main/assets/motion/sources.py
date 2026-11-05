@@ -89,7 +89,7 @@ def collect(brief):
      else:structured_images(v,key)
   for value in parser.structured:structured_images(value)
   source_images=[];visited=set()
-  if brief.get('referenceMode')!='vector':
+  if image_candidates and brief.get('referenceMode')!='vector':
    from PIL import Image,ImageOps
    for candidate in sorted(image_candidates,key=lambda z:bool(re.search(r'product|brand|logo|food|menu|منتج|شعار|فطير|شاهي',z.get('alt',''),re.I)),reverse=True)[:32]:
     if len(brief.get('images',[]))+len(new)>=8:break
