@@ -52,7 +52,7 @@ final class ColabRuntime implements AutoCloseable {
  }
  void create(MusicSeparator.Progress progress)throws Exception {create(progress,false);}
  void create(MusicSeparator.Progress progress,boolean music)throws Exception {
-  ColabProbe.check(cancel);MusicGpuSession.beforeRuntime(this);if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
+  ColabProbe.check(cancel);MotionGpuSession.beforeRuntime(this);MusicGpuSession.beforeRuntime(this);if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
   android.content.SharedPreferences settings=context.getSharedPreferences("colab_connection",0);
   List<JSONObject> specs=music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
   for(int i=0;i<Math.min(2,specs.size());i++){
