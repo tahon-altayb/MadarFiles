@@ -16,6 +16,13 @@ import urllib.request
 
 SOURCE_COMMIT = '004fbdecb5fb75fdc73326c94a47831e27b36e79'
 SOURCE_HASHES = {'director.py': 'b76ac95bf8cb153cc8c1b1708fec677a43e0c6bf3c3e3b1e145747f71f9f4b1a', 'director_runtime.py': 'b7a6bcfd4206744afe9f7b0a5cd42bc6f9d68c459d2e814b8481747de88b9ffb', 'sources.py': '59b2a734b06f502492e013105f3453b9663710f730676fd503eb615675e021ba'}
+TEST_LABEL = 'CUDA startup fix candidate'
+EXTRA_LOGS = []
+
+
+def prepare_runner(folder, runner, env):
+    """A diagnostic variant may replace only its runtime and add measured requests."""
+    return runner, env
 
 
 def startup_nodes(source):
@@ -47,7 +54,7 @@ def command(args, timeout=20):
 
 
 def main():
-    report = {'app': 'MadarFiles 1.9.27 (62)', 'test': 'CUDA startup fix candidate', 'source': SOURCE_COMMIT,
+    report = {'app': 'MadarFiles 1.9.27 (62)', 'test': TEST_LABEL, 'source': SOURCE_COMMIT,
               'python': platform.python_version(), 'glibc': platform.libc_ver(),
               'machine': platform.machine()}
     base = Path('/content') if Path('/content').is_dir() else Path.cwd()
@@ -91,15 +98,17 @@ for node in ast.parse(path.read_text()).body:
  if isinstance(node,ast.FunctionDef) and node.name=='string':break
  nodes.append(node)
 else:raise RuntimeError('Startup boundary missing')
-exec(compile(ast.Module(body=nodes,type_ignores=[]),str(path),'exec'),{'__name__':'__main__','__file__':str(path)})
+scope={'__name__':'__main__','__file__':str(path)}
+exec(compile(ast.Module(body=nodes,type_ignores=[]),str(path),'exec'),scope)
 print('MADAR_GPU_STARTUP_VERIFIED',flush=True)
 '''
-        (folder / 'probe_runner.py').write_text(runner)
         env = os.environ.copy()
         for name in ['MADAR_MOTION_QA', 'MADAR_MOTION_QA_CPU', 'HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN']:
             env.pop(name, None)
         env['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
         env['HF_HUB_DISABLE_IMPLICIT_TOKEN'] = '1'
+        runner,env=prepare_runner(folder,runner,env)
+        (folder / 'probe_runner.py').write_text(runner)
         with (folder / 'probe.log').open('wb') as log:
             process = subprocess.Popen([sys.executable, '-u', 'probe_runner.py'], cwd=folder,
                 env=env, stdout=log, stderr=log, start_new_session=True)
@@ -134,7 +143,7 @@ print('MADAR_GPU_STARTUP_VERIFIED',flush=True)
                 process.wait()
         report['elapsed_seconds'] = round(time.monotonic() - started, 1)
         logs = []
-        for name in ['progress.json', 'director-cuda-devices.log', 'director-cuda-loader.log', 'director-probe.json', 'director-runtime.log', 'probe.log']:
+        for name in ['progress.json', 'director-cuda-devices.log', 'director-cuda-loader.log', 'director-probe.json', 'director-runtime.log', 'probe.log'] + EXTRA_LOGS:
             path = folder / name
             if path.exists():
                 value=path.read_text(errors='replace')
