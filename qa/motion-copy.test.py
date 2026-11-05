@@ -4,7 +4,8 @@ from pathlib import Path
 source=Path('app/src/main/assets/motion/director.py').read_text()
 fn=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='actionable_copy_issue')
 confirmed=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='confirmed_copy_issues')
-space={'re':re};exec(compile(ast.Module(body=[fn,confirmed],type_ignores=[]),'director.py','exec'),space);check=space['actionable_copy_issue'];confirm=space['confirmed_copy_issues']
+claims=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='unsupported_file_claims')
+space={'re':re};exec(compile(ast.Module(body=[fn,confirmed,claims],type_ignores=[]),'director.py','exec'),space);check=space['actionable_copy_issue'];confirm=space['confirmed_copy_issues'];ground=space['unsupported_file_claims']
 copy={'scenes':[{'title':'تحويل الملفات','narration':'اجمع وثائقك في ملف واحد أو حول ملفات PDF إلى صيغ أخرى.','caption':'الدقة تُضمن قراءة واضحة.'}]}
 def issue(original,corrected,kind='grammar',scene=1):return {'scene':scene,'kind':kind,'original':original,'corrected':corrected,'fix':'مراجعة'}
 assert not check(issue('حول','حوّل'),copy),'Missing optional shadda must not block a valid movie'
@@ -36,4 +37,11 @@ for invalid in [[],[0],['false'],None]:
  try:confirm({'issues':[false_critique]},actual,lambda checks:invalid)
  except ValueError as error:assert str(error)=='COPY_VERDICT_INVALID'
  else:raise AssertionError('Missing or malformed verification must fail closed')
+facts='مدار يدعم تحويل PDF إلى Word وصور إلى PDF ودمج PDF. ينفذ طلبات الملفات المدعومة داخل المحادثة ويسأل عن المدخلات الناقصة.'
+for text in ['حوّل Word إلى PDF أو دمج الصور في مستند واحد بضغطة زر.','حول صور وفيديو وصوت إلى ملفات PDF أو نصوص بخطوة واحدة.','استخدم أدوات التحويل المحلية والسحابية لتنفيذ جميع طلباتك.']:
+ assert ground({'caption':text},facts),'Actual generated unsupported feature/one-step/universal promises must be repaired'
+assert not ground({'caption':'حوّل PDF إلى Word أو اجمع الصور في مستند PDF.'},facts),'Supported direction and image-to-PDF remain valid'
+assert not ground({'caption':'اكتب طلبك لتنفيذ أدوات الملفات المدعومة داخل المحادثة.'},facts)
+assert not ground({'caption':'حوّل Word إلى PDF.'},facts+' يدعم تحويل Word إلى PDF.'),'An explicitly supported reverse direction remains valid'
+assert not ground({'caption':'حوّل Word إلى PDF.'},''),'File-app rules must not be imposed on unrelated client briefs'
 print('PASS: optional marks/list commas/whitespace are nonblocking; word, numeric-symbol, meaning and claim changes remain actionable')

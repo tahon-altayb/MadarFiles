@@ -46,5 +46,10 @@ with tempfile.TemporaryDirectory(prefix='madar-generation-') as tmp:
  assert not re.search(r'فورا|على الفور|في ثوان|خلال ثوان',copy_text),'Unsupported instant-processing promise'
  if images:assert any(e.get('asset') in images for s in p['scenes'] for e in s['composition']['elements']),'References unused'
  if images:assert any('محادث' in z['title']+z['narration']+z['caption'] for z in json.loads((job/'story.json').read_text())['scenes']),'Requested chat topic missing'
+ if images:
+  import ast
+  definition=next(n for n in ast.parse((source/'director.py').read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='unsupported_file_claims')
+  guard={'re':re};exec(compile(ast.Module(body=[definition],type_ignores=[]),'director.py','exec'),guard)
+  for shot in story['scenes']:assert not guard['unsupported_file_claims'](shot,facts),'Generated copy invented an inverse conversion or universal/one-step capability'
  for i,scene in enumerate(p['scenes']):subprocess.run(['ffmpeg','-v','error','-y','-ss',str((scene['start']+scene['end'])/2),'-i',str(video),'-frames:v','1',str(evidence/f'scene-{i+1}.png')],check=True)
  (evidence/'result.json').write_text(json.dumps(result,ensure_ascii=False));print('PASS real licensed model, production compose/chunk protocol, distinct scenes, exact aspect/duration, silent H264 and complete decode')

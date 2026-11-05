@@ -130,6 +130,18 @@ def confirmed_copy_issues(audit,copy,verify):
  if not isinstance(verdicts,list) or len(verdicts)!=len(disputed) or any(type(v) is not bool for v in verdicts):raise ValueError('COPY_VERDICT_INVALID')
  return [z for z in issues if z not in disputed or verdicts[disputed.index(z)]]
 
+def unsupported_file_claims(shot,facts):
+ if not facts:return []
+ plain=lambda text:re.sub(r'[\u064b-\u065f\u0670\u0640]','',text).casefold()
+ text=plain(' '.join(shot.get(k,'') for k in ['title','caption','narration']));ground=plain(facts);issues=[]
+ inverse=r'(?:تحويل|حول)\s*(?:ملفات\s+)?(?:من\s+)?(?:ال\s*)?(?:word|وورد|ورد)\s+(?:إلى|الى|لـ?)\s*(?:ملفات\s+)?(?:ال\s*)?pdf'
+ match=re.search(inverse,text)
+ if match and not re.search(inverse,ground):issues.append({'unsupported_phrase':match.group(),'fix':'The facts support PDF to Word, not the reverse. Describe only the supported conversion direction; never infer its inverse.'})
+ for pattern in [r'بخطوة\s+واحدة|بضغطة\s+زر|بنقرة\s+واحدة',r'(?:جميع|كل)\s+(?:الطلبات|طلباتك|طلبات\s+الملفات)']:
+  match=re.search(pattern,text)
+  if match and not re.search(pattern,ground):issues.append({'unsupported_phrase':match.group(),'fix':'Remove this unsupported one-step or all-requests promise. State that supported file requests execute in chat and missing inputs are requested, using only the facts.'})
+ return issues
+
 def generate(system,prompt,visual=False,max_tokens=1800,schema=None,seed=17):
  content=[]
  if visual:
@@ -210,6 +222,7 @@ for review in range(3):
  issues=[]
  if brief.get('appFacts') and 'مدار' not in json.dumps(copy,ensure_ascii=False):issues.append({'required_name':'مدار','fix':'Preserve the exact product name مدار in the film title or a scene. Do not replace the brand with a generic title.'})
  for index,shot in enumerate(copy['scenes']):
+  issues.extend(dict(scene=index+1,**z) for z in unsupported_file_claims(shot,brief.get('appFacts','')))
   if not chunks:
    narration_plain=re.sub(r'[\u064b-\u065f\u0670\u0640]','',shot['narration'])
    if len(re.findall(r'[ء-يA-Za-z0-9٠-٩]+',narration_plain))<6:issues.append({'scene':index+1,'fix':'Narration is only a label. Expand it to one natural 8-16 word sentence explaining this scene, using only the provided facts.'})
