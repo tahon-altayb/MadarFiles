@@ -23,11 +23,11 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  for(const track of ['original','translated-ar'])for(const video of [false,true]){
   await switchTrack(track);
   await page.getByRole('button',{name:video?'تصدير فيديو بالترجمة':'حفظ ملف الترجمة SRT',exact:true}).click();
-  const request=await page.evaluate(()=>requests.at(-1));assert.equal(request.action,video?'export':'saveSubtitles');const cues=video?request.options.cues:request.cues;
+  const request=await page.evaluate(()=>requests.filter(r=>r.action!=='agentChatsSave').at(-1));assert.equal(request.action,video?'export':'saveSubtitles');const cues=video?request.options.cues:request.cues;
   assert.equal(cues[0].text,track==='original'?'すまねえな！':'آسف يا صديقي');assert.equal(cues[0].start,.123);assert.equal(cues[0].end,2.456);
   if(video)assert.equal(request.options.captionColor,'gold');
   await page.evaluate(video=>receive({type:'result',name:video?'result.mp4':'result.srt',size:123,mime:video?'video/mp4':'application/x-subrip'}),video);
-  await page.locator('#save').click();assert.equal((await page.evaluate(()=>requests.at(-1))).action,'save');await page.evaluate(()=>receive({type:'saved'}));
+  await page.locator('#save').click();assert.equal((await page.evaluate(()=>requests.filter(r=>r.action!=='agentChatsSave').at(-1))).action,'save');await page.evaluate(()=>receive({type:'saved'}));
   await page.locator('#returnSubtitles').click();assert.equal(await page.locator('#subtitleTrack').inputValue(),track);
  }
  await page.getByRole('button',{name:'تصدير فيديو بالترجمة',exact:true}).click();await page.evaluate(()=>receive({type:'cancelled'}));assert.equal(await text().isVisible(),true);assert.equal(await text().inputValue(),'آسف يا صديقي');
@@ -36,7 +36,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
  let count=await page.evaluate(()=>requests.filter(r=>r.action==='translateReviewed').length);
  await page.getByRole('button',{name:'ترجمة النص بعد المراجعة',exact:true}).click();assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='translateReviewed').length),count);
  await page.locator('.reviewTranslation input[type="checkbox"]').check();await page.getByRole('button',{name:'ترجمة النص بعد المراجعة',exact:true}).click();
- let request=await page.evaluate(()=>requests.at(-1));assert.equal(request.action,'translateReviewed');assert.equal(request.translationMode,'colab');assert.equal(request.onlineTextConsent,true);assert.equal(request.onlineAudioConsent,undefined);assert.equal(request.subtitleNames,'龐煖 = هوكين\n信 = شين');assert.equal(request.subtitleContext,'Kingdom');
+ let request=await page.evaluate(()=>requests.filter(r=>r.action!=='agentChatsSave').at(-1));assert.equal(request.action,'translateReviewed');assert.equal(request.translationMode,'colab');assert.equal(request.onlineTextConsent,true);assert.equal(request.onlineAudioConsent,undefined);assert.equal(request.subtitleNames,'龐煖 = هوكين\n信 = شين');assert.equal(request.subtitleContext,'Kingdom');
  await page.evaluate(()=>receive({type:'error',message:'offline'}));assert.equal(await text().inputValue(),'آسف يا صديقي');
  await switchTrack('original');await page.locator('.reviewTranslation input[type="checkbox"]').check();await page.getByRole('button',{name:'ترجمة النص بعد المراجعة',exact:true}).click();
  await page.evaluate(()=>receive({type:'subtitles',reviewed:true,language:'ja',target:'ar',originalCues:[{start:.123,end:2.456,text:'intermediate input'}],cues:[{start:.123,end:2.456,text:'أعتذر',language:'ja'}]}));assert.equal(await text().inputValue(),'أعتذر');
