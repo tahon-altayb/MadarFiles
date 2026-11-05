@@ -1,4 +1,4 @@
-"""Run the shipped 1.9.27 motion GPU startup, without a user project or rendering."""
+"""Test candidate CUDA startup fixes against the 1.9.27 model, without rendering."""
 import ast
 import hashlib
 import json
@@ -14,8 +14,8 @@ import time
 import urllib.parse
 import urllib.request
 
-SOURCE_COMMIT = 'a5dc32b28bca2dcd922cf0366036042f44dccbef'
-SOURCE_HASHES = {'director.py': 'd3e727b1700ec433db7421004ddfe4dac9d1103a4ab601ef42a946f6a3b04593', 'director_runtime.py': '5115e2ee014e708082ffffe1b9f21fc2015823760b0e09823d0acf0166690d23', 'sources.py': '59b2a734b06f502492e013105f3453b9663710f730676fd503eb615675e021ba'}
+SOURCE_COMMIT = '004fbdecb5fb75fdc73326c94a47831e27b36e79'
+SOURCE_HASHES = {'director.py': 'b76ac95bf8cb153cc8c1b1708fec677a43e0c6bf3c3e3b1e145747f71f9f4b1a', 'director_runtime.py': 'b7a6bcfd4206744afe9f7b0a5cd42bc6f9d68c459d2e814b8481747de88b9ffb', 'sources.py': '59b2a734b06f502492e013105f3453b9663710f730676fd503eb615675e021ba'}
 
 
 def startup_nodes(source):
@@ -47,7 +47,7 @@ def command(args, timeout=20):
 
 
 def main():
-    report = {'app': 'MadarFiles 1.9.27 (62)', 'source': SOURCE_COMMIT,
+    report = {'app': 'MadarFiles 1.9.27 (62)', 'test': 'CUDA startup fix candidate', 'source': SOURCE_COMMIT,
               'python': platform.python_version(), 'glibc': platform.libc_ver(),
               'machine': platform.machine()}
     base = Path('/content') if Path('/content').is_dir() else Path.cwd()
@@ -64,7 +64,7 @@ def main():
             return
         os_info = Path('/etc/os-release')
         report['os'] = next((s for s in os_info.read_text().splitlines() if s.startswith('PRETTY_NAME=')), '') if os_info.exists() else platform.system()
-        print('تحميل ملفات التشغيل المثبتة في الإصدار، ثم اختبار GPU فقط…', flush=True)
+        print('اختبار إصلاح GPU مع إعادة استخدام النموذج والمحرك المحمّلين في هذه الجلسة إن وُجدا…', flush=True)
         for name, expected in SOURCE_HASHES.items():
             url = f'https://raw.githubusercontent.com/tahon-altayb/MadarFiles/{SOURCE_COMMIT}/app/src/main/assets/motion/{name}'
             with urllib.request.urlopen(url, timeout=30) as response:
@@ -134,10 +134,13 @@ print('MADAR_GPU_STARTUP_VERIFIED',flush=True)
                 process.wait()
         report['elapsed_seconds'] = round(time.monotonic() - started, 1)
         logs = []
-        for name in ['progress.json', 'director-runtime.log', 'probe.log']:
+        for name in ['progress.json', 'director-cuda-devices.log', 'director-cuda-loader.log', 'director-probe.json', 'director-runtime.log', 'probe.log']:
             path = folder / name
             if path.exists():
-                logs.append('\n--- ' + name + ' ---\n' + clean(path.read_text(errors='replace')[-14000:]))
+                value=path.read_text(errors='replace')
+                if name=='director-runtime.log':
+                    report['gpu_evidence']=[clean(line) for line in value.splitlines() if re.search(r'CUDA|offloaded|offloading|GPU.*buffer',line,re.I)][-30:]
+                logs.append('\n--- ' + name + ' ---\n' + clean(value[-14000:]))
         text = json.dumps(report, ensure_ascii=False, indent=2) + '\n'.join(logs)
         (folder / 'Madar-motion-GPU-report.txt').write_text(text, encoding='utf-8')
         print('\nMADAR_GPU_REPORT_BEGIN\n' + text + '\nMADAR_GPU_REPORT_END', flush=True)
