@@ -36,6 +36,6 @@ with zipfile.ZipFile(apk) as old,zipfile.ZipFile(final) as new:
   if signature(info.filename):continue
   assert new.read(info.filename)==(replacement if info.filename==asset else old.read(info.filename)),info.filename
   count+=1
-proof={'base_verified_commit':BASE,'base_release_run':RUN,'source_asset_sha256':hashlib.sha256(replacement).hexdigest(),'unchanged_payload_verified':count-1,'apk_sha256':hashlib.sha256(Path(final).read_bytes()).hexdigest(),'original_certificate_verified':True,'package':'com.madar.files','version':'1.9.22 (55)'}
+proof={'base_verified_commit':BASE,'base_release_run':RUN,'source_asset_sha256':hashlib.sha256(replacement).hexdigest(),'unchanged_payload_verified':count-1,'apk_sha256':hashlib.sha256(Path(final).read_bytes()).hexdigest(),'original_certificate_verified':True,'package':'com.madar.files','version':'1.9.22 (57)'}
 Path('release-proof.json').write_text(json.dumps(proof,indent=2));print(json.dumps(proof))
 
