@@ -1,0 +1,66 @@
+name: Publish verified native motion runtimes
+on:
+  push:
+    branches: [delivery/motion-native-t4-20261106]
+    paths: [.github/workflows/motion-runtime-release.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Madar-llama-b12089-native-T4
+          run-id: 42125831493
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: native24
+      - uses: actions/download-artifact@v4
+        with:
+          name: Madar-llama-b12089-native-T4-portable
+          run-id: 42127754768
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: native22
+      - name: Verify source, architecture and package hashes
+        run: |
+          python3 - <<'PY'
+          import pathlib,json,hashlib,shutil
+          out=pathlib.Path('release');out.mkdir()
+          expected={'24':'c2148c7ae9b19efc143592f9a3ed71231010c76f06d5813ba8067b17868e52f7','22':'4d67ac3aab2224daba5561e32dd853ca65a5d2400a131e682931bb09ce1d2c1d'}
+          for version,digest in expected.items():
+              root=pathlib.Path('native'+version);archive=root/'madar-llama-b12089-cuda12-sm75.tar.gz'
+              manifest=json.loads((root/'build-manifest.json').read_text())
+              assert manifest['upstream_commit']=='9309bf1bcfe8d52b0fb7ef906474db94041a5e0c'
+              assert manifest['architecture']=='75-real' and manifest['native_cubin_count']==145
+              assert manifest['archive_sha256']==digest==hashlib.sha256(archive.read_bytes()).hexdigest()
+              shutil.copy2(archive,out/('madar-llama-b12089-cuda12-sm75-ubuntu'+version+'.tar.gz'))
+              shutil.copy2(root/'build-manifest.json',out/('native-sm75-ubuntu'+version+'.json'))
+          PY
+      - name: Publish immutable runtime assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=motion-runtime-b12089-sm75-v1
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+            mkdir existing
+            gh release download "$tag" --repo "$GH_REPO" --pattern '*.tar.gz' --dir existing
+            python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          for path in Path('release').glob('*.tar.gz'):
+              assert hashlib.sha256(path.read_bytes()).digest()==hashlib.sha256((Path('existing')/path.name).read_bytes()).digest(), 'An existing runtime asset differs; never overwrite it'
+          PY
+          else
+            cat > release-notes.txt <<'NOTES'
+          Native Turing (sm_75) CUDA kernels for Madar motion planning.
+
+          Built from llama.cpp b12089, commit 9309bf1bcfe8d52b0fb7ef906474db94041a5e0c, CUDA 12.8.2. Each build contains 145 native sm_75 cubins and no embedded PTX fallback. JSON files record per-file hashes and build provenance.
+
+          The Ubuntu 24.04 build targets glibc 2.39. The Ubuntu 22.04 build provides a glibc 2.35 baseline. These packages contain the motion engine only; model weights and private user media are not included.
+          NOTES
+            gh release create "$tag" release/* --repo "$GH_REPO" --target "$GITHUB_SHA" --title 'Madar native T4 motion runtime b12089' --notes-file release-notes.txt --prerelease --latest=false
+          fi
