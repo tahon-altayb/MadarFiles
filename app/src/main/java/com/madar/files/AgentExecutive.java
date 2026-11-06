@@ -37,6 +37,13 @@ final class AgentExecutive {
   if(contract.getBoolean("address_required")&&address.isEmpty())return "BRIEF_ADDRESS_REQUIRED";
   return "";
  }
+ /** The logo the user picked in chat is authoritative: mark it as the brand logo the interpretation must open with. */
+ static void trustChosenLogo(JSONObject brief,JSONObject contract,JSONArray catalog)throws Exception{
+  JSONObject local=brief.optJSONObject("contract");if(local==null||local.optString("logoAsset").isEmpty())return;
+  JSONArray images=brief.getJSONArray("images");int chosen=-1;for(int i=0;i<images.length();i++)if(images.getString(i).equals(local.getString("logoAsset")))chosen=i;if(chosen<0)return;
+  for(int i=0;i<catalog.length();i++){JSONObject item=catalog.getJSONObject(i);if(item.getInt("index")==chosen)item.put("kind","brand_logo");else if(item.optString("kind").equals("brand_logo"))item.put("kind","other");}
+  if(contract.optBoolean("opening_logo")||local.optBoolean("logoFirst"))contract.put("logo_index",chosen);
+ }
  static void prepareMotion(Context c,JSONObject project,AtomicBoolean cancel)throws Exception{prepareMotion(c,project,cancel,m->{});}
  static void prepareMotion(Context c,JSONObject project,AtomicBoolean cancel,Progress progress)throws Exception{
   JSONObject brief=project.getJSONObject("creativeRequest");String prompt;try(InputStream in=c.getAssets().open("agent-motion-executive.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
@@ -54,7 +61,7 @@ final class AgentExecutive {
   JSONObject interpreted=cached?brief.getJSONObject("executiveDraft"):measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));
   brief.put("sourceReads",sources).put("executiveDraft",interpreted).put("executiveDraftKey",key).put("executiveDraftAt",System.currentTimeMillis());MotionProject.save(c,project);ColabProbe.check(cancel);
   progress.stage("Gemini يراجع التفسير المحفوظ قبل تشغيل GPU");input.put("untrusted_interpretation",interpreted).put("review_task","Independently re-read the actual client request and images. Correct omissions, negation reversals, invented facts and false claims of reading a URL. Return the complete repaired interpretation. No execution has started.");
-  JSONObject reviewed=measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));JSONObject contract=reviewed.getJSONObject("contract");JSONArray catalog=reviewed.getJSONArray("image_catalog");String question=validateBrief(contract,brief.getString("text"),sources,catalog,images.length());
+  JSONObject reviewed=measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));JSONObject contract=reviewed.getJSONObject("contract");JSONArray catalog=reviewed.getJSONArray("image_catalog");trustChosenLogo(brief,contract,catalog);String question=validateBrief(contract,brief.getString("text"),sources,catalog,images.length());
   brief.put("clientContract",contract).put("referenceFacts",catalog).put("executiveVerified",true);project.remove("preflightPending");MotionProject.save(c,project);
   if(contract.optBoolean("needs_information")){String needed=contract.optString("question");if(needed.isEmpty()||needed.length()>250||needed.matches("(?is).*(password|api.?key|token|كلمة مرور|مفتاح API).*"))throw new IOException("المعلومة الناقصة لم تتحدد بشكل صالح");throw new MotionCloud.Clarification(needed);}
   if(!question.isEmpty())throw new MotionCloud.Clarification(MotionCloud.briefQuestion(question));

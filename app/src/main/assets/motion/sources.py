@@ -1,5 +1,5 @@
 """Read public landing-page facts without executing page scripts or accepting private hosts."""
-import ipaddress,json,re,socket,urllib.parse,urllib.request,hashlib,io
+import ipaddress,json,re,socket,urllib.parse,urllib.request,urllib.error,hashlib,io
 from html.parser import HTMLParser
 from pathlib import Path
 class Page(HTMLParser):
@@ -64,17 +64,70 @@ def fetch(url,limit,mimes):
    return data,response.geturl(),response.headers.get_content_charset() or 'utf-8'
  except OSError as e:raise ValueError('SOURCE_UNAVAILABLE') from e
 
+SHORT_HOSTS={'share.google','maps.app.goo.gl','goo.gl','g.co','g.page'}
+def google_name(url):
+ """Business name carried by a Google search/maps/consent URL, or ''. Never fetched content."""
+ for _ in range(3):
+  try:p=urllib.parse.urlsplit(url)
+  except ValueError:return ''
+  host=(p.hostname or '').lower();query=urllib.parse.parse_qs(p.query)
+  if host.startswith('consent.') and query.get('continue'):url=query['continue'][0];continue
+  if re.fullmatch(r'(?:www\.)?google\.[a-z.]+',host):
+   place=re.search(r'/maps/place/([^/@]+)',p.path)
+   if place:return urllib.parse.unquote_plus(place.group(1)).strip()[:80]
+   if p.path.startswith('/search') and query.get('q'):return query['q'][0].strip()[:80]
+   if p.path.startswith('/maps') and query.get('q'):return query['q'][0].strip()[:80]
+  return ''
+ return ''
+class NoFollow(urllib.request.HTTPRedirectHandler):
+ def redirect_request(self,*args,**kwargs):return None
+def short_chain(url):
+ """Follow a Google short link's Location headers only, stopping at the first named destination."""
+ opener=urllib.request.build_opener(NoFollow());chain=[]
+ for _ in range(5):
+  url=public_url(url);chain.append(url)
+  if google_name(url):break
+  try:
+   with opener.open(urllib.request.Request(url,method='GET',headers={'User-Agent':'MadarMotion/1.0 (public page preview)'}),timeout=15):break
+  except urllib.error.HTTPError as e:
+   location=e.headers.get('Location') if e.code in (301,302,303,307,308) else None
+   if not location:break
+   url=urllib.parse.urljoin(url,location)
+  except OSError:break
+ return chain
 def collect(brief):
  urls=list(dict.fromkeys(re.findall(r'https?://[^\s<>"\u060c]+',brief['text'])))[:2];sources=[];new=[]
  if re.search(r'(?:بدون|تجاهل|اترك)\s+الرابط',brief['text']):urls=[]
  for url in urls:
-  data,resolved,encoding=fetch(url.rstrip(').,!?؛'),2_000_000,['text/html','text/plain']);parser=Page()
+  url=url.rstrip(').,!?؛')
+  # Owned images or a written description can carry the ad when a link is unreadable;
+  # without them the user is asked instead of receiving an invented business.
+  can_continue=bool(brief.get('images')) or bool(brief.get('contract',{}).get('businessName'))
+  name=''
+  if (urllib.parse.urlsplit(url).hostname or '').lower() in SHORT_HOSTS:
+   try:
+    for step in short_chain(url):
+     name=google_name(step)
+     if name:break
+   except (ValueError,OSError):name=''
+  if name:
+   sources.append({'url':url,'status':'partial','name':name,'text':'اسم النشاط حسب الرابط: '+name+'. الرابط صفحة بحث أو خرائط من Google، ولا يحتوي تفاصيل منتجات أو عروض.','provenance':'link_name_only','images':[]})
+   continue
+  try:data,resolved,encoding=fetch(url,2_000_000,['text/html','text/plain'])
+  except ValueError as error:
+   if not can_continue:raise
+   sources.append({'url':url,'status':'failed','reason':str(error),'text':'','images':[]});continue
+  name=google_name(resolved)
+  if name:
+   sources.append({'url':resolved,'status':'partial','name':name,'text':'اسم النشاط حسب الرابط: '+name+'.','provenance':'link_name_only','images':[]});continue
+  parser=Page()
   try:html=data.decode(encoding,errors='replace')
   except LookupError:html=data.decode('utf-8',errors='replace')
   parser.feed(html);content=parser.content()[:12000]
-  if urllib.parse.urlsplit(resolved).hostname in ['accounts.google.com','consent.google.com']:raise ValueError('SOURCE_UNAVAILABLE')
-  if len(content)<60:raise ValueError('SOURCE_EMPTY')
-  sources.append({'url':resolved,'text':content,'provenance':'public_page_claims_not_independently_verified'})
+  if urllib.parse.urlsplit(resolved).hostname in ['accounts.google.com','consent.google.com'] or len(content)<60:
+   if not can_continue:raise ValueError('SOURCE_UNAVAILABLE' if len(content)>=60 else 'SOURCE_EMPTY')
+   sources.append({'url':resolved,'status':'failed','reason':'SOURCE_EMPTY','text':'','images':[]});continue
+  sources.append({'url':resolved,'status':'ok' if len(content)>=200 else 'partial','text':content,'provenance':'public_page_claims_not_independently_verified'})
   image_candidates=list(parser.images)
   def structured_images(value,key=''):
    if isinstance(value,dict):

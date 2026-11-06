@@ -80,6 +80,8 @@ jobs:
           python3 qa/motion-cloud.test.py
           python3 qa/motion-runtime.test.py
           python3 qa/motion-sources.test.py
+          node qa/motion-brief.test.cjs
+          python3 qa/motion-contract-director.test.py
       - name: Compile and lint before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:lintDebug :app:testDebugUnitTest
       - name: Restore processing build assets
@@ -169,7 +171,7 @@ jobs:
         run: |
           npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
           MADAR_UI_FAILED=0
-          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/agent-motion.test.cjs qa/agent-conversation.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs qa/personal-studio.test.cjs; do
+          for MADAR_UI_TEST in qa/layout.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/agent-motion.test.cjs qa/agent-motion-brief.test.cjs qa/agent-conversation.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs qa/personal-studio.test.cjs; do
             NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node "$MADAR_UI_TEST" || MADAR_UI_FAILED=1
           done
           exit "$MADAR_UI_FAILED"
