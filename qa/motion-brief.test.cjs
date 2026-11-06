@@ -104,4 +104,16 @@ for(const [,src] of html.matchAll(/<script src="([^"]+)"/g)){assert.ok(main.incl
  applied=B.applyProfile(saved,B.parse('سو اعلان لشاهي جمر بدون عنوان والشعار بالاخير'));assert.ok(applied.logoLast&&!applied.logoFirst,'a stated logo position wins over the profile');assert.equal(applied.address,'','address only when the request asks for it');
  assert.match(B.summary(B.applyProfile(saved,B.parse('سو اعلان لشاهي جمر واكتب زورونا في فرعنا وحط العنوان'))),/طبّقت تفضيلات «شاهي جمر» المحفوظة: العنوان/);
  assert.deepEqual(B.profileCommand('احفظ باسم شاهي جمر'),{save:'شاهي جمر'});assert.deepEqual(B.profileCommand('امسح تفضيلات شاهي جمر'),{remove:'شاهي جمر'});assert.deepEqual(B.profileCommand('وش تفضيلات المحلات'),{list:true});assert.equal(B.profileCommand('احفظ الملف'),null);}
+// Skills: parsed with the same contract rules; named or always-on; the request overrides.
+{const taught=B.skillCommand('علم مدار مهارة إعلانات المطاعم: خل الشعار أول، ومدته 30 ثانية، واكتب اطلب الحين في آخر مشهد، لا تكتب توصيل مجاني');
+ assert.equal(taught.save,'إعلانات المطاعم');const z=B.skillFrom(taught.save,taught.text);assert.equal(z.always,false);assert.equal(z.rules.durationSec,30);assert.deepEqual(z.rules.required,['اطلب الحين']);assert.deepEqual(z.rules.forbidden,['توصيل مجاني']);
+ const always=B.skillFrom('الهوية','في كل اعلان خل الشعار في النهاية وبدون موقع إلكتروني');assert.ok(always.always&&always.rules.logoLast&&always.rules.noWebsite);
+ assert.deepEqual(B.findSkills([z,always],'اعلان عن القهوة').map(x=>x.name),['الهوية']);
+ assert.deepEqual(B.findSkills([z,always],'اعلان لمطعمي بإعلانات المطاعم').map(x=>x.name),['الهوية','إعلانات المطاعم'],'a named skill comes last and wins');
+ let c=B.applySkills(B.findSkills([z,always],'اعلان لمطعمي بإعلانات المطاعم'),B.parse('اعلان لمطعمي بإعلانات المطاعم'));assert.ok(c.logoFirst&&!c.logoLast);assert.equal(c.durationSec,30);assert.ok(c.forbidden.includes('www'));assert.deepEqual(c.skillsApplied,['الهوية','إعلانات المطاعم']);
+ c=B.applySkills([z],B.parse('اعلان بإعلانات المطاعم مدته 50 ثانية والشعار بالأخير'));assert.equal(c.durationSec,50);assert.ok(c.logoLast&&!c.logoFirst,'the request wins');
+ assert.match(B.summary(c),/طبّقت مهارة «إعلانات المطاعم»/);
+ assert.deepEqual(B.skillCommand('وش مهاراتك'),{list:true});assert.deepEqual(B.skillCommand('احذف مهارة الهوية'),{remove:'الهوية'});assert.equal(B.key(B.skillCommand('خل مهارة الهوية دايمة').always),'الهويه');assert.equal(B.skillCommand('خل مهارة الهوية دايمة').on,true);assert.equal(B.skillCommand('وقف مهارة الهوية').on,false);
+ assert.equal(B.skillCommand('سو لي اعلان موشن عن مهارات الطبخ'),null);assert.deepEqual(B.parse('اكتب اطلب الحين في آخر مشهد').required,['اطلب الحين']);
+}
 console.log('motion brief contract: real request, dialect variants, answers, merge and report');
