@@ -110,9 +110,9 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  checks={c['id']:c for c in p['verification']}
  for cid in ['logo_first','scene_count','forbidden','required','address','no_website','music']:assert checks[cid]['ok'],(cid,checks.get(cid))
  # Offline the link fails and is reported; online the Google share link yields only the name.
- source=p['direction']['sources'][0]
- if source.get('status')=='failed':assert checks['source']['ok'] is False,'an unreadable link must be reported, not hidden'
- else:assert source['status']=='partial' and source.get('name') and checks['source']['ok'],source;print('link name from Google:',source['name'])
+ link=p['direction']['sources'][0]
+ if link.get('status')=='failed':assert checks['source']['ok'] is False,'an unreadable link must be reported, not hidden'
+ else:assert link['status']=='partial' and link.get('name') and checks['source']['ok'],link;print('link name from Google:',link['name'])
  story_prompt=(job/'story-prompt.txt').read_text()
  assert 'client_contract' in story_prompt and 'Scene 1 must show the client logo' in story_prompt
  assert '9-11 words' in story_prompt or '7-11 words' in story_prompt,'narration must be sized to a five-second scene'
