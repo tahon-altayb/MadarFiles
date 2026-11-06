@@ -22,6 +22,7 @@ final class MotionCloud {
  static String failure(String code){if(code.startsWith("DIRECTOR_GPU_"))return gpuFailure(code);if(code.startsWith("SPEECH_"))return "تعذر إكمال تجهيز أو توليد الصوت الرجالي المعتمد. المدخلات محفوظة، وتقرير هذه المحاولة يحدد خطوة الصوت التي توقفت";switch(code){case "DIRECTOR_CONTEXT":return "المراجع أطول مما يستطيع هذا التشغيل قراءته معًا. المدخلات محفوظة؛ اختصر الوصف أو قلّل الصور والروابط ثم أعد المحاولة";case "SOURCE_IMAGES_UNAVAILABLE":return "قرأت الرابط لكن لم أجد صورًا مناسبة يمكن استخدامها للمحل. أرفق الشعار وصور المنتجات هنا، أو اختر ستايلًا رسوميًا بدون صور";case "SOURCE_UNAVAILABLE":case "SOURCE_EMPTY":case "SOURCE_TYPE":case "SOURCE_SIZE":return "تعذرت قراءة الصفحة. أرسل وصفك أو الصور واكتب «بدون الرابط» لأكمل منها";case "SOURCE_URL":case "SOURCE_HOST":return "أرسل رابط صفحة عامة متاحًا، أو اكتب «بدون الرابط» مع وصف الفكرة";case "RECORDING_NO_WORDS":return "لم أستطع تمييز كلام واضح في التسجيل. أرفق تسجيلًا أوضح أو اختر الصوت المعتمد";case "STORY_INVALID":case "DIRECTOR_JSON":case "COMPOSITION_INVALID":return "لم ينجح تخطيط هذا الطلب؛ مدخلاتك محفوظة. جرّب توضيح الفكرة أو تعديل المراجع";case "OUTPUT_FORMAT":return "لم يجتز الفيديو فحص التصدير؛ المشروع محفوظ ويمكن إعادة المحاولة";default:return "توقفت معالجة الموشن قبل اكتمالها؛ المدخلات والمشروع محفوظان ويمكن إعادة المحاولة";}}
  static boolean retryStart(String code){return code!=null&&(code.contains("WS_")||code.contains("WORKER_NOT_STARTED"));}
  static String message(Exception error){
+  if(error instanceof ColabAllocation.Failure)return ((ColabAllocation.Failure)error).description();
   String code=String.valueOf(error.getMessage());
   if(retryStart(code))return "تعذر بدء اتصال الموشن مع Colab بعد إعادة المحاولة؛ طلبك ومرفقاتك محفوظة. يتوفر تقرير هذه المحاولة في «حالة آخر معالجة Colab»";
   if(code.contains("AUTH_REQUIRED")||code.contains("HTTP_401"))return "يحتاج اتصال Google إلى تجديد التفويض. أعد الاتصال من إعدادات Colab ثم اكتب «أعد المحاولة»؛ طلبك ومرفقاتك محفوظة";
@@ -61,7 +62,7 @@ final class MotionCloud {
   if(mode.equals("render")&&project.optJSONArray("visualRevisionAssets")!=null){JSONArray images=project.getJSONArray("visualRevisionAssets");for(int i=0;i<images.length();i++){String name=images.getString(i);files.put(name,MotionProject.asset(c,id,name));}}
   if(mode.equals("render")){if(!project.getString("voiceMode").equals("none"))files.put("voice.wav",MotionProject.asset(c,id,"voice.wav"));for(String image:MotionCreative.assets(project))files.put(image,MotionProject.asset(c,id,image));}
   MotionGpuSession.Lease lease=MotionGpuSession.acquire(c,grant,MotionGpuSession.owner(project),cancel,MotionTransfer.pending(project));
-  ColabRuntime runtime=lease.runtime;runtime.authEvents=diagnostic::record;runtime.transferEvents=diagnostic::record;boolean complete=false;
+  ColabRuntime runtime=lease.runtime;runtime.authEvents=diagnostic::record;runtime.transferEvents=diagnostic::record;runtime.allocationEvents=diagnostic::allocation;boolean complete=false;
   {
    String checkpointFolder=null;
    try{

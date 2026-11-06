@@ -15,11 +15,12 @@ final class ColabRuntime implements AutoCloseable {
  final Context context;volatile ColabCredentials.Grant grant;final AtomicBoolean cancel;private final CloudTransport transport;private final GrantRenewal grantRenewal;
  java.util.function.Consumer<String> authEvents=code->{};
  java.util.function.Consumer<String> transferEvents=code->{};
+ java.util.function.Consumer<ColabAllocation.Failure> allocationEvents=failure->{};
  final OkHttpClient http=new OkHttpClient.Builder().connectTimeout(20,TimeUnit.SECONDS).readTimeout(60,TimeUnit.SECONDS).writeTimeout(90,TimeUnit.SECONDS).callTimeout(100,TimeUnit.SECONDS).retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build();
  private String runtime="",proxyToken="";private HttpUrl base;private long refreshAt;
  static final class NetworkFailure extends IOException {final String code;NetworkFailure(IOException e){super("Colab · "+(e instanceof javax.net.ssl.SSLException?"IO_TLS":e instanceof java.net.UnknownHostException?"IO_DNS":e instanceof java.net.SocketTimeoutException?"IO_TIMEOUT":"IO_NETWORK"));code=getMessage().substring(8);}}
  static final class ProtocolFailure extends IOException {ProtocolFailure(String message){super(message);}}
- static final class HttpFailure extends IOException {final int status;HttpFailure(int n){super("Colab · HTTP_"+n);status=n;}}
+ static final class HttpFailure extends IOException {final int status;final ColabAllocation.Failure allocation;HttpFailure(int n){this(n,null);}HttpFailure(int n,ColabAllocation.Failure failure){super("Colab · HTTP_"+n);status=n;allocation=failure;}}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop){this(c,g,stop,null);}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t){this(c,g,stop,t,null);}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t,GrantRenewal renewal){context=c;grant=g;cancel=stop;transport=t;grantRenewal=renewal;}
@@ -29,7 +30,7 @@ final class ColabRuntime implements AutoCloseable {
   for(int attempt=0;;attempt++){
    ColabCredentials.Grant access=grant;
    try{if(transport!=null)return transport.call(method,path,data,stop);return request(new Request.Builder().url("https://colaboratory.googleapis.com/"+path).header("Authorization","Bearer "+access.token).header("X-Goog-User-Project",access.project),method,data,stop,2*1024*1024,20000);}
-   catch(HttpFailure denied){if(denied.status!=401||attempt!=0)throw denied;renewAccess(access,stop);}
+   catch(HttpFailure denied){if(denied.status!=401||attempt!=0){if(denied.allocation!=null)throw denied.allocation;throw denied;}renewAccess(access,stop);}
   }
  }
 
@@ -57,12 +58,21 @@ final class ColabRuntime implements AutoCloseable {
   ColabProbe.check(stop);RequestBody payload=body==null?null:RequestBody.create(body.toString(),MediaType.get("application/json; charset=utf-8"));Call call=http.newCall(builder.method(method,payload).build());call.timeout().timeout(timeoutMs,TimeUnit.MILLISECONDS);
   Thread watcher=new Thread(()->{try{while(!Thread.currentThread().isInterrupted()){if(stop.get()){call.cancel();return;}Thread.sleep(100);}}catch(InterruptedException ignored){}},"colab-cancel");watcher.setDaemon(true);watcher.start();
   try(Response response=call.execute()){
-   ColabProbe.check(stop);if(!response.isSuccessful())throw new HttpFailure(response.code());if(response.body()==null)return new JSONObject();
+   ColabProbe.check(stop);if(!response.isSuccessful()){
+    ColabAllocation.Failure allocation=null;
+    if(Arrays.asList(400,403,412,429).contains(response.code())&&method.equals("POST")&&response.request().url().host().equals("colaboratory.googleapis.com")&&response.request().url().encodedPath().equals("/v1beta/runtimes")){
+     try{JSONObject error=boundedError(response.body(),stop).optJSONObject("error");if(error!=null)allocation=ColabAllocation.failure(error,response.code());}catch(IOException|JSONException ignored){}
+    }
+    throw new HttpFailure(response.code(),allocation);
+   }if(response.body()==null)return new JSONObject();
    try(InputStream in=response.body().byteStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
     byte[] bytes=new byte[8192];int n;while((n=in.read(bytes))!=-1){ColabProbe.check(stop);if(out.size()+n>maximum)throw new ProtocolFailure("Colab · RESPONSE_TOO_LARGE");out.write(bytes,0,n);}
     String text=out.toString("UTF-8");return text.trim().isEmpty()?new JSONObject():parseJson(text);
    }
   }catch(IOException e){ColabProbe.check(stop);throw e instanceof HttpFailure||e instanceof ProtocolFailure?e:new NetworkFailure(e);}finally{watcher.interrupt();}
+ }
+ private static JSONObject boundedError(ResponseBody body,AtomicBoolean stop)throws IOException,JSONException{
+  if(body==null)return new JSONObject();try(InputStream in=body.byteStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] bytes=new byte[4096];int n;while((n=in.read(bytes))!=-1){ColabProbe.check(stop);if(out.size()+n>65536)throw new IOException("Colab · RESPONSE_TOO_LARGE");out.write(bytes,0,n);}return new JSONObject(out.toString("UTF-8"));}
  }
  static JSONObject parseJson(String value)throws IOException{try{return new JSONObject(value);}catch(JSONException e){throw new ProtocolFailure("Colab · RESPONSE_INVALID_JSON");}}
  static List<JSONObject> candidates(JSONObject response)throws Exception{
@@ -97,7 +107,9 @@ final class ColabRuntime implements AutoCloseable {
    ColabProbe.check(cancel);JSONObject spec=specs.get(i);String id="madar-"+UUID.randomUUID();runtime="runtimes/"+id;
    if(!journal().edit().putString("name",runtime).putString("project",grant.project).putString("requestId",UUID.randomUUID().toString()).putString("spec",spec.toString()).remove("operation").commit())throw new IOException("تعذر حفظ حالة جلسة Colab");
    progress.update(12,"طلب GPU · "+spec.getString("accelerator")+"؛ قد يستغرق بدء الجلسة دقائق");
-   JSONObject operation=cloud("POST","v1beta/runtimes?runtimeId="+id+"&requestId="+journal().getString("requestId",""),new JSONObject().put("runtimeSpec",spec),cancel);
+   JSONObject operation;
+   try{operation=cloud("POST","v1beta/runtimes?runtimeId="+id+"&requestId="+journal().getString("requestId",""),new JSONObject().put("runtimeSpec",spec),cancel);}
+   catch(ColabAllocation.Failure failure){journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
    String name=operation.optString("name");if(!name.isEmpty())journal().edit().putString("operation",name).commit();long began=System.nanoTime(),deadline=began+TimeUnit.MINUTES.toNanos(5);
    // Cancellation leaves the journal intact; background cleanup resolves the same operation.
    while(!operation.optBoolean("done")){
@@ -105,9 +117,13 @@ final class ColabRuntime implements AutoCloseable {
     long elapsed=TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()-began);progress.update(12,"انتظار مورد GPU · "+spec.getString("accelerator")+" · مضى "+elapsed+" ثانية؛ الفصل لم يبدأ بعد");
     long pause=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(System.nanoTime()<pause){ColabProbe.check(cancel);Thread.sleep(50);}operation=cloud("GET","v1/"+name,null,cancel);
    }
-   JSONObject error=operation.optJSONObject("error");if(error!=null){int code=error.optInt("code");journal().edit().clear().commit();runtime="";if((code==8||code==9||code==14)&&i+1<Math.min(2,specs.size())){progress.update(12,"المورد غير متاح؛ تجربة GPU بديل مرة واحدة");continue;}throw new IOException("لم يمنح Colab موردًا للمعالجة ("+code+"). راجع توفر الموارد ورصيد وحدات الحساب.");}
+   JSONObject error=operation.optJSONObject("error");if(error!=null){ColabAllocation.Failure failure=ColabAllocation.failure(error,0);journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);if(failure.canTryAnotherGpu()&&i+1<Math.min(2,specs.size())){allocationEvents.accept(failure);progress.update(12,"المورد غير متاح؛ تجربة GPU بديل مرة واحدة");continue;}allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
    ColabProbe.check(cancel);progress.update(13,"تم تخصيص GPU · قراءة بيانات اتصال المحرك");refresh();if(music)settings.edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return;
   }
+ }
+ private static String allocationGpu(JSONObject spec){String gpu=spec.optString("accelerator");return Arrays.asList("T4","L4","A100").contains(gpu)?gpu:"OTHER";}
+ private void allocationSnapshot(ColabAllocation.Failure failure)throws Exception{
+  ColabProbe.check(cancel);try{ColabAllocation.snapshot(failure,cloud("GET","v1beta/runtimes",null,cancel));}catch(CancellationException cancelled){throw cancelled;}catch(Exception unavailable){/* The original refusal remains authoritative if the read-only check fails. */}
  }
  /** Only resume an assignment that is still pending: no previous kernel could have started. */
  private boolean resumePendingMusic(MusicSeparator.Progress progress)throws Exception{
