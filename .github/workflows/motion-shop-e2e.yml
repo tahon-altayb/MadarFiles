@@ -1,7 +1,7 @@
 name: Real shop motion end to end
 on:
   push:
-    branches: [qa/shop-motion-e2e]
+    branches: [qa/shop-motion-e2e, qa/shop-motion-e2e-design]
   workflow_dispatch:
 permissions:
   contents: read
