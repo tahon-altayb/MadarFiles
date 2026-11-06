@@ -52,7 +52,15 @@ public class MotionCheckpointTest {
   MotionCheckpoint.accept(context,cp,p,new AtomicBoolean(),(i,n)->wave);JSONObject saved=MotionProject.load(context,p.getString("id"));assertEquals("voiced",saved.getString("motionCheckpoint"));
   assertEquals(p.getString("id"),AgentMotion.create(context,r.put("resumeProject",p.getString("id"))).getString("id"));
   for(int i=0;i<p.getJSONArray("scenes").length();i++)assertEquals(hash,MotionProject.hash(MotionProject.asset(context,p.getString("id"),"speech_"+i+".wav")));
-  try{MotionProject.asset(context,p.getString("id"),"speech_7.wav");fail();}catch(IOException expected){}
+  for(String name:new String[]{"speech_7.wav","speech_19.wav"})assertEquals(name,MotionProject.asset(context,p.getString("id"),name).getName());
+  for(String name:new String[]{"speech_20.wav","speech_007.wav","speech_-1.wav","../speech_0.wav"})try{MotionProject.asset(context,p.getString("id"),name);fail(name);}catch(IOException expected){}
+ }
+ @Test public void twentySceneVoiceCheckpointRetainsEveryVerifiedFile()throws Exception{
+  JSONObject r=request(),p=project(r);JSONArray scenes=new JSONArray();JSONObject template=p.getJSONArray("scenes").getJSONObject(0);
+  for(int i=0;i<20;i++)scenes.put(new JSONObject(template.toString()).put("id",String.format(java.util.Locale.ROOT,"%012x",i+1)).put("seconds",2));p.put("scenes",scenes);MotionProject.save(context,p);
+  JSONObject cp=envelope(p).put("phase","voiced");byte[] bytes=new byte[]{1,2,3,4};File source=new File(context.getCacheDir(),"checkpoint-twenty-fixture.wav");try(OutputStream out=new FileOutputStream(source)){out.write(bytes);}String hash=MotionProject.hash(source);source.delete();
+  for(int i=0;i<20;i++)cp.getJSONArray("assets").put(new JSONObject().put("name","speech_"+i+".wav").put("sha256",hash).put("size",bytes.length).put("chunks",1));
+  MotionCheckpoint.accept(context,cp,p,new AtomicBoolean(),(i,n)->bytes);JSONObject resumed=AgentMotion.create(context,r.put("resumeProject",p.getString("id")));assertEquals(20,resumed.getJSONArray("scenes").length());assertEquals("voiced",resumed.getString("motionCheckpoint"));for(int i=0;i<20;i++)assertEquals(hash,MotionProject.hash(MotionProject.asset(context,p.getString("id"),"speech_"+i+".wav")));
  }
  @Test public void incompleteVoiceCheckpointCannotSkipSpeech()throws Exception{
   JSONObject p=project(request()),cp=envelope(p).put("phase","voiced");
