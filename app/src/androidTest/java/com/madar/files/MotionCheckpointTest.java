@@ -71,4 +71,9 @@ public class MotionCheckpointTest {
   ColabDiagnostics diagnostic=new ColabDiagnostics(context,"MOTION_COMPOSE");diagnostic.record("SPEECH_SETUP_TORCH");diagnostic.record("MOTION_ENGINE_CUDA");diagnostic.failed(new IOException("واجهة عربية",new IOException("Colab · SPEECH_DEPENDENCY private https://private.invalid/?token=SECRET")));
   String report=ColabDiagnostics.last(context);assertTrue(report.contains("SPEECH_DEPENDENCY"));assertTrue(report.contains("SPEECH_SETUP_TORCH"));assertTrue(report.contains("MOTION_ENGINE_CUDA"));assertFalse(report.contains("UNCLASSIFIED"));assertFalse(report.contains("SECRET"));assertFalse(report.contains("https"));
  }
+ @Test public void preflightResumeRequiresTheSameRequestAndConversation()throws Exception{
+  JSONObject r=request(),p=project(r);p.put("preflightPending",true);MotionProject.save(context,p);r.put("resumeProject",p.getString("id"));assertEquals(p.getString("id"),AgentMotion.create(context,r).getString("id"));
+  try{AgentMotion.create(context,new JSONObject(r.toString()).put("thread","anotherThread"));fail();}catch(IOException expected){}
+  try{AgentMotion.create(context,new JSONObject(r.toString()).put("prompt","طلب مختلف"));fail();}catch(IOException expected){}
+ }
 }

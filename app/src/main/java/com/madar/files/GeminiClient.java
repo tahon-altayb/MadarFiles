@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** One explicit Google transport per request; never silently switches billing accounts. */
 final class GeminiClient {
+ static final long REQUEST_TIMEOUT_MILLIS=120000L;
+ static final long REQUEST_DEADLINE_MILLIS=REQUEST_TIMEOUT_MILLIS+5000L;
  private static FirebaseApp managed;
  private static void check(AtomicBoolean cancel){if(cancel.get()||Thread.currentThread().isInterrupted())throw new CancellationException();}
  static boolean configured(Context c){FirebaseOptions o=FirebaseOptions.fromResource(c);return o!=null&&o.getProjectId()!=null&&!o.getProjectId().isEmpty();}
@@ -31,21 +33,23 @@ final class GeminiClient {
  }
  static JSONObject generate(Context c,JSONObject body,AtomicBoolean cancel)throws Exception {
   check(cancel);String model=TranslationSettings.model(c),key=TranslationSettings.credential(c);
-  if(!key.isEmpty())return OnlineTranslation.post(model,key,body,cancel);
+  if(!key.isEmpty())try{return OnlineTranslation.post(model,key,body,cancel);}catch(CancellationException stopped){throw stopped;}catch(Exception failed){throw AgentDiagnostics.failure(failed);}
   if(!model.matches("gemini-[a-zA-Z0-9.\\-]{1,80}"))throw new IOException("اسم نموذج غير صالح");
   GenerationConfig.Builder config=new GenerationConfig.Builder();JSONObject generation=body.getJSONObject("generationConfig");
   config.responseMimeType="application/json";config.responseSchema=schema(generation.getJSONObject("responseSchema"));config.maxOutputTokens=generation.getInt("maxOutputTokens");
   Content system=content(body.getJSONObject("systemInstruction"));
-  GenerativeModelFutures client=GenerativeModelFutures.from(FirebaseAI.getInstance(managed(c),GenerativeBackend.googleAI()).generativeModel(model,config.build(),null,null,null,system,new RequestOptions(120000L)));
+  GenerativeModelFutures client=GenerativeModelFutures.from(FirebaseAI.getInstance(managed(c),GenerativeBackend.googleAI()).generativeModel(model,config.build(),null,null,null,system,new RequestOptions(REQUEST_TIMEOUT_MILLIS)));
   JSONArray inputs=body.getJSONArray("contents");if(inputs.length()!=1)throw new IOException("عدد رسائل الترجمة غير صالح");
   ListenableFuture<GenerateContentResponse> future=client.generateContent(content(inputs.getJSONObject(0)));
   try{
-   long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(125);
+   long until=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(REQUEST_DEADLINE_MILLIS);
    while(true){
-    check(cancel);if(System.nanoTime()>until)throw new IOException("انتهت مهلة Gemini؛ لم تُحفظ استجابة ناقصة");
+    check(cancel);if(System.nanoTime()>until)throw AgentDiagnostics.failure(new TimeoutException());
     try{
      GenerateContentResponse response=future.get(150,TimeUnit.MILLISECONDS);check(cancel);
-     if(response.getCandidates().isEmpty()||!FinishReason.STOP.equals(response.getCandidates().get(0).getFinishReason())||response.getText()==null)throw new IOException("استجابة Gemini غير مكتملة؛ لم يُعتمد الناتج الناقص");
+     if(response.getCandidates().isEmpty())throw AgentDiagnostics.responseFailure("");
+     if(!FinishReason.STOP.equals(response.getCandidates().get(0).getFinishReason()))throw AgentDiagnostics.responseFailure(String.valueOf(response.getCandidates().get(0).getFinishReason()));
+     if(response.getText()==null)throw AgentDiagnostics.responseFailure("");
      if(response.getText().length()>2000000)throw new IOException("استجابة الخدمة أكبر من الحد");
      return new JSONObject().put("candidates",new JSONArray().put(new JSONObject().put("finishReason","STOP").put("content",new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",response.getText()))))));
     }catch(TimeoutException pending){/* Check cancellation without blocking the worker indefinitely. */}
@@ -53,14 +57,7 @@ final class GeminiClient {
   }catch(ExecutionException failed){check(cancel);throw failure(failed.getCause());}
   finally{future.cancel(true);}
  }
- static IOException failure(Throwable cause){
-  StringBuilder detail=new StringBuilder();Throwable next=cause;for(int i=0;i<8&&next!=null;i++){detail.append(next.toString()).append(' ');next=next.getCause();}String diagnostic=detail.toString().toLowerCase(java.util.Locale.ROOT);
-  if(diagnostic.contains("429")||diagnostic.contains("quota")||diagnostic.contains("resource_exhausted")||diagnostic.contains("toomanyrequests"))return new IOException("Gemini: بلغ الحساب حد الطلبات أو الحصة المتاحة. أعد التشغيل بنفس الخيارات بعد تجدد الحصة؛ تُستعاد أجزاء الاستماع المكتملة إن وجدت. لا تحتاج إعادة إعداد Firebase.");
-  if(diagnostic.contains("app check")||diagnostic.contains("appcheck")||diagnostic.contains("attestation"))return new IOException("Gemini: تعذر توثيق التطبيق عبر App Check؛ راجع تسجيل Play Integrity وتوقيع التطبيق.");
-  if(diagnostic.contains("403")||diagnostic.contains("permission_denied"))return new IOException("Gemini: رفضت الخدمة صلاحية هذا الطلب. راجع صلاحيات المشروع والخدمة.");
-  if(diagnostic.contains("timeout")||diagnostic.contains("network")||diagnostic.contains("unknownhost"))return new IOException("Gemini: تعذر الاتصال بالخدمة أو انتهت مهلتها؛ أعد التشغيل لاستعادة الأجزاء المكتملة.");
-  return new IOException("تعذر إكمال طلب Gemini. احتُفظ بالأجزاء المكتملة. رمز التشخيص: "+(cause==null?"UNKNOWN":cause.getClass().getSimpleName()));
- }
+ static IOException failure(Throwable cause){return AgentDiagnostics.failure(cause);}
  static Content content(JSONObject input)throws Exception {
   Content.Builder out=new Content.Builder();JSONArray parts=input.getJSONArray("parts");
   for(int i=0;i<parts.length();i++){JSONObject part=parts.getJSONObject(i);if(part.has("text"))out.addText(part.getString("text"));else if(part.has("inlineData")){JSONObject audio=part.getJSONObject("inlineData");String mime=audio.getString("mimeType");if(!Arrays.asList("audio/wav","image/jpeg","image/png").contains(mime))throw new IOException("صيغة وسائط غير مدعومة");byte[] bytes=Base64.decode(audio.getString("data"),Base64.NO_WRAP);if(bytes.length>16*1024*1024)throw new IOException("الوسائط أكبر من حد الطلب");out.addInlineData(bytes,mime);}else throw new IOException("محتوى طلب غير مدعوم");}
