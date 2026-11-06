@@ -138,6 +138,44 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-nologo2-') as tmp:
  assert {c['id']:c for c in p['verification']}['logo_first']['ok'] is False,'the missing logo is reported'
 print('no identifiable logo: typography opening, reported, job not failed')
 
+# Online interpretation and chat contract together (Gemini answered): the director must apply
+# both without conflict, keep the logo first, and honour the executive contract's checks.
+TEXT_WITH_ADDRESS=text+'\nعنوان الفرع: الرياض – حي النرجس – طريق أبي بكر'
+executive={'needs_information':False,'question':'','business_name':'شاي جمر وفطيرة الطيّب','opening_logo':True,'opening_quote':'خلي الشعار يكون اولا','logo_index':1,
+ 'physical_visit':True,'visit_quote':'اكتب زورونا في فرعنا','visit_text':'زورونا في فرعنا','address_required':True,'address_quote':'واكتب مكان الموقع',
+ 'address':'الرياض – حي النرجس – طريق أبي بكر','address_evidence':'عنوان الفرع: الرياض – حي النرجس – طريق أبي بكر','address_source':'client',
+ 'rules':[{'text':'Rose is a seasonal photo backdrop, not a flavour','evidence':'الورد ليس نكهه تراه بس شكل'}],'must_include':[{'text':'زورونا في فرعنا','evidence':'اكتب زورونا في فرعنا'}],
+ 'forbidden_claims':[{'text':'نكهة الورد','evidence':'الورد ليس نكهه'},{'text':'موقع إلكتروني','evidence':'ماعندنا موقع إلكتروني'}],'omit_from_copy':[{'text':'ماعندنا موقع إلكتروني عندنا محل','evidence':'ماعندنا موقع إلكتروني عندنا محل'}]}
+catalog=[{'index':0,'kind':'place_photo','description':'واجهة المحل'},{'index':1,'kind':'brand_logo','description':'شعار'},{'index':2,'kind':'product_photo','description':'منتج'}]
+def run_executive(tmp):
+ job=Path(tmp)/'job';job.mkdir()
+ for f in source.iterdir():
+  if f.is_file():shutil.copyfile(f,job/f.name)
+ (job/'fake_server.py').write_text(FAKE_SERVER);(job/'director_runtime.py').write_text(FAKE_RUNTIME)
+ (job/'huggingface_hub').mkdir();(job/'huggingface_hub/__init__.py').write_text(FAKE_HUB)
+ images=['asset_'+c*32+'.jpg' for c in 'abc']
+ for i,name in enumerate(images):(job/name).write_bytes(b'\xff\xd8\xff\xe0'+bytes([i])*64+b'\xff\xd9')
+ b={'text':TEXT_WITH_ADDRESS,'images':images,'referenceMap':{},'contract':brief,'executiveVerified':True,'clientContract':executive,'referenceFacts':catalog,'sourceReads':[{'url':'https://share.google/gqr792aGPFX7jVCXY','status':'partial_text','text':'شاي جمر وفطيرة الطيّب · مقهى'}]}
+ project={'id':'d'*32,'version':1,'title':'مسودة','theme':'night','aspect':'9:16','voiceMode':'none','voice':'Charon','scenes':[],'creativeRequest':b}
+ (job/'request.json').write_text(json.dumps({'protocol':1,'mode':'compose','project':project},ensure_ascii=False))
+ env=os.environ.copy();env['MADAR_NODE']=shutil.which('node');env['PYTHONPATH']=str(job)
+ return subprocess.run([sys.executable,'director.py'],cwd=job,env=env,capture_output=True,text=True,timeout=300),job
+with tempfile.TemporaryDirectory(prefix='madar-contract-exec-') as tmp:
+ r,job=run_executive(tmp)
+ assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
+ p=json.loads((job/'project.json').read_text());scenes=p['scenes']
+ assert len(scenes)==10 and abs(sum(z['seconds'] for z in scenes)-50)<.01,[z['seconds'] for z in scenes]
+ assert C.has_asset(scenes[0]['composition'],'asset_'+'b'*32+'.jpg'),'logo first with both contracts'
+ texts=[]
+ for z in scenes:texts+=[z['title'],z['narration']]+[e['text'] for e in z['composition']['elements'] if e['kind'] in ['text','metric']]
+ joined=C.key(' '.join(texts))
+ for bad in ['نكهة الورد','موقع إلكتروني','ماعندنا موقع']:assert C.key(bad) not in joined,bad
+ last=' '.join([scenes[-1]['title']]+[e['text'] for e in scenes[-1]['composition']['elements'] if e['kind']=='text'])
+ assert 'زورونا في فرعنا' in last and 'حي النرجس' in last,last
+ prompt=(job/'story-prompt.txt').read_text();assert 'client_contract' in prompt and 'client_rules' in prompt,'both contracts reach the planner'
+ assert {c['id']:c for c in p['verification']}['source']['ok'],'native partial read is reported as read'
+print('online interpretation + chat contract together: logo first, forbidden removed, closing and address present')
+
 # The same director without a contract keeps the old behaviour for existing projects.
 with tempfile.TemporaryDirectory(prefix='madar-contract-legacy-') as tmp:
  r,job=run(None,'سوي موشن عن المحل',tmp)

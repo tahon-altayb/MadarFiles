@@ -265,6 +265,9 @@ for review in range(3):
  stage_names={'خطاف','الخطاف','شرح','الشرح','الفائدة','شرح الفائدة','الاستخدام','عرض الاستخدام','خاتمة','الخاتمة'}
  lock_references(copy,contract)
  issues=violations(copy,contract)
+ # Required closing text and the logo reference are enforced deterministically after review;
+ # forbidden or excluded copy stays blocking and must be rewritten by the model.
+ for z in issues:z['contract']='missing' if ('required_copy' in z or 'reference' in z) else 'forbidden'
  issues.extend(local_rules.copy_issues(copy,local_contract))
  if brief.get('appFacts') and 'مدار' not in json.dumps(copy,ensure_ascii=False):issues.append({'required_name':'مدار','fix':'Preserve the exact product name مدار in the film title or a scene. Do not replace the brand with a generic title.'})
  for index,shot in enumerate(copy['scenes']):
@@ -307,7 +310,12 @@ for review in range(3):
 
 else:raise ValueError('CONTRACT_COPY' if issues and all(z.get('contract') for z in issues) else 'STORY_INVALID')
 for shot,edited in zip(story['scenes'],copy['scenes']):shot.update(edited)
-enforced=local_rules.enforce_closing(story['scenes'],local_contract)
+# One closing requirement set from both contracts: chat rules plus the online interpretation's
+# must-include phrases, branch call to action and verified address.
+closing=dict(local_contract)
+closing['required']=list(dict.fromkeys([*local_contract.get('required',[]),*[r.get('text','') for r in contract.get('must_include',[]) if r.get('text')],*([contract['visit_text']] if contract.get('physical_visit') and contract.get('visit_text') else [])]))
+if not closing.get('address') and contract.get('address_required') and contract.get('address'):closing['address']=contract['address']
+enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
 for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
@@ -342,7 +350,7 @@ for i,shot in enumerate(story['scenes']):
   composition=json.loads(subprocess.check_output([os.environ['MADAR_NODE'],'-e',"const C=require('./creative'),fs=require('fs');process.stdout.write(JSON.stringify(C.compose(JSON.parse(fs.readFileSync('shot.json')),JSON.parse(process.argv[1]))));",json.dumps({'aspect':aspect,'images':images,'index':i,'seed':seed,'logo':bool(i in logo_targets and logo_name)})],text=True,timeout=30))
  sid=uuid.uuid4().hex[:12];s={'id':sid,'title':shot['title'],'narration':shot['narration'],'seconds':max(1,min(120,float(shot.get('seconds',6)))),'graphic':'creative','composition':composition,'effect':'rise','transition':'slide' if i%2 else 'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','illustration':False,'highlights':[],'words':[]}
  scenes.append(s);prior.append({'title':s['title'],'geometry':[(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in composition['elements']]})
-p['verification']=local_rules.verification(dict(local_contract,logoFirst=bool(local_contract.get('logoFirst') or contract.get('opening_logo'))),scenes,scene_count,aspect,logo_name,brief.get('sources',[]))
+p['verification']=local_rules.verification(dict(closing,logoFirst=bool(local_contract.get('logoFirst') or contract.get('opening_logo'))),scenes,scene_count,aspect,logo_name,brief.get('sources',[]))
 if enforced:p['verification'].append({'id':'closing','label':'أضفت نص الختام المطلوب في آخر مشهد','ok':True,'detail':''})
 p.pop('product',None);p.pop('result',None);p.update(title=str(story['title'])[:80],theme=story['theme'] if story.get('theme') in ['night','paper','sand'] else 'night',aspect=story['aspect'] if story.get('aspect') in ['9:16','16:9','1:1'] else '9:16',scenes=scenes,ready=False,direction={'concept':str(story.get('concept',''))[:1000],'model':MODEL,'revision':REVISION,'layoutMode':'validated_scene_graph','engine':active_engine,'engineVerified':True,'runtime':RUNTIME,'context':context_size,'theme':theme,'aspect':aspect,'sources':brief.get('sources',[]),'clientContract':contract})
 Path('project.json').write_text(json.dumps(p,ensure_ascii=False));subprocess.run([os.environ['MADAR_NODE'],'-e',"const C=require('./core'),fs=require('fs');let p=JSON.parse(fs.readFileSync('project.json'));C.draft(p);fs.writeFileSync('project.json',JSON.stringify(p));"],check=True,timeout=30)
