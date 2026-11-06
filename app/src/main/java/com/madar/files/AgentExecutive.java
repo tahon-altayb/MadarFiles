@@ -44,6 +44,18 @@ final class AgentExecutive {
   for(int i=0;i<catalog.length();i++){JSONObject item=catalog.getJSONObject(i);if(item.getInt("index")==chosen)item.put("kind","brand_logo");else if(item.optString("kind").equals("brand_logo"))item.put("kind","other");}
   if(contract.optBoolean("opening_logo")||local.optBoolean("logoFirst"))contract.put("logo_index",chosen);
  }
+ /**
+  * When Gemini cannot be reached (network, timeout, quota, model or permission failures)
+  * the chat's own brief contract is enough to plan the film: the job continues on Colab
+  * with the local contract and its post-generation checks instead of failing outright.
+  * Returns false when there is no local contract or the failure is not a Gemini outage.
+  */
+ static boolean localFallback(JSONObject project,String code)throws Exception{
+  JSONObject brief=project.optJSONObject("creativeRequest");
+  if(brief==null||brief.optJSONObject("contract")==null||code==null||!code.startsWith("GEMINI_"))return false;
+  brief.put("executiveVerified",false).put("executiveFallback",code);brief.remove("clientContract");project.remove("preflightPending");
+  return true;
+ }
  static void prepareMotion(Context c,JSONObject project,AtomicBoolean cancel)throws Exception{prepareMotion(c,project,cancel,m->{});}
  static void prepareMotion(Context c,JSONObject project,AtomicBoolean cancel,Progress progress)throws Exception{
   JSONObject brief=project.getJSONObject("creativeRequest");String prompt;try(InputStream in=c.getAssets().open("agent-motion-executive.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}

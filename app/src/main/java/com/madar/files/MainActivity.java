@@ -185,7 +185,14 @@ public class MainActivity extends Activity {
                 send(new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("progress",0).put("message",visual==null&&request.optString("resumeProject").isEmpty()?"Gemini يفهم طلبك والصور ويقرأ المصادر ثم يراجع الشروط قبل طلب GPU":"استكمال المشروع المحفوظ وملفاته"));
                 if(visual==null&&(request.optString("resumeProject").isEmpty()||project.optBoolean("preflightPending"))){
                     project.put("preflightPending",true);MotionProject.save(this,project);
-                    AgentExecutive.prepareMotion(this,project,motionBriefCancel,label->{JSONObject state=new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("checkpoint",true).put("preflight",true).put("progress",0).put("message",label);getSharedPreferences("motion-studio",0).edit().putString("chatState",state.toString()).apply();send(state);});
+                    try{AgentExecutive.prepareMotion(this,project,motionBriefCancel,label->{JSONObject state=new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("checkpoint",true).put("preflight",true).put("progress",0).put("message",label);getSharedPreferences("motion-studio",0).edit().putString("chatState",state.toString()).apply();send(state);});}
+                    catch(MotionCloud.Clarification|java.util.concurrent.CancellationException stop){throw stop;}
+                    catch(Exception unavailable){
+                        // Gemini outage: continue with the chat's local contract instead of failing the whole film.
+                        if(!AgentExecutive.localFallback(project,AgentDiagnostics.code(unavailable)))throw unavailable;
+                        MotionProject.save(this,project);
+                        send(new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("progress",0).put("message","Gemini ما رد ("+AgentDiagnostics.code(unavailable)+")، فكمّلت بفهمي المحلي لطلبك، وبتحقق من الناتج بنفسي بعد الإنتاج"));
+                    }
                 }
                 ColabProbe.check(motionBriefCancel);
                 runOnUiThread(()->{working=false;if(motionBriefCancel.get())return;if(ColabCredentials.ready()||MotionGpuSession.available(this,MotionGpuSession.owner(project)))MotionStudioService.start(this,id,project.optString("agentMode","compose"));else{pendingMotion=id;startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("motionStudio",true),7204);}});

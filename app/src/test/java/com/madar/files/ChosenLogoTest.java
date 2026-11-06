@@ -24,4 +24,14 @@ public class ChosenLogoTest {
   AgentExecutive.trustChosenLogo(brief(false),contract,catalog);
   assertEquals(-1,contract.getInt("logo_index"));assertEquals("brand_logo",catalog.getJSONObject(0).getString("kind"));
  }
+ @Test public void geminiOutageContinuesWithLocalContract()throws Exception{
+  JSONObject project=new JSONObject().put("preflightPending",true).put("creativeRequest",brief(true).put("clientContract",new JSONObject().put("opening_logo",true)));
+  assertTrue(AgentExecutive.localFallback(project,"GEMINI_TIMEOUT"));
+  JSONObject b=project.getJSONObject("creativeRequest");assertFalse(b.getBoolean("executiveVerified"));assertEquals("GEMINI_TIMEOUT",b.getString("executiveFallback"));assertFalse(b.has("clientContract"));assertFalse(project.has("preflightPending"));
+ }
+ @Test public void noFallbackWithoutLocalContractOrForOtherErrors()throws Exception{
+  assertFalse(AgentExecutive.localFallback(new JSONObject().put("creativeRequest",brief(false)),"GEMINI_NETWORK"));
+  assertFalse(AgentExecutive.localFallback(new JSONObject().put("creativeRequest",brief(true)),"BRIEF_INVALID"));
+  assertFalse(AgentExecutive.localFallback(new JSONObject().put("creativeRequest",brief(true)),null));
+ }
 }
