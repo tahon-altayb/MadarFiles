@@ -73,6 +73,16 @@ def forbidden_hits(texts,c):
  joined=key(' \n '.join(texts))
  return [f for f in c.get('forbidden',[]) if len(key(f))>=2 and key(f) in joined]
 
+def _fill(shot,c=None):
+ """Never leave a scene without words after clauses were removed."""
+ c=c or {}
+ for field,order in [('caption',['narration','title']),('narration',['caption','title']),('title',['caption','narration'])]:
+  if not str(shot.get(field,'')).strip():
+   for other in order:
+    v=str(shot.get(other,'')).strip()
+    if v:shot[field]=v.strip(' .،,')[:60] if field=='title' else v;break
+   else:shot[field]=str(c.get('businessName') or 'أهلاً بكم')
+
 def scrub(scenes,c,phrases=(),claims=()):
  """Last resort after the review rounds: drop the clauses that still carry forbidden copy.
 
@@ -93,11 +103,49 @@ def scrub(scenes,c,phrases=(),claims=()):
    kept=[x for x in parts if not dirty(x)]
    if len(kept)!=len(parts):
     shot[field]=' '.join(kept).strip(' ،,');changed.append((i+1,field))
-  if not shot.get('title','').strip():
-   pool=[x for f in ['caption','narration'] for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get(f,''))) if x.strip()]
-   shot['title']=(pool[0] if pool else str(c.get('businessName') or '')).strip(' .،,')[:60]
-  if not shot.get('caption','').strip():shot['caption']=shot.get('narration','')
-  if not shot.get('narration','').strip():shot['narration']=shot.get('caption','')
+  _fill(shot,c)
+ return changed
+
+META=re.compile(r'(?:^|\s)(?:[وبلف])?(?:ال)?(?:مشهد|مشاهد|فيديو|موشن|لقطه|كاميرا|مونتاج)(?=\s|$|[.،,!؟:])|هويه المحل|بدايه الاعلان|نهايه الاعلان|تفتتح المشهد')
+FOREIGN=re.compile(r'[\u0370-\u03ff\u0400-\u04ff]|[\u0621-\u064a][A-Za-z]|[A-Za-z][\u0621-\u064a]')
+def quality_issues(copy):
+ """Production language, glitched letters and repeated headlines: audience copy problems
+ the model must rewrite, found deterministically (the real run repeated scenes 1-4 as 5-8)."""
+ issues=[];seen={}
+ for i,shot in enumerate(copy.get('scenes',[])):
+  for field in ['title','caption','narration']:
+   value=str(shot.get(field,''))
+   if META.search(key(value)):issues.append({'scene':i+1,'quality':'meta','field':field,'fix':'This is production language (scene/video/camera/identity). Rewrite '+field+' as audience-facing advert copy.'})
+   if FOREIGN.search(value):issues.append({'scene':i+1,'quality':'letters','field':field,'fix':'A word in '+field+' contains non-Arabic letters. Rewrite it in correct Arabic spelling.'})
+  t=key(shot.get('title',''))
+  if t and t in seen:issues.append({'scene':i+1,'quality':'repeat','fix':'This headline repeats scene '+str(seen[t]+1)+'. Every scene needs its own headline and a different idea from the facts.'})
+  else:seen.setdefault(t,i)
+ return issues
+
+def repair_quality(scenes,c=None):
+ """Deterministic last resort for quality issues: drop meta or glitched clauses, and give a
+ repeated headline the scene's own first caption clause."""
+ changed=[]
+ for i,shot in enumerate(scenes):
+  for field in ['caption','narration','title']:
+   text=str(shot.get(field,''))
+   parts=[x for x in re.split(r'(?<=[.!؟،,;])\s*',text) if x.strip()]
+   kept=[x for x in parts if not META.search(key(x)) and not FOREIGN.search(x)]
+   if len(kept)!=len(parts):shot[field]=' '.join(kept).strip(' ،,');changed.append((i+1,field))
+  _fill(shot,c)
+ titles=set()
+ for i,shot in enumerate(scenes):
+  t=key(shot.get('title',''))
+  if not t or t in titles:
+   pool=[x.strip(' .،,') for f in ['caption','narration'] for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get(f,''))) if x.strip()]
+   pool=[x for x in pool if key(x) not in titles and len(x)<=60]
+   if pool:
+    shot['title']=pool[0];changed.append((i+1,'title'))
+    # The headline now carries that clause; the caption keeps only what it adds.
+    rest=[x for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get('caption',''))) if x.strip() and key(x.strip(' .،,'))!=key(pool[0])]
+    shot['caption']=' '.join(rest).strip(' ،,') or (shot.get('narration','') if key(shot.get('narration','').strip(' .،,'))!=key(pool[0]) else '')
+  _fill(shot,c)
+  titles.add(key(shot.get('title','')))
  return changed
 
 def copy_issues(copy,c):

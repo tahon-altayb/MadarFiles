@@ -269,6 +269,7 @@ for review in range(3):
  # forbidden or excluded copy stays blocking and must be rewritten by the model.
  for z in issues:z['contract']='missing' if ('required_copy' in z or 'reference' in z) else 'forbidden'
  issues.extend(local_rules.copy_issues(copy,local_contract))
+ issues.extend(local_rules.quality_issues(copy))
  if brief.get('appFacts') and 'مدار' not in json.dumps(copy,ensure_ascii=False):issues.append({'required_name':'مدار','fix':'Preserve the exact product name مدار in the film title or a scene. Do not replace the brand with a generic title.'})
  for index,shot in enumerate(copy['scenes']):
   issues.extend(dict(scene=index+1,**z) for z in unsupported_file_claims(shot,brief.get('appFacts','')))
@@ -312,12 +313,20 @@ for review in range(3):
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
 
 else:
- # The model kept forbidden wording after every round: remove those clauses rather than lose the film.
- if issues and all(z.get('contract')=='forbidden' for z in issues):
-  local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
-  left=[z for z in violations(copy,contract) if not ('required_copy' in z or 'reference' in z)]+[z for z in local_rules.copy_issues(copy,local_contract) if z.get('contract')!='missing']
-  if left:raise ValueError('CONTRACT_COPY')
- else:raise ValueError('CONTRACT_COPY' if issues and all(z.get('contract') for z in issues) else 'STORY_INVALID')
+ # Review rounds are spent. A finished film is not thrown away over wording that can be fixed
+ # without inventing anything: apply the confirmed proofreading corrections, drop clauses with
+ # forbidden or production wording, and re-title repeated headlines. App facts stay blocking.
+ blocking=[z for z in issues if not z.get('contract') and not z.get('quality') and not (z.get('original') and z.get('corrected') is not None)]
+ if blocking:raise ValueError('STORY_INVALID')
+ for z in issues:
+  if z.get('original') and z.get('corrected') is not None and isinstance(z.get('scene'),int) and 1<=z['scene']<=len(copy['scenes']):
+   shot=copy['scenes'][z['scene']-1]
+   for field in ['title','caption','narration']:
+    if z['original'] in str(shot.get(field,'')):shot[field]=str(shot[field]).replace(z['original'],z['corrected'])
+ local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
+ local_rules.repair_quality(copy['scenes'],local_contract)
+ left=[z for z in violations(copy,contract) if not ('required_copy' in z or 'reference' in z)]+[z for z in local_rules.copy_issues(copy,local_contract) if z.get('contract')!='missing']
+ if left:raise ValueError('CONTRACT_COPY')
 for shot,edited in zip(story['scenes'],copy['scenes']):shot.update(edited)
 # One closing requirement set from both contracts: chat rules plus the online interpretation's
 # must-include phrases, branch call to action and verified address.
