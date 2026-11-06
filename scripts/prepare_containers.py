@@ -3,28 +3,47 @@ from pathlib import Path
 import os,urllib.request,tarfile,subprocess,hashlib,shutil,time
 root=Path(__file__).resolve().parents[1];vendor=root/'app/vendor';vendor.mkdir(parents=True,exist_ok=True);archive=vendor/'ffmpeg-7.1.1.tar.xz'
 expected='733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1'
-if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest()!=expected:
- temporary=archive.with_suffix('.download');deadline=time.monotonic()+150
- for attempt in range(3):
+def download_source(candidates,opener=None):
+ opener=opener or urllib.request.urlopen
+ # Reuse only byte-verified archives. A mirror cannot replace the pinned version.
+ for url,path,checksum,prefix in candidates:
+  if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest()==checksum:return path,prefix
+ deadline=time.monotonic()+120;last=None
+ for url,path,checksum,prefix in candidates:
+  temporary=path.with_suffix('.download');digest=hashlib.sha256();total=0
   try:
-   host='ffmpeg.org' if attempt%2==0 else 'www.ffmpeg.org';digest=hashlib.sha256();total=0
-   with urllib.request.urlopen('https://'+host+'/releases/ffmpeg-7.1.1.tar.xz',timeout=30) as response,temporary.open('wb') as stream:
+   with opener(url,timeout=20) as response,temporary.open('wb') as stream:
     while True:
      data=response.read(1024*1024)
      if not data:break
      total+=len(data)
      if total>64*1024*1024 or time.monotonic()>deadline:raise IOError('FFmpeg download exceeded its bound')
      digest.update(data);stream.write(data)
-   if digest.hexdigest()!=expected:raise IOError('FFmpeg archive checksum mismatch')
-   temporary.replace(archive);break
-  except (OSError,ValueError):
-   if attempt==2 or time.monotonic()>deadline:raise
-   print('Retrying official FFmpeg source download',attempt+1,flush=True);time.sleep(attempt+1)
+   if digest.hexdigest()!=checksum:raise IOError('FFmpeg archive checksum mismatch')
+   temporary.replace(path);return path,prefix
+  except (OSError,ValueError) as error:
+   last=error
+   if time.monotonic()>deadline:break
+   print('Retrying the pinned FFmpeg source from the next official endpoint',flush=True)
   finally:temporary.unlink(missing_ok=True)
+ raise IOError('Verified FFmpeg source unavailable from official endpoints') from last
+
+# The project documents github.com/FFmpeg/FFmpeg as its official Git mirror.
+# This commit is the peeled n7.1.1 tag; its separate archive hash is pinned too.
+mirror_commit='db69d06eeeab4f46da15030a80d539efb4503ca8'
+mirror_sha='173ba614d8636491106cba08d79db469b5dee4b479388bc4fbcead8ca1fb79b1'
+archive,prefix=download_source([
+ ('https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz',archive,expected,'ffmpeg-7.1.1'),
+ ('https://www.ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz',archive,expected,'ffmpeg-7.1.1'),
+ ('https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/'+mirror_commit,vendor/'ffmpeg-7.1.1-git.tar.gz',mirror_sha,'FFmpeg-'+mirror_commit),
+])
 print('FFmpeg source SHA256',hashlib.sha256(archive.read_bytes()).hexdigest())
 source=vendor/'ffmpeg-7.1.1'
 if not source.exists():
  with tarfile.open(archive) as t:t.extractall(vendor,filter='data')
+ extracted=vendor/prefix
+ if extracted!=source:extracted.rename(source)
+if (source/'RELEASE').read_text().strip()!='7.1.1':raise ValueError('Unexpected FFmpeg source version')
 ndk=Path(os.environ['ANDROID_HOME'])/'ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64';tool=ndk/'bin'
 for abi,target,arch in [('arm64-v8a','aarch64-linux-android','aarch64'),('x86_64','x86_64-linux-android','x86_64')]:
  if (vendor/('ffmpeg-'+abi)/'lib/libswresample.a').exists():continue
