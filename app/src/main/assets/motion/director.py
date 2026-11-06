@@ -322,6 +322,13 @@ enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
 for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
+# The logo belongs to its scenes and the closing sign-off; other scenes that picked it get the least-used client photo.
+photos=[n for n in range(len(images)) if n!=logo_index]
+if logo_index is not None and photos:
+ used={n:sum(1 for z in story['scenes'] if z.get('reference')==n) for n in photos}
+ for i,z in enumerate(story['scenes']):
+  if i not in logo_targets and i!=len(story['scenes'])-1 and z.get('reference')==logo_index:
+   pick=min(photos,key=lambda n:(used[n],n));z['reference']=pick;used[pick]+=1
 story['title']=copy['title']
 if brief.get('appFacts') and 'مدار' not in json.dumps(story,ensure_ascii=False):raise ValueError('STORY_INVALID')
 story.update(theme=theme,aspect=aspect,concept=story['title'])

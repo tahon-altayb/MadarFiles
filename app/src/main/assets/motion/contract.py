@@ -97,7 +97,8 @@ def enforce_closing(scenes,c):
  (more phrases, the address, the phone) is joined into the caption so none
  overwrites another. Items that cannot fit stay missing and are reported."""
  if not scenes or not c:return []
- last=scenes[-1];everything=key(' '.join(t for s in scenes for t in scene_texts(s)))
+ # The call to action belongs on the closing scene even when the same words appeared earlier.
+ last=scenes[-1];everything=key(' '.join(str(last.get(k,'')) for k in ['title','caption']))
  missing=[p for p in c.get('required',[]) if key(p) not in everything]
  address=str(c.get('address') or '')
  extras=[address] if address and not address.startswith('http') and key(address) not in everything else []
