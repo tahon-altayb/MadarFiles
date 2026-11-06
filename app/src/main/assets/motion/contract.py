@@ -169,3 +169,36 @@ def duration_check(total,target):
  if not target:return None
  tolerance=max(2.0,target*.1)
  return {'id':'duration','label':'المدة %.0f ثانية (المطلوب %.0f)'%(total,target),'ok':abs(total-target)<=tolerance,'detail':'' if abs(total-target)<=tolerance else ('التعليق الصوتي أطول من المدة المطلوبة' if total>target else 'المدة أقصر من المطلوب')}
+
+def _luminance(rgb):
+ def channel(v):
+  v=v/255;return v/12.92 if v<=.03928 else ((v+.055)/1.055)**2.4
+ r,g,b=(channel(v) for v in rgb);return .2126*r+.7152*g+.0722*b
+def _contrast(a,b):
+ x,y=sorted([_luminance(a),_luminance(b)],reverse=True);return (x+.05)/(y+.05)
+def _mix(a,b,t):return tuple(round(a[i]+(b[i]-a[i])*t) for i in range(3))
+def _hex(rgb):return '#%02x%02x%02x'%tuple(max(0,min(255,int(v))) for v in rgb)
+def brand_palette(path):
+ """Background, ink, accent, card and muted colours from the client's logo, or None.
+
+ The darkest substantial logo colour becomes the background (darkened until light
+ text reads at 7:1); the most saturated lighter colour with 3:1 contrast becomes the
+ accent. A logo without usable colour (blank, mono) returns None and keeps the theme."""
+ try:
+  from PIL import Image
+  im=Image.open(path).convert('RGB');im.thumbnail((96,96))
+  colors=im.quantize(colors=8,method=Image.Quantize.MEDIANCUT).convert('RGB').getcolors(96*96) or []
+ except Exception:return None
+ total=sum(n for n,_ in colors) or 1;colors=[(n/total,c) for n,c in colors if n/total>=.03]
+ if not colors:return None
+ sat=lambda c:(max(c)-min(c))/255
+ ink=(246,239,227)
+ dark=sorted([z for z in colors if _luminance(z[1])<.30 and sat(z[1])>.08],key=lambda z:-z[0]) or sorted(colors,key=lambda z:_luminance(z[1]))
+ background=dark[0][1]
+ for _ in range(12):
+  if _contrast(background,ink)>=7:break
+  background=_mix(background,(0,0,0),.18)
+ accents=[z for z in colors if sat(z[1])>.25 and _contrast(z[1],background)>=3]
+ if not accents:return None
+ accent=max(accents,key=lambda z:z[0]*sat(z[1]))[1]
+ return {'background':_hex(background),'ink':_hex(ink),'accent':_hex(accent),'card':_hex(_mix(background,(255,255,255),.07)),'muted':_hex(_mix(ink,background,.35))}

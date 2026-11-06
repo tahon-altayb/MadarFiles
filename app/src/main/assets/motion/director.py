@@ -337,7 +337,8 @@ for i,shot in enumerate(story['scenes']):
  error=''
  # Preserve the reviewed story when CPU planning has used most of its budget.
  # The same validated adaptive layouts already handle invalid model geometry.
- for attempt in range(1 if shot['reference']==-1 and time.monotonic()-DIRECTOR_STARTED<1200 else 0):
+ # The closing call to action always uses the dedicated large, centred layout.
+ for attempt in range(1 if shot['reference']==-1 and i!=len(story['scenes'])-1 and time.monotonic()-DIRECTOR_STARTED<1200 else 0):
   try:
    composition=generate(SYSTEM,SCHEMA+'\nUse exactly shot.title and shot.caption as the two visible text elements. Do not rewrite either text. Design this shot. Correct any validation feedback: '+error+'\n'+json.dumps(prompt,ensure_ascii=False),max_tokens=2200,schema=COMPOSITION)
   except ValueError:
@@ -350,9 +351,12 @@ for i,shot in enumerate(story['scenes']):
   composition=None
  if composition is None or (i in logo_targets and logo_name and not local_rules.has_asset(composition,logo_name)):
   Path('shot.json').write_text(json.dumps(shot,ensure_ascii=False))
-  composition=json.loads(subprocess.check_output([os.environ['MADAR_NODE'],'-e',"const C=require('./creative'),fs=require('fs');process.stdout.write(JSON.stringify(C.compose(JSON.parse(fs.readFileSync('shot.json')),JSON.parse(process.argv[1]))));",json.dumps({'aspect':aspect,'images':images,'index':i,'seed':seed,'logo':bool(i in logo_targets and logo_name)})],text=True,timeout=30))
+  composition=json.loads(subprocess.check_output([os.environ['MADAR_NODE'],'-e',"const C=require('./creative'),fs=require('fs');process.stdout.write(JSON.stringify(C.compose(JSON.parse(fs.readFileSync('shot.json')),JSON.parse(process.argv[1]))));",json.dumps({'aspect':aspect,'images':images,'index':i,'seed':seed,'logo':bool(i in logo_targets and logo_name),'closing':i==len(story['scenes'])-1 and len(story['scenes'])>1})],text=True,timeout=30))
  sid=uuid.uuid4().hex[:12];s={'id':sid,'title':shot['title'],'narration':shot['narration'],'seconds':max(1,min(120,float(shot.get('seconds',6)))),'graphic':'creative','composition':composition,'effect':'rise','transition':'slide' if i%2 else 'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','illustration':False,'highlights':[],'words':[]}
  scenes.append(s);prior.append({'title':s['title'],'geometry':[(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in composition['elements']]})
+# The client's own logo colours replace the generic theme when they give a readable palette.
+brand=local_rules.brand_palette(logo_name) if logo_name else None
+if brand:p['brand']=brand
 p['verification']=local_rules.verification(dict(closing,logoFirst=bool(local_contract.get('logoFirst') or contract.get('opening_logo'))),scenes,scene_count,aspect,logo_name,brief.get('sources',[]))
 if enforced:p['verification'].append({'id':'closing','label':'أضفت نص الختام المطلوب في آخر مشهد','ok':True,'detail':''})
 p.pop('product',None);p.pop('result',None);p.update(title=str(story['title'])[:80],theme=story['theme'] if story.get('theme') in ['night','paper','sand'] else 'night',aspect=story['aspect'] if story.get('aspect') in ['9:16','16:9','1:1'] else '9:16',scenes=scenes,ready=False,direction={'concept':str(story.get('concept',''))[:1000],'model':MODEL,'revision':REVISION,'layoutMode':'validated_scene_graph','engine':active_engine,'engineVerified':True,'runtime':RUNTIME,'context':context_size,'theme':theme,'aspect':aspect,'sources':brief.get('sources',[]),'clientContract':contract})

@@ -56,7 +56,7 @@ function semanticIcon(shot){
  return 'spark';
 }
 // Adaptive fallback uses real brief content and owned assets; geometry varies with aspect and shot.
-function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false}={}){
+function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing=false}={}){
  const wide=aspect==='16:9',square=aspect==='1:1',style=(index+seed)%4;
  const title=String(shot.title).slice(0,60),body=String(shot.caption||shot.narration).slice(0,100);
  const asset=shot.reference===-1?null:images[Number.isInteger(shot.reference)&&shot.reference>=0?shot.reference:index%Math.max(1,images.length)];
@@ -64,15 +64,24 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false}={}){
  const iconId=semanticIcon(shot);
  const e=(kind,x,y,w,h,color,motion,delay,extra={})=>({kind,x,y,w,h,color,motion,delay,...extra});
  const text=(value,x,y,w,h,size,delay)=>e('text',x,y,w,h,'ink','rise',delay,{text:value,size});
- const media=(x,y,w,h,delay)=>asset?e(deviceShot?'device':'image',x,y,w,h,'ink','scale',delay,{asset}):e('icon',x,y,w,h,'accent','draw',delay,{icon:iconId});
+ const media=(x,y,w,h,delay,extra={})=>asset?e(deviceShot?'device':'image',x,y,w,h,'ink','scale',delay,{asset,...extra}):e('icon',x,y,w,h,'accent','draw',delay,{icon:iconId});
+ // Logos are shown whole; photographs fill their frame (cropped at the edges) like a printed advert.
+ const whole={fit:'contain'};
  let elements=[];
- if(logo&&asset&&!wide){
-  elements=[media(.12,.12,.76,.46,0),text(title,.08,.65,.84,.12,78,.07),text(body,.10,.80,.80,.10,44,.13),e('line',.35,.74,.30,.005,'accent','draw',.1)];
+ if(closing&&!wide){
+  // Closing call to action: large, centred, with the logo or photo as a smaller sign-off.
+  elements=[e('shape',.06,.20,.88,.46,'card','fade',0),text(title,.10,.25,.80,.17,110,.04),e('line',.38,.435,.24,.006,'accent','draw',.10),text(body,.10,.47,.80,.16,60,.14),...(asset?[media(.30,.71,.40,.20,.2,whole)]:[e('icon',.42,.74,.16,.10,'accent','scale',.2,{icon:'arrow'})])];
+ }else if(logo&&asset&&!wide){
+  elements=[media(.14,.12,.72,.44,0,whole),text(title,.07,.61,.86,.15,108,.08),e('line',.38,.775,.24,.006,'accent','draw',.12),text(body,.09,.80,.82,.12,56,.16)];
  }else if(!wide&&!square&&asset){
-  const side=style%3;
-  if(side===0)elements=[text(title,.07,.055,.86,.12,78,0),media(.06,.23,.88,.54,.04),text(body,.08,.82,.84,.10,44,.10),e('line',.08,.195,.26,.005,'accent','draw',.04)];
-  else if(side===1)elements=[media(.06,.10,.88,.56,.02),text(title,.08,.70,.84,.12,76,.08),text(body,.08,.84,.84,.10,44,.13),e('line',.70,.675,.22,.005,'accent','draw',.06)];
-  else elements=[text(title,.08,.07,.84,.12,76,0),text(body,.08,.22,.84,.10,44,.06),media(.08,.40,.84,.50,.10),e('line',.08,.35,.22,.005,'accent','draw',.08)];
+  // Six photo layouts rotate so a ten-scene vertical advert does not repeat the same frame.
+  const side=(index+seed)%6;
+  if(side===0)elements=[text(title,.07,.05,.86,.14,104,0),e('line',.07,.195,.24,.006,'accent','draw',.04),media(.05,.22,.90,.55,.04),text(body,.08,.80,.84,.14,56,.10)];
+  else if(side===1)elements=[media(.05,.05,.90,.58,.02),text(title,.07,.66,.86,.14,100,.08),e('line',.70,.805,.23,.006,'accent','draw',.06),text(body,.07,.825,.86,.13,54,.13)];
+  else if(side===2)elements=[text(title,.07,.05,.86,.14,100,0),text(body,.07,.20,.86,.13,54,.06),e('line',.07,.34,.23,.006,'accent','draw',.08),media(.05,.37,.90,.57,.10)];
+  else if(side===3)elements=[media(0,0,1,.70,.02),e('shape',.05,.60,.90,.35,'card','rise',.08),text(title,.09,.635,.82,.14,100,.10),e('line',.09,.78,.23,.006,'accent','draw',.12),text(body,.09,.795,.82,.13,52,.15)];
+  else if(side===4)elements=[text(title,.07,.05,.86,.15,108,0),e('line',.38,.205,.24,.006,'accent','draw',.05),media(.10,.235,.80,.52,.06),text(body,.08,.785,.84,.14,56,.12)];
+  else elements=[text(title,.07,.05,.86,.14,104,0),text(body,.07,.195,.86,.13,54,.06),media(0,.35,1,.65,.10)];
  }else if(wide&&style===2){
   elements=[text(title,.08,.07,.84,.20,66,0),e('line',.08,.30,.20,.006,'accent','draw',.04),media(.08,.36,.36,.51,.06),text(body,.53,.40,.39,.30,30,.12),e('icon',.80,.78,.08,.10,'accent','scale',.2,{icon:iconId})];
  }else if(wide&&style===3){
@@ -104,7 +113,9 @@ function text(ctx,value,x,y,w,h,size,color,weight=700){ctx.direction='rtl';ctx.t
 function icon(ctx,id,x,y,w,h,color){ctx.save();ctx.translate(x+w/2,y+h/2);const r=Math.min(w,h)*.38;ctx.scale(r,r);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=.09;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();if(id==='check'){ctx.moveTo(-.7,0);ctx.lineTo(-.15,.5);ctx.lineTo(.75,-.55);ctx.stroke();}else if(id==='play'){ctx.moveTo(-.4,-.7);ctx.lineTo(.7,0);ctx.lineTo(-.4,.7);ctx.closePath();ctx.fill();}else if(id==='audio'){for(let i=0;i<5;i++){const v=.25+.5*Math.sin((i+1)*1.1)**2;ctx.moveTo((i-2)*.32,-v);ctx.lineTo((i-2)*.32,v);}ctx.stroke();}else if(id==='arrow'){ctx.moveTo(.8,0);ctx.lineTo(-.8,0);ctx.moveTo(-.2,-.6);ctx.lineTo(-.8,0);ctx.lineTo(-.2,.6);ctx.stroke();}else if(id==='grain'){for(let i=0;i<4;i++){ctx.ellipse(-.22,-.65+i*.4,.18,.3,-.6,0,Math.PI*2);ctx.ellipse(.22,-.45+i*.4,.18,.3,.6,0,Math.PI*2);}ctx.moveTo(0,-.8);ctx.lineTo(0,1);ctx.stroke();}else if(id==='spark'){for(let i=0;i<4;i++){const angle=i*Math.PI/2;ctx.moveTo(Math.cos(angle)*.85,Math.sin(angle)*.85);ctx.lineTo(0,0);}ctx.stroke();}else if(id==='shield'){ctx.moveTo(0,-.9);ctx.lineTo(.7,-.5);ctx.lineTo(.6,.3);ctx.quadraticCurveTo(.3,.8,0,1);ctx.quadraticCurveTo(-.3,.8,-.6,.3);ctx.lineTo(-.7,-.5);ctx.closePath();ctx.stroke();}else if(id==='chat'){ctx.moveTo(-.68,-.68);ctx.lineTo(.68,-.68);ctx.quadraticCurveTo(.9,-.68,.9,-.46);ctx.lineTo(.9,.3);ctx.quadraticCurveTo(.9,.52,.68,.52);ctx.lineTo(-.12,.52);ctx.lineTo(-.62,.88);ctx.lineTo(-.52,.52);ctx.lineTo(-.68,.52);ctx.quadraticCurveTo(-.9,.52,-.9,.3);ctx.lineTo(-.9,-.46);ctx.quadraticCurveTo(-.9,-.68,-.68,-.68);ctx.stroke();ctx.beginPath();ctx.moveTo(-.5,-.25);ctx.lineTo(.5,-.25);ctx.moveTo(-.5,.1);ctx.lineTo(.2,.1);ctx.stroke();}else if(id==='book'){ctx.moveTo(0,-.62);ctx.quadraticCurveTo(-.38,-.95,-.85,-.7);ctx.lineTo(-.85,.64);ctx.quadraticCurveTo(-.38,.4,0,.75);ctx.quadraticCurveTo(.38,.4,.85,.64);ctx.lineTo(.85,-.7);ctx.quadraticCurveTo(.38,-.95,0,-.62);ctx.lineTo(0,.75);ctx.stroke();}else if(id==='image'){ctx.roundRect(-.9,-.7,1.8,1.4,.12);ctx.stroke();ctx.beginPath();ctx.arc(-.4,-.24,.13,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.moveTo(-.75,.47);ctx.lineTo(-.22,-.08);ctx.lineTo(.15,.25);ctx.lineTo(.5,-.2);ctx.lineTo(.78,.47);ctx.stroke();}else if(id==='phone'){ctx.roundRect(-.5,-.95,1,1.9,.15);ctx.moveTo(-.16,-.72);ctx.lineTo(.16,-.72);ctx.moveTo(-.12,.72);ctx.lineTo(.12,.72);ctx.stroke();}else{ctx.roundRect(-.65,-.85,1.3,1.7,.12);ctx.moveTo(-.35,-.3);ctx.lineTo(.35,-.3);ctx.moveTo(-.35,.1);ctx.lineTo(.35,.1);ctx.moveTo(-.35,.5);ctx.lineTo(.1,.5);ctx.stroke();}ctx.restore();}
 function draw(ctx,p,s,time,images){
  const W=ctx.canvas.width,H=ctx.canvas.height;const palettes={paper:['#f2ece0','#263033','#9a7339','#fbf8f0','#737873'],night:['#192426','#f4eee2','#c9a76b','#243437','#adb7b1'],sand:['#ded1b9','#26373c','#815e32','#f1e7d5','#626d6a']};
- const [background,ink,accent,card,muted]=palettes[p.theme],palette={background,ink,accent,card,muted};const local=p.motionEnabled===false?10:time-s.start,span=s.end-s.start,progress=clamp((time-s.start)/span);ctx.save();ctx.fillStyle=background;ctx.fillRect(0,0,W,H);ctx.lineWidth=2*W/1080;
+ // A brand palette taken from the client's logo replaces the generic theme when present and valid.
+ const hex=v=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v),brand=p.brand&&['background','ink','accent','card','muted'].every(k=>hex(p.brand[k]))?p.brand:null;
+ const [background,ink,accent,card,muted]=brand?[brand.background,brand.ink,brand.accent,brand.card,brand.muted]:palettes[p.theme],palette={background,ink,accent,card,muted};const local=p.motionEnabled===false?10:time-s.start,span=s.end-s.start,progress=clamp((time-s.start)/span);ctx.save();ctx.fillStyle=background;ctx.fillRect(0,0,W,H);ctx.lineWidth=2*W/1080;
  const c=s.composition;ctx.save();ctx.globalAlpha=.12;ctx.strokeStyle=accent;
  if(c.backdrop==='grid'){for(let x=0;x<W;x+=W/10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}for(let y=0;y<H;y+=W/10){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}}
  if(c.backdrop==='orbit'||c.backdrop==='radial'){for(let i=0;i<4;i++){ctx.beginPath();ctx.ellipse(W*.5,H*.5,W*(.25+i*.12),H*(.17+i*.13),c.backdrop==='orbit'?-.45+local*.018:0,0,Math.PI*2);ctx.stroke();}}
@@ -116,7 +127,7 @@ function draw(ctx,p,s,time,images){
  if(e.kind==='shape')rounded(ctx,x,y,w,h,24*W/1080,color);
  if(e.kind==='line'){ctx.strokeStyle=color;ctx.lineWidth=4*W/1080;ctx.beginPath();ctx.moveTo(x,y+h/2);ctx.lineTo(x+w*(e.motion==='draw'?ease:1),y+h/2);ctx.stroke();}
  if(e.kind==='icon')icon(ctx,e.icon,x,y,w,h,color);
- if(['image','device'].includes(e.kind)){const img=images[e.asset];if(img){const device=e.kind==='device',pad=device?Math.max(7,W*.009):0;rounded(ctx,x,y,w,h,device?w*.10:24,device?ink:card);ctx.save();rounded(ctx,x+pad,y+pad,w-pad*2,h-pad*2,device?w*.075:20);ctx.clip();const scale=Math.min((w-pad*2)/img.width,(h-pad*2)/img.height);ctx.drawImage(img,x+(w-img.width*scale)/2,y+(h-img.height*scale)/2,img.width*scale,img.height*scale);ctx.restore();if(device){ctx.fillStyle=ink;rounded(ctx,x+w*.36,y+pad,w*.28,pad*.75,pad,ink);}}}
+ if(['image','device'].includes(e.kind)){const img=images[e.asset];if(img){const device=e.kind==='device',pad=device?Math.max(7,W*.009):0,bleed=e.w>=.99,radius=bleed?0:24*W/1080,contain=device||e.fit==='contain';if(!contain||device)rounded(ctx,x,y,w,h,device?w*.10:radius,device?ink:card);ctx.save();rounded(ctx,x+pad,y+pad,w-pad*2,h-pad*2,device?w*.075:Math.max(0,radius-4));ctx.clip();const bw=w-pad*2,bh=h-pad*2,crop=Math.max((bw/bh)/(img.width/img.height),(img.width/img.height)/(bw/bh)),fit=contain||crop>1.1;if(fit&&!contain){/* Cover would cut away too much (a menu or a wide shot): soft backdrop, whole picture on top. */const back=Math.max(bw/img.width,bh/img.height);ctx.filter='blur('+Math.round(W*.02)+'px) brightness(.55)';ctx.drawImage(img,x+(w-img.width*back)/2,y+(h-img.height*back)/2,img.width*back,img.height*back);ctx.filter='none';}const scale=(fit?Math.min:Math.max)(bw/img.width,bh/img.height);ctx.drawImage(img,x+(w-img.width*scale)/2,y+(h-img.height*scale)/2,img.width*scale,img.height*scale);ctx.restore();if(device){ctx.fillStyle=ink;rounded(ctx,x+w*.36,y+pad,w*.28,pad*.75,pad,ink);}}}
  ctx.restore();}
  ctx.fillStyle=accent;ctx.fillRect(W*.06,H*.955,W*.88*progress,Math.max(2,H*.002));
  ctx.restore();

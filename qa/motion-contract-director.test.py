@@ -107,6 +107,8 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  last=' '.join([scenes[-1]['title']]+[e['text'] for e in scenes[-1]['composition']['elements'] if e['kind']=='text'])
  assert 'زورونا في فرعنا' in last,last
  assert 'حي النرجس' in last,last
+ closing=scenes[-1]['composition']['elements'];assert closing[0]['kind']=='shape' and (closing[0]['x'],closing[0]['y'])==(.06,.20),'the call to action uses the large centred closing card'
+ assert 'brand' not in p,'an unreadable logo never invents a brand palette'
  checks={c['id']:c for c in p['verification']}
  for cid in ['logo_first','scene_count','forbidden','required','address','no_website','music']:assert checks[cid]['ok'],(cid,checks.get(cid))
  # Offline the link fails and is reported; online the Google share link yields only the name.
@@ -118,6 +120,14 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  assert '9-11 words' in story_prompt or '7-11 words' in story_prompt,'narration must be sized to a five-second scene'
  # Copy review runs in batches of up to four scenes; more than one round means the forbidden copy was sent back.
  assert int((job/'fake-copy-count.txt').read_text())>math.ceil(10/4),'forbidden copy must be repaired by review, not silently shipped'
+# Brand colours come from a readable logo and always keep text legible.
+try:from PIL import Image,ImageDraw
+except ImportError:Image=None
+if Image:
+ with tempfile.TemporaryDirectory() as t:
+  im=Image.new('RGB',(200,200),'#5a3a23');ImageDraw.Draw(im).rectangle([40,40,160,160],outline='#d9a55a',width=12);im.save(Path(t)/'logo.jpg')
+  brand=C.brand_palette(str(Path(t)/'logo.jpg'));assert brand and C._contrast(*[tuple(int(brand[k][i:i+2],16) for i in (1,3,5)) for k in ['ink','background']])>=4.5,brand
+  Image.new('RGB',(200,200),'white').save(Path(t)/'blank.jpg');assert C.brand_palette(str(Path(t)/'blank.jpg')) is None and C.brand_palette(str(Path(t)/'missing.jpg')) is None
 print('motion contract director: logo first, 10x5s, forbidden removed, closing enforced, verification reported')
 
 # No identifiable logo: the job still finishes, the opening is typography (never the storefront), and the report says so.
