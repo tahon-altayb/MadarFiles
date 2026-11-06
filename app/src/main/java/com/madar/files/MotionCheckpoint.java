@@ -45,6 +45,10 @@ final class MotionCheckpoint {
  }
  static JSONObject resume(Context c,JSONObject request,String thread)throws Exception{
   String id=request.optString("resumeProject");JSONObject p=MotionProject.load(c,id);
+  if(p.optBoolean("preflightPending")){
+   if(!thread.equals(p.optString("agentThread"))||!requestKey(request).equals(p.optString("agentRequestKey")))throw new IOException("لا يطابق الاستكمال طلب الموشن المحفوظ");
+   p.put("agentTask",request.optString("task",""));MotionProject.save(c,p);return p;
+  }
   if(MotionTransfer.pending(p)){if(!thread.equals(p.optString("agentThread"))||!requestKey(request).equals(p.optString("agentRequestKey")))throw new IOException("لا يطابق الاستكمال طلب الفيديو المحفوظ");MotionTransfer.state(p);p.put("agentTask",request.optString("task",""));MotionProject.save(c,p);return p;}
   if(!thread.equals(p.optString("agentThread"))||!Arrays.asList("directed","voiced").contains(p.optString("motionCheckpoint"))||!requestKey(request).equals(p.optString("agentRequestKey")))throw new IOException("لا يطابق الاستكمال الطلب المحفوظ؛ أعد إرسال طلبك الأصلي");
   for(String name:MotionCreative.assets(p))if(!MotionProject.asset(c,id,name).isFile())throw new IOException("أحد مراجع المشروع المحفوظ غير متاح؛ أرفقه وأعد الطلب");

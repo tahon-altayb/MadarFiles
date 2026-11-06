@@ -9,13 +9,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Grounded interpretation and bounded review. Never trains weights or executes generated code. */
 final class AgentExecutive {
  interface Transport{JSONObject generate(JSONObject body,AtomicBoolean stop)throws Exception;}
- static JSONObject invoke(Context c,String system,JSONObject input,JSONArray visual,JSONObject schema,int tokens,AtomicBoolean cancel)throws Exception{return invoke(system,input,visual,schema,tokens,cancel,(b,s)->GeminiClient.generate(c,b,s));}
+ static final long PLAN_TIMEOUT_MILLIS=2*GeminiClient.REQUEST_DEADLINE_MILLIS+45000;
+ interface Progress{void stage(String message)throws Exception;}
+ static JSONObject invoke(Context c,String system,JSONObject input,JSONArray visual,JSONObject schema,int tokens,AtomicBoolean cancel)throws Exception{
+  String stage=AgentDiagnostics.stage(input);long began=android.os.SystemClock.elapsedRealtime();AgentDiagnostics.record(c,stage,"running",began,null);
+  try{JSONObject answer=invoke(system,input,visual,schema,tokens,cancel,(b,s)->GeminiClient.generate(c,b,s));AgentDiagnostics.record(c,stage,"done",began,null);return answer;}
+  catch(CancellationException stopped){AgentDiagnostics.record(c,stage,"cancelled",began,stopped);throw stopped;}
+  catch(Exception error){AgentDiagnostics.Failure failure=AgentDiagnostics.failure(error);AgentDiagnostics.record(c,stage,"failed",began,failure);throw failure;}
+ }
  static JSONObject invoke(String system,JSONObject input,JSONArray visual,JSONObject schema,int tokens,AtomicBoolean cancel,Transport transport)throws Exception{
   JSONArray parts=new JSONArray().put(new JSONObject().put("text",input.toString()));if(visual!=null)for(int i=0;i<visual.length();i++)parts.put(visual.getJSONObject(i));
   JSONObject body=new JSONObject().put("systemInstruction",new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",system)))).put("contents",new JSONArray().put(new JSONObject().put("role","user").put("parts",parts))).put("generationConfig",new JSONObject().put("temperature",0).put("maxOutputTokens",tokens).put("responseMimeType","application/json").put("responseSchema",AgentCloud.schema(schema)));
-  AtomicBoolean stop=new AtomicBoolean();ScheduledExecutorService timer=Executors.newSingleThreadScheduledExecutor();timer.schedule(()->stop.set(true),25,TimeUnit.SECONDS);timer.scheduleAtFixedRate(()->{if(cancel.get())stop.set(true);},0,100,TimeUnit.MILLISECONDS);
-  try{ColabProbe.check(cancel);JSONObject response=transport.generate(body,stop);ColabProbe.check(cancel);if(stop.get())throw new IOException("انتهت مهلة مراجعة المساعد؛ لم أعتمد خطة غير مكتملة");JSONObject candidate=response.getJSONArray("candidates").getJSONObject(0);if(candidate.has("finishReason")&&!candidate.optString("finishReason").equals("STOP"))throw new IOException("لم تكتمل مراجعة المساعد");JSONArray content=candidate.getJSONObject("content").getJSONArray("parts");StringBuilder text=new StringBuilder();for(int i=0;i<content.length();i++)text.append(content.getJSONObject(i).optString("text"));if(text.length()>24000)throw new IOException("رد المساعد أطول من الحد");return new JSONObject(text.toString());}
-  catch(CancellationException stopped){ColabProbe.check(cancel);throw new IOException("لم تكتمل مراجعة المساعد المتصل؛ الطلب محفوظ");}finally{timer.shutdownNow();}
+  AtomicBoolean stop=new AtomicBoolean();ScheduledExecutorService timer=Executors.newSingleThreadScheduledExecutor();timer.scheduleAtFixedRate(()->{if(cancel.get())stop.set(true);},0,100,TimeUnit.MILLISECONDS);
+  try{ColabProbe.check(cancel);JSONObject response=transport.generate(body,stop);ColabProbe.check(cancel);if(stop.get())throw AgentDiagnostics.failure(new CancellationException());JSONObject candidate=response.getJSONArray("candidates").getJSONObject(0);if(candidate.has("finishReason")&&!candidate.optString("finishReason").equals("STOP"))throw AgentDiagnostics.responseFailure(candidate.optString("finishReason"));JSONArray content=candidate.getJSONObject("content").getJSONArray("parts");StringBuilder text=new StringBuilder();for(int i=0;i<content.length();i++)text.append(content.getJSONObject(i).optString("text"));if(text.length()>24000)throw new IOException("رد المساعد أطول من الحد");return new JSONObject(text.toString());}
+  catch(CancellationException stopped){ColabProbe.check(cancel);throw AgentDiagnostics.failure(stopped);}finally{timer.shutdownNow();}
  }
  static String normalized(String value){return value.replaceAll("[\\u064b-\\u065f\\u0670\\u0640]","").replace('أ','ا').replace('إ','ا').replace('آ','ا').replace('ة','ه').replace('ى','ي').replaceAll("\\s+"," ").trim().toLowerCase(Locale.ROOT);}
  static boolean quoted(String quote,String text){return quote.length()>=3&&normalized(text).contains(normalized(quote));}
@@ -30,16 +37,34 @@ final class AgentExecutive {
   if(contract.getBoolean("address_required")&&address.isEmpty())return "BRIEF_ADDRESS_REQUIRED";
   return "";
  }
- static void prepareMotion(Context c,JSONObject project,AtomicBoolean cancel)throws Exception{
+ static void prepareMotion(Context c,JSONObject project,AtomicBoolean cancel)throws Exception{prepareMotion(c,project,cancel,m->{});}
+ static void prepareMotion(Context c,JSONObject project,AtomicBoolean cancel,Progress progress)throws Exception{
   JSONObject brief=project.getJSONObject("creativeRequest");String prompt;try(InputStream in=c.getAssets().open("agent-motion-executive.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   JSONObject schema;try(InputStream in=c.getAssets().open("agent-motion-contract.json");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);schema=new JSONObject(out.toString("UTF-8"));}
-  JSONArray sources=AgentSources.read(brief.getString("text"),cancel),images=brief.getJSONArray("images"),visual=new JSONArray();for(int i=0;i<images.length();i++){visual.put(new JSONObject().put("text","Owned image index "+i));JSONArray sample=AgentVision.sample(c,MotionProject.asset(c,project.getString("id"),images.getString(i)),"image");for(int n=0;n<sample.length();n++)visual.put(sample.get(n));}
+  prepareBrief(c,project,cancel,progress,prompt,schema,(body,stop)->GeminiClient.generate(c,body,stop));
+ }
+ static void prepareBrief(Context c,JSONObject project,AtomicBoolean cancel,Progress progress,String prompt,JSONObject schema,Transport transport)throws Exception{
+  JSONObject brief=project.getJSONObject("creativeRequest");project.put("preflightPending",true);MotionProject.save(c,project);
+  String key=MotionProject.hashText(brief.getString("text")+"\n"+brief.getJSONArray("images")+"\n"+schema+"\n"+TranslationSettings.model(c));
+  boolean cached=key.equals(brief.optString("executiveDraftKey"))&&brief.optJSONObject("executiveDraft")!=null&&System.currentTimeMillis()-brief.optLong("executiveDraftAt")<10*60*1000;
+  progress.stage(cached?"أستكمل مراجعة التفسير المحفوظ؛ لن أعيد مرحلة الفهم المكتملة":"قراءة المصادر والصور وفهم طلبك عبر Gemini");
+  JSONArray sources=cached?brief.getJSONArray("sourceReads"):AgentSources.read(brief.getString("text"),cancel),images=brief.getJSONArray("images"),visual=new JSONArray();
+  for(int i=0;i<images.length();i++){visual.put(new JSONObject().put("text","Owned image index "+i));JSONArray sample=AgentVision.sample(c,MotionProject.asset(c,project.getString("id"),images.getString(i)),"image");for(int n=0;n<sample.length();n++)visual.put(sample.get(n));}
   JSONObject input=new JSONObject().put("client_brief",brief.getString("text")).put("page_reads",sources).put("image_count",images.length()).put("previous_contract",brief.optJSONObject("previous")==null?JSONObject.NULL:brief.getJSONObject("previous").optJSONObject("clientContract")).put("saved_preferences",LocalAgent.memory(c)).put("teacher_examples",AgentExamples.relevant(c,brief.getString("text")));
-  JSONObject interpreted=invoke(c,prompt,input,visual,schema,4096,cancel);input.put("untrusted_interpretation",interpreted).put("review_task","Independently re-read the actual client request and images. Correct omissions, negation reversals, invented facts and false claims of reading a URL. Return the complete repaired interpretation. No execution has started.");
-  JSONObject reviewed=invoke(c,prompt,input,visual,schema,4096,cancel);JSONObject contract=reviewed.getJSONObject("contract");JSONArray catalog=reviewed.getJSONArray("image_catalog");String question=validateBrief(contract,brief.getString("text"),sources,catalog,images.length());
-  brief.put("clientContract",contract).put("referenceFacts",catalog).put("sourceReads",sources).put("executiveVerified",true);MotionProject.save(c,project);
+  JSONObject interpreted=cached?brief.getJSONObject("executiveDraft"):measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));
+  brief.put("sourceReads",sources).put("executiveDraft",interpreted).put("executiveDraftKey",key).put("executiveDraftAt",System.currentTimeMillis());MotionProject.save(c,project);ColabProbe.check(cancel);
+  progress.stage("Gemini يراجع التفسير المحفوظ قبل تشغيل GPU");input.put("untrusted_interpretation",interpreted).put("review_task","Independently re-read the actual client request and images. Correct omissions, negation reversals, invented facts and false claims of reading a URL. Return the complete repaired interpretation. No execution has started.");
+  JSONObject reviewed=measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));JSONObject contract=reviewed.getJSONObject("contract");JSONArray catalog=reviewed.getJSONArray("image_catalog");String question=validateBrief(contract,brief.getString("text"),sources,catalog,images.length());
+  brief.put("clientContract",contract).put("referenceFacts",catalog).put("executiveVerified",true);project.remove("preflightPending");MotionProject.save(c,project);
   if(contract.optBoolean("needs_information")){String needed=contract.optString("question");if(needed.isEmpty()||needed.length()>250||needed.matches("(?is).*(password|api.?key|token|كلمة مرور|مفتاح API).*"))throw new IOException("المعلومة الناقصة لم تتحدد بشكل صالح");throw new MotionCloud.Clarification(needed);}
   if(!question.isEmpty())throw new MotionCloud.Clarification(MotionCloud.briefQuestion(question));
+ }
+ interface Request{JSONObject run()throws Exception;}
+ static JSONObject measured(Context c,JSONObject input,Request request)throws Exception{
+  String stage=AgentDiagnostics.stage(input);long began=android.os.SystemClock.elapsedRealtime();AgentDiagnostics.record(c,stage,"running",began,null);
+  try{JSONObject result=request.run();AgentDiagnostics.record(c,stage,"done",began,null);return result;}
+  catch(CancellationException stopped){AgentDiagnostics.record(c,stage,"cancelled",began,stopped);throw stopped;}
+  catch(Exception error){AgentDiagnostics.Failure failure=AgentDiagnostics.failure(error);AgentDiagnostics.record(c,stage,"failed",began,failure);throw failure;}
  }
  static String sourceSummary(JSONObject project){
   JSONObject brief=project.optJSONObject("creativeRequest");if(brief==null)return "";JSONArray reads=brief.optJSONArray("sourceReads");if(reads==null||reads.length()==0)return "";int partial=0;for(int i=0;i<reads.length();i++)if(reads.optJSONObject(i)!=null&&reads.optJSONObject(i).optString("status").equals("partial_text"))partial++;
