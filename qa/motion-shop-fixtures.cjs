@@ -19,6 +19,6 @@ const pages={
   <div style="font-size:52px;font-weight:900;text-align:center">المنيو</div>
   ${[['شاي جمر','5'],['شاي حليب','7'],['شاي بالنعناع','6'],['قهوة عربية','8'],['فطيرة جبن','10'],['فطيرة زعتر','9'],['فطيرة لبنة وعسل','12']].map(([n,p])=>`<div style="display:flex;justify-content:space-between;font-size:34px;margin:26px 0;border-bottom:1px dashed #e9c97a55;padding-bottom:8px"><span>${n}</span><span>${p} ر.س</span></div>`).join('')}</body>`
 };
-(async()=>{const out=process.argv[2];fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({...(process.env.MADAR_CHROME_PATH?{executablePath:process.env.MADAR_CHROME_PATH}:{}),headless:true});
+(async()=>{const out=process.argv[2];fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({...(process.env.MADAR_CHROME_PATH?{executablePath:process.env.MADAR_CHROME_PATH}:{channel:'chrome'}),headless:true});
  for(const [name,html] of Object.entries(pages)){const page=await browser.newPage();await page.setContent('<!doctype html><meta charset="utf-8">'+html);const size=await page.evaluate(()=>({width:document.body.scrollWidth,height:document.body.scrollHeight}));await page.setViewportSize({width:Math.min(size.width,1000),height:Math.min(size.height,1000)});await page.screenshot({path:path.join(out,name),type:'jpeg',quality:90});await page.close();}
  await browser.close();})().catch(e=>{console.error(e);process.exit(1)});
