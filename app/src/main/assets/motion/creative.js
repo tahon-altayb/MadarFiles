@@ -56,7 +56,7 @@ function semanticIcon(shot){
  return 'spark';
 }
 // Adaptive fallback uses real brief content and owned assets; geometry varies with aspect and shot.
-function compose(shot,{aspect='9:16',images=[],index=0,seed=0}={}){
+function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false}={}){
  const wide=aspect==='16:9',square=aspect==='1:1',style=(index+seed)%4;
  const title=String(shot.title).slice(0,60),body=String(shot.caption||shot.narration).slice(0,100);
  const asset=shot.reference===-1?null:images[Number.isInteger(shot.reference)&&shot.reference>=0?shot.reference:index%Math.max(1,images.length)];
@@ -66,7 +66,14 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0}={}){
  const text=(value,x,y,w,h,size,delay)=>e('text',x,y,w,h,'ink','rise',delay,{text:value,size});
  const media=(x,y,w,h,delay)=>asset?e(deviceShot?'device':'image',x,y,w,h,'ink','scale',delay,{asset}):e('icon',x,y,w,h,'accent','draw',delay,{icon:iconId});
  let elements=[];
- if(wide&&style===2){
+ if(logo&&asset&&!wide){
+  elements=[media(.12,.12,.76,.46,0),text(title,.08,.65,.84,.12,78,.07),text(body,.10,.80,.80,.10,44,.13),e('line',.35,.74,.30,.005,'accent','draw',.1)];
+ }else if(!wide&&!square&&asset){
+  const side=style%3;
+  if(side===0)elements=[text(title,.07,.055,.86,.12,78,0),media(.06,.23,.88,.54,.04),text(body,.08,.82,.84,.10,44,.10),e('line',.08,.195,.26,.005,'accent','draw',.04)];
+  else if(side===1)elements=[media(.06,.10,.88,.56,.02),text(title,.08,.70,.84,.12,76,.08),text(body,.08,.84,.84,.10,44,.13),e('line',.70,.675,.22,.005,'accent','draw',.06)];
+  else elements=[text(title,.08,.07,.84,.12,76,0),text(body,.08,.22,.84,.10,44,.06),media(.08,.40,.84,.50,.10),e('line',.08,.35,.22,.005,'accent','draw',.08)];
+ }else if(wide&&style===2){
   elements=[text(title,.08,.07,.84,.20,66,0),e('line',.08,.30,.20,.006,'accent','draw',.04),media(.08,.36,.36,.51,.06),text(body,.53,.40,.39,.30,30,.12),e('icon',.80,.78,.08,.10,'accent','scale',.2,{icon:iconId})];
  }else if(wide&&style===3){
   elements=[e('shape',.07,.09,.86,.78,'card','fade',0),text(title,.12,.16,.76,.24,72,0),text(body,.12,.45,.55,.24,30,.10),media(.73,.48,.16,.31,.12),e('line',.12,.78,.24,.006,'accent','draw',.2)];
@@ -103,7 +110,8 @@ function draw(ctx,p,s,time,images){
  if(c.backdrop==='orbit'||c.backdrop==='radial'){for(let i=0;i<4;i++){ctx.beginPath();ctx.ellipse(W*.5,H*.5,W*(.25+i*.12),H*(.17+i*.13),c.backdrop==='orbit'?-.45+local*.018:0,0,Math.PI*2);ctx.stroke();}}
  if(c.backdrop==='split'){ctx.fillStyle=accent;ctx.fillRect(W*.64,0,W*.36,H);}
  ctx.restore();
- for(const e of c.elements){const t=local-e.delay*Math.min(span,5);if(t<0)continue;const q=clamp(t/.65),ease=1-(1-q)**3;let x=e.x*W,y=e.y*H,w=e.w*W,h=e.h*H;ctx.save();ctx.globalAlpha=p.motionEnabled===false?1:ease*Math.min(1,(s.end-time)/.2);if(e.motion==='rise')y+=H*.035*(1-ease);if(e.motion==='left')x+=W*.08*(1-ease);if(e.motion==='right')x-=W*.08*(1-ease);if(e.motion==='scale'){ctx.translate(x+w/2,y+h/2);ctx.scale(.82+.18*ease,.82+.18*ease);ctx.translate(-x-w/2,-y-h/2);}const color=palette[e.color];if(p.motionEnabled!==false&&['image','device','icon'].includes(e.kind))y+=Math.sin(local*1.1+e.x*4)*H*.004;
+ for(const e of c.elements){const t=local-e.delay*Math.min(span,2);if(t<0)continue;const q=clamp(t/.65),ease=1-(1-q)**3;let x=e.x*W,y=e.y*H,w=e.w*W,h=e.h*H;ctx.save();ctx.globalAlpha=p.motionEnabled===false?1:ease*Math.min(1,(s.end-time)/.2);if(e.motion==='rise')y+=H*.035*(1-ease);if(e.motion==='left')x+=W*.08*(1-ease);if(e.motion==='right')x-=W*.08*(1-ease);if(p.motionEnabled!==false&&['image','device'].includes(e.kind)){ctx.translate(x+w/2,y+h/2);const push=1+progress*.035;ctx.scale(push,push);ctx.translate(-x-w/2,-y-h/2);}
+ if(e.motion==='scale'){ctx.translate(x+w/2,y+h/2);ctx.scale(.82+.18*ease,.82+.18*ease);ctx.translate(-x-w/2,-y-h/2);}const color=palette[e.color];if(p.motionEnabled!==false&&['image','device','icon'].includes(e.kind))y+=Math.sin(local*1.1+e.x*4)*H*.004;
  if(e.kind==='text'||e.kind==='metric')text(ctx,e.text,x,y,w,h,e.size*W/1080,color,e.kind==='metric'?900:700);
  if(e.kind==='shape')rounded(ctx,x,y,w,h,24*W/1080,color);
  if(e.kind==='line'){ctx.strokeStyle=color;ctx.lineWidth=4*W/1080;ctx.beginPath();ctx.moveTo(x,y+h/2);ctx.lineTo(x+w*(e.motion==='draw'?ease:1),y+h/2);ctx.stroke();}

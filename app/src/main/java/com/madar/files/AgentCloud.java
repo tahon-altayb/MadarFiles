@@ -12,16 +12,13 @@ final class AgentCloud {
  static JSONObject plan(Context c,String user,JSONObject source,JSONArray history,AtomicBoolean cancel)throws Exception{
   String prompt;try(InputStream in=c.getAssets().open("agent-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
   JSONObject safeSource=new JSONObject(source.toString());JSONArray visual=safeSource.optJSONArray("_visual");safeSource.remove("_visual");
-  JSONObject input=new JSONObject().put("source",safeSource).put("availableTools",new JSONArray(AgentTools.tools(source.optString("kind")))).put("conversation",LocalAgent.history(history)).put("userRequest",user);
-  JSONArray promptParts=new JSONArray().put(new JSONObject().put("text",input.toString()));if(visual!=null)for(int i=0;i<visual.length();i++)promptParts.put(visual.getJSONObject(i));
-  JSONObject body=new JSONObject().put("systemInstruction",new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",prompt))))
-   .put("contents",new JSONArray().put(new JSONObject().put("role","user").put("parts",promptParts)))
-   .put("generationConfig",new JSONObject().put("temperature",0).put("responseMimeType","application/json").put("maxOutputTokens",4096).put("responseSchema",schema(AgentTools.schema(source.optString("kind")))));
-  java.util.concurrent.atomic.AtomicBoolean requestCancel=new java.util.concurrent.atomic.AtomicBoolean();
-  java.util.concurrent.ScheduledExecutorService timer=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-  timer.schedule(()->requestCancel.set(true),20,java.util.concurrent.TimeUnit.SECONDS);
-  java.util.concurrent.ScheduledFuture<?> parent=timer.scheduleAtFixedRate(()->{if(cancel.get())requestCancel.set(true);},0,100,java.util.concurrent.TimeUnit.MILLISECONDS);
-  JSONObject response;try{response=GeminiClient.generate(c,body,requestCancel);}catch(java.util.concurrent.CancellationException timeout){ColabProbe.check(cancel);throw new IOException("لم يرد المساعد المتصل خلال 20 ثانية؛ لم يبدأ تعديل الملف، وطلبك محفوظ");}finally{parent.cancel(true);timer.shutdownNow();}JSONObject candidate=response.getJSONArray("candidates").getJSONObject(0);StringBuilder result=new StringBuilder();JSONArray parts=candidate.getJSONObject("content").getJSONArray("parts");for(int i=0;i<parts.length();i++)result.append(parts.getJSONObject(i).optString("text"));
-  if(result.length()>12000)throw new IOException("اختصر طلب المساعد إلى خطوات أقل");return AgentTools.validate(new JSONObject(result.toString()),source.optString("kind"));
+  JSONObject input=new JSONObject().put("source",safeSource).put("availableTools",new JSONArray(AgentTools.tools(source.optString("kind")))).put("conversation",LocalAgent.history(history)).put("userRequest",user).put("savedSettings",LocalAgent.memory(c)).put("teacherExamples",AgentExamples.relevant(c,user));
+  if(user.contains("https://")&&!user.matches("(?is).*(تحميل|حمل|حمّل|تنزيل|download).*") )input.put("sourceReads",AgentSources.read(user,cancel));
+  return decide(prompt,input,visual,source.optString("kind"),cancel,(body,stop)->GeminiClient.generate(c,body,stop));
+ }
+ static JSONObject decide(String prompt,JSONObject input,JSONArray visual,String kind,AtomicBoolean cancel,AgentExecutive.Transport transport)throws Exception{
+  JSONObject allowed=AgentTools.schema(kind);JSONObject draft=AgentExecutive.invoke(prompt,input,visual,allowed,4096,cancel,transport);
+  input.put("untrustedProposal",draft).put("reviewTask","Re-read the exact latest user request, relevant conversation, actual visual samples and available tools. Check negation, pronouns, required inputs, multi-step order and field values. Repair the proposal before any execution. Ask ONE specific question if required evidence is missing. Do not convert production-only statements to public output, reuse example-specific facts, claim to browse unread pages, or claim completion. Return the complete final action; no execution has started.");
+  JSONObject checked=AgentExecutive.invoke(prompt,input,visual,allowed,4096,cancel,transport);return AgentTools.validate(checked,kind).put("agentReviewed",true);
  }
 }

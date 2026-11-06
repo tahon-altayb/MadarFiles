@@ -10,6 +10,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class MotionCloud {
  static final int CHUNK=750000;
  interface Progress{void update(int percent,String message)throws Exception;}
+ static final class Clarification extends IOException {Clarification(String question){super(question);}}
+ static String briefQuestion(String code){switch(code){case "BRIEF_ADDRESS_REQUIRED":return "لم أجد عنوانًا موثوقًا للفرع في البيانات التي قرأتها. ما عنوان الفرع (المدينة والحي أو الشارع) الذي تريد ظهوره في النهاية؟";case "BRIEF_LOGO_REQUIRED":return "لم أتمكن من تحديد شعار المحل بثقة بين المرفقات. أرفق الشعار وحده وحدد أنه الشعار الذي تريد ظهوره أولًا.";default:return "";}}
  static String gpuFailure(String code){
   if(code.equals("DIRECTOR_GPU_REQUIRED"))return "لم تتوفر بطاقة GPU صالحة داخل جلسة المعالجة. راجع المورد المخصص في تقرير Colab";
   if(code.equals("DIRECTOR_GPU_PLATFORM"))return "إصدار نظام جلسة Colab لا يطابق متطلبات محرك الموشن. يتضمن التقرير إصدار النظام ومكتباته";
@@ -23,6 +25,7 @@ final class MotionCloud {
  static boolean retryStart(String code){return code!=null&&(code.contains("WS_")||code.contains("WORKER_NOT_STARTED"));}
  static String message(Exception error){
   if(error instanceof ColabAllocation.Failure)return ((ColabAllocation.Failure)error).description();
+  if(error instanceof Clarification)return error.getMessage();
   String code=String.valueOf(error.getMessage());
   if(retryStart(code))return "تعذر بدء اتصال الموشن مع Colab بعد إعادة المحاولة؛ طلبك ومرفقاتك محفوظة. يتوفر تقرير هذه المحاولة في «حالة آخر معالجة Colab»";
   if(code.contains("AUTH_REQUIRED")||code.contains("HTTP_401"))return "يحتاج اتصال Google إلى تجديد التفويض. أعد الاتصال من إعدادات Colab ثم اكتب «أعد المحاولة»؛ طلبك ومرفقاتك محفوظة";
@@ -44,14 +47,14 @@ final class MotionCloud {
    if(heartbeat!=beat){beat=heartbeat;lastBeat=System.nanoTime();}
    if(System.nanoTime()-lastBeat>TimeUnit.MINUTES.toNanos(2))throw new IOException("Colab · MOTION_HEARTBEAT");
    if(!stageKey.equals(key)){diagnostic.record("MOTION_STAGE_"+key.toUpperCase(Locale.ROOT));stageKey=key;}String detail=state.optString("detail");if(!detail.equals(detailKey)&&detail.matches("uv|python|torch|packages|validate")){diagnostic.record("SPEECH_SETUP_"+detail.toUpperCase(Locale.ROOT));detailKey=detail;}String engine=state.optString("engine");if(!engine.equals(engineKey)&&engine.matches("cuda|cpu")){diagnostic.record("MOTION_ENGINE_"+engine.toUpperCase(Locale.ROOT));engineKey=engine;}
-   if(key.equals("failed")){String failedAt=state.optString("failureStage");if(Arrays.asList("speech_install","speech_download","speech_load","speech_probe","speech_infer","align","render","director","design").contains(failedAt))diagnostic.record("MOTION_STAGE_"+failedAt.toUpperCase(Locale.ROOT));diagnostic.record("MOTION_WORKER_FAILED");diagnostic.issue(new IOException(state.optString("code")));throw new IOException(failure(state.optString("code","WORKER_FAILED")),new IOException("Colab · "+state.optString("code","WORKER_FAILED")));}
-   String label=stage(key);int scene=state.optInt("scene"),total=state.optInt("total");if(scene>0&&total>=scene&&total<=8)label+=" · "+scene+" / "+total;progress.update(Math.max(18,Math.min(99,state.optInt("progress",18))),label);return key.equals("done");
+   if(key.equals("failed")){String question=briefQuestion(state.optString("code"));if(!question.isEmpty()){diagnostic.record(state.optString("code"));throw new Clarification(question);}String failedAt=state.optString("failureStage");if(Arrays.asList("speech_install","speech_download","speech_load","speech_probe","speech_infer","align","render","director","design").contains(failedAt))diagnostic.record("MOTION_STAGE_"+failedAt.toUpperCase(Locale.ROOT));diagnostic.record("MOTION_WORKER_FAILED");diagnostic.issue(new IOException(state.optString("code")));throw new IOException(failure(state.optString("code","WORKER_FAILED")),new IOException("Colab · "+state.optString("code","WORKER_FAILED")));}
+   String label=stage(key);int scene=state.optInt("scene"),total=state.optInt("total");if(scene>0&&total>=scene&&total<=20)label+=" · "+scene+" / "+total;progress.update(Math.max(18,Math.min(99,state.optInt("progress",18))),label);return key.equals("done");
   }
  }
  static JSONObject run(Context c,JSONObject project,String mode,ColabCredentials.Grant grant,AtomicBoolean cancel,Progress progress)throws Exception{
   ColabDiagnostics diagnostic=new ColabDiagnostics(c,"MOTION_"+mode.toUpperCase(Locale.ROOT));diagnostic.record("MOTION_VOICE_"+project.optString("voiceMode").toUpperCase(Locale.ROOT));
   try{JSONObject result=execute(c,project,mode,grant,cancel,progress,diagnostic);diagnostic.record("DONE");return result;}
-  catch(Exception error){diagnostic.failed(error);if(error instanceof java.util.concurrent.CancellationException)throw error;throw new IOException(message(error),error);}
+  catch(Exception error){diagnostic.failed(error);if(error instanceof java.util.concurrent.CancellationException||error instanceof Clarification)throw error;throw new IOException(message(error),error);}
  }
  private static JSONObject execute(Context c,JSONObject project,String mode,ColabCredentials.Grant grant,AtomicBoolean cancel,Progress progress,ColabDiagnostics diagnostic)throws Exception{
   String id=project.getString("id");MotionProject.validate(project,mode.equals("render"));Map<String,File> files=new LinkedHashMap<>();
@@ -78,7 +81,7 @@ final class MotionCloud {
     if(lease.kernel.isEmpty()){diagnostic.record("KERNEL_CREATE");JSONObject kernel=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",folder),1024*1024);lease.kernel=kernel.getString("id");}kernelId=lease.kernel;if(!kernelId.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("نواة Colab غير صالحة");
     {
      diagnostic.record("MOTION_UPLOAD");
-     for(String name:new String[]{"core.js","product.js","creative.js","Root.tsx","render.cjs","package.json","worker.py","director.py","director_runtime.py","speech.py","speech_runtime.py","sources.py","male-reference.b64","male-reference.txt","Cairo.ttf"}){ColabProbe.check(cancel);try(InputStream in=c.getAssets().open("motion/"+name);ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);runtime.put(folder+"/"+name,name.endsWith(".ttf")?Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP):out.toString("UTF-8"),name.endsWith(".ttf")?"base64":"text");}}
+     for(String name:new String[]{"core.js","product.js","creative.js","Root.tsx","render.cjs","package.json","worker.py","director.py","director_runtime.py","briefing.py","speech.py","speech_runtime.py","sources.py","male-reference.b64","male-reference.txt","Cairo.ttf"}){ColabProbe.check(cancel);try(InputStream in=c.getAssets().open("motion/"+name);ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);runtime.put(folder+"/"+name,name.endsWith(".ttf")?Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP):out.toString("UTF-8"),name.endsWith(".ttf")?"base64":"text");}}
      JSONArray manifest=new JSONArray();long total=0;for(Map.Entry<String,File> entry:files.entrySet()){File f=entry.getValue();if(!f.isFile()||f.length()<1||f.length()>32L*1024*1024||(total+=f.length())>96L*1024*1024)throw new IOException("الصوت أو الصور كبيرة جدًا؛ اختر ملفات أصغر");int count=(int)((f.length()+CHUNK-1)/CHUNK);manifest.put(new JSONObject().put("name",entry.getKey()).put("size",f.length()).put("sha256",MotionProject.hash(f)).put("chunks",count));try(InputStream in=new FileInputStream(f)){for(int n=0;n<count;n++){ColabProbe.check(cancel);byte[] bytes=new byte[(int)Math.min(CHUNK,f.length()-(long)n*CHUNK)];int read=0;while(read<bytes.length){int countRead=in.read(bytes,read,bytes.length-read);if(countRead<0)throw new IOException("ملف مصدر ناقص");read+=countRead;}runtime.put(folder+"/"+entry.getKey()+".part_"+n,Base64.encodeToString(bytes,Base64.NO_WRAP),"base64");progress.update(18,"رفع ملفات المشروع · "+entry.getKey().split("\\.")[0]);}}}
      runtime.put(folder+"/request.json",new JSONObject().put("protocol",1).put("mode",mode).put("project",project).put("files",manifest).toString(),"text");
      diagnostic.record("UPLOAD_COMPLETE");
