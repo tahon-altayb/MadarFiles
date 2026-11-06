@@ -72,5 +72,25 @@ assert.match(await page.locator('#agentLog').textContent(),/طبّقت تفضي�
 await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'4'.repeat(32),status:'done',concept:'',result:{name:'madar_result_7.mp4',mime:'video/mp4',size:1000}}),later2);
 await send('وش تفضيلات المحلات');assert.match(await page.locator('#agentLog').textContent(),/«شاهي جمر»: العنوان: الرياض/);
 await send('امسح تفضيلات شاهي جمر');savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.profiles.length,0);
+// 11. Skills: taught once in chat, saved, applied when named (and always-on ones everywhere); the request still wins.
+await send('مهارة إعلانات المطاعم: خل الشعار في الأخير، ومدته 30 ثانية، واكتب اطلب الحين في الختام، لا تكتب توصيل مجاني');
+assert.match(await page.locator('#agentLog').textContent(),/تعلمت مهارة «إعلانات المطاعم»/);
+savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.skills[0].name,'إعلانات المطاعم');assert.equal(savedData.skills[0].rules.durationSec,30);
+await page.evaluate(data=>{data=JSON.parse(JSON.stringify(data));data.threads.push({id:'skill1',title:'مطعم',messages:[],attachments:[]});data.active='skill1';receive({type:'agentChats',data});},savedData);
+await send('سو اعلان موشن لمطعم الريف بأسلوب إعلانات المطاعم وبدون صور');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
+const skilled=(await starts()).at(-1);assert.equal(skilled.thread,'skill1');assert.equal(skilled.contract.durationSec,30);assert.ok(skilled.contract.logoLast);assert.ok(skilled.contract.required.includes('اطلب الحين'));assert.ok(skilled.contract.forbidden.includes('توصيل مجاني'));
+assert.match(skilled.prompt,/تعليمات مهارة «إعلانات المطاعم»/,'the skill text reaches the online brief and the director');assert.match(await page.locator('#agentLog').textContent(),/طبّقت مهارة «إعلانات المطاعم»/);
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'5'.repeat(32),status:'done',concept:'',result:{name:'madar_result_8.mp4',mime:'video/mp4',size:1000}}),skilled);
+await send('سو اعلان موشن عن القهوة بدون صور مدته 20 ثانية');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
+let plain=(await starts()).at(-1);assert.ok(!/تعليمات مهارة/.test(plain.prompt),'an unnamed skill stays out');assert.equal(plain.contract.durationSec,20);
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'6'.repeat(32),status:'done',concept:'',result:{name:'madar_result_9.mp4',mime:'video/mp4',size:1000}}),plain);
+await send('خل مهارة إعلانات المطاعم دايمة');assert.match(await page.locator('#agentLog').textContent(),/صارت مهارة «إعلانات المطاعم» دائمة/);
+savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);
+await page.evaluate(data=>{data=JSON.parse(JSON.stringify(data));data.threads.push({id:'skill2',title:'قهوة',messages:[],attachments:[]});data.active='skill2';receive({type:'agentChats',data});},savedData);
+await send('سو اعلان موشن عن القهوة بدون صور مدته 20 ثانية');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
+plain=(await starts()).at(-1);assert.equal(plain.thread,'skill2');assert.match(plain.prompt,/تعليمات مهارة/);assert.equal(plain.contract.durationSec,20,'the request’s own length beats the skill');assert.ok(plain.contract.forbidden.includes('توصيل مجاني'));
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'7'.repeat(32),status:'done',concept:'',result:{name:'madar_result_10.mp4',mime:'video/mp4',size:1000}}),plain);
+await send('وش مهاراتك');assert.match(await page.locator('#agentLog').textContent(),/«إعلانات المطاعم» \(دائمة\)/);
+await send('احذف مهارة إعلانات المطاعم');savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.skills.length,0);
 assert.deepEqual(errors,[]);await browser.close();console.log('agent motion brief: asks missing address, chooses logo, summarises, passes contract, reports checks, keeps constraints');
 })().catch(e=>{console.error(e);process.exit(1);});

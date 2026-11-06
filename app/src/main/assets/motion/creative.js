@@ -73,6 +73,13 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
   elements=[e('shape',.06,.20,.88,.46,'card','fade',0),text(title,.10,.25,.80,.17,110,.04),e('line',.38,.435,.24,.006,'accent','draw',.10),text(body,.10,.47,.80,.16,60,.14),...(asset?[media(.30,.71,.40,.20,.2,whole)]:[e('icon',.42,.74,.16,.10,'accent','scale',.2,{icon:'arrow'})])];
  }else if(logo&&asset&&!wide){
   elements=[media(.14,.12,.72,.44,0,whole),text(title,.07,.61,.86,.15,108,.08),e('line',.38,.775,.24,.006,'accent','draw',.12),text(body,.09,.80,.82,.12,56,.16)];
+ }else if(!wide&&!square&&!asset&&!logo){
+  // No picture for this scene: a typographic poster, never a lone oversized icon.
+  const t=(index+seed)%4;
+  if(t===0)elements=[e('line',.40,.27,.20,.006,'accent','draw',0),text(title,.08,.30,.84,.20,110,.04),text(body,.10,.53,.80,.17,60,.14),e('icon',.45,.76,.10,.06,'accent','scale',.22,{icon:iconId})];
+  else if(t===1)elements=[e('shape',.06,.14,.88,.62,'card','fade',0),e('icon',.12,.19,.12,.07,'accent','scale',.06,{icon:iconId}),text(title,.12,.30,.76,.20,104,.04),e('line',.12,.52,.24,.006,'accent','draw',.10),text(body,.12,.555,.76,.16,56,.14)];
+  else if(t===3)elements=[e('icon',.80,.16,.12,.07,'accent','scale',0,{icon:iconId}),text(title,.07,.40,.86,.20,108,.04),e('line',.63,.62,.30,.006,'accent','draw',.10),text(body,.07,.65,.86,.16,58,.14)];
+  else elements=[text(title,.07,.12,.86,.22,110,0),e('line',.07,.36,.86,.005,'accent','draw',.06),text(body,.07,.40,.86,.20,60,.12),e('line',.07,.70,.40,.005,'accent','draw',.18),e('icon',.07,.74,.10,.06,'accent','scale',.22,{icon:iconId})];
  }else if(!wide&&!square&&asset){
   // Six photo layouts rotate so a ten-scene vertical advert does not repeat the same frame.
   const side=(index+seed)%6;

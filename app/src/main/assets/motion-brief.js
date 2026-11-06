@@ -84,6 +84,8 @@
     const labelled=/^(?:لهم\s+|فيه\s+|فيها\s+)?(?:بالنهايه|بالنهاية|في\s+النهايه|في\s+النهاية|بالاخير|بالأخير|في\s+الاخير|في\s+الأخير)?\s*(?:عباره|عبارة|جمله|جملة|كلمه|كلمة|نص)\s+(.{2,90})$/.exec(body);
     if(!value&&labelled)value=clean(labelled[1]);
     if(!value&&verb)value=clean(body.replace(/^(?:لهم|فيه|فيها)\s+/,'').replace(/^(?:بالنهايه|بالنهاية|في\s+النهايه|في\s+النهاية|بالاخير|بالأخير|في\s+الاخير|في\s+الأخير)\s+/,''));
+    // A placement tail («… في آخر مشهد», «… بالبداية») says where, not what to write.
+    if(value&&!quoted(body))value=clean(value.replace(/\s+(?:في|ب|بال|على)\s*(?:ال)?(?:اخر|آخر|أخر|اول|أول|نهايه|نهاية|بدايه|بداية|ختام|خاتمه|خاتمة)(?:\s+(?:ال)?(?:مشهد|مشاهد|الاعلان|الإعلان|اعلان|إعلان|الفيديو|فيديو|الموشن))?$/,'').replace(/\s+(?:بالنهايه|بالنهاية|بالاخير|بالأخير|بالبدايه|بالبداية|بالختام)$/,''));
     if(!value)continue;const v=key(value);
     if(META_ADDRESS.test(v)){result.requireAddress=true;continue;}
     if(META_PHONE.test(v)){result.requirePhone=true;continue;}
@@ -190,6 +192,7 @@
   if(c.noWebsite)lines.push('ما أذكر أي موقع إلكتروني؛ الدعوة لزيارة الفرع');
   for(const x of c.corrections)lines.push(`ملاحظتك: «${x.text}» — ما أوصفه كذا في الإعلان`);
   if(c.musicRequested)lines.push('الموشن بدون موسيقى؛ تقدر تضيفها بعدين من محرر الفيديو');
+  if(c.skillsApplied?.length)lines.push('طبّقت مهارة '+c.skillsApplied.map(x=>'«'+x+'»').join(' و'));
   if(c.profileApplied)lines.push(`طبّقت تفضيلات «${c.profileApplied}» المحفوظة`+(c.profileUsed?.length?': '+c.profileUsed.join('، '):''));
   return 'فهمت طلبك كذا:\n• '+lines.join('\n• ');
  }
@@ -260,6 +263,52 @@
   if(/^(?:وش|ايش|إيش|اعرض|عرض|ورني)\s+(?:تفضيلات|ملفات)\s+(?:المحلات|المحل|محلاتي|محلي)[.!؟\s]*$/.test(t))return {list:true};
   return null;
  }
+ // Skills: named instructions the owner teaches once («مهارة إعلانات المطاعم: الشعار أول، بدون
+ // موسيقى، واختم بزورونا»). A skill applies when its name is mentioned in a request, or to every
+ // request when it is marked always-on. Its rules are parsed with the same contract parser and sit
+ // under the request: anything the request says itself wins.
+ const ALWAYS=/(?:^|\s)(?:دائم(?:ا|ًا|ه|ة)?|دايم(?:ا|ه)?|(?:في|ب)\s*كل\s+(?:ال)?(?:اعلانات|اعلان|موشن|طلب|طلبات|فيديو)|لكل\s+(?:ال)?(?:اعلانات|طلبات|موشن))(?=\s|$|[.،,!؟])/;
+ function mentionsName(name,text){
+  const k=key(name),t=key(text);if(!k||k.length<2)return false;
+  const esc=w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const word=w=>w.startsWith('ال')&&w.length>3?`(?:ال|لل|بال|وال|فال|كال|وبال|ولل)${esc(w.slice(2))}`:`(?:[وبلفك]|ول|وب)?${esc(w)}`;
+  return k.split(' ').filter(Boolean).every(w=>new RegExp(`(?:^|\\s)${word(w)}(?=\\s|$|[.،,!؟:])`).test(t));
+ }
+ function skillFrom(name,text,always){
+  const body=clean(text).slice(0,1500),rules=parse(body,{images:0});
+  return {name:clean(name).replace(/^(?:ال)?مهار[ةه]\s+/,'').slice(0,40),key:key(clean(name)),text:body,always:always===undefined?ALWAYS.test(key(body)):!!always,
+   rules:{durationSec:rules.durationSource==='user'?rules.durationSec:null,aspect:rules.aspect||null,logoFirst:rules.logoFirst,logoLast:rules.logoLast,noWebsite:rules.noWebsite,visitBranch:rules.visitBranch,required:rules.required,forbidden:rules.forbidden,corrections:rules.corrections,address:rules.address||'',phone:rules.phone||''},updated:Date.now()};
+ }
+ function findSkills(skills,text){
+  if(!Array.isArray(skills))return [];
+  // Always-on skills first, named ones after, so a skill the request names has the last word.
+  const named=skills.filter(z=>z&&z.key&&mentionsName(z.name,text)),always=skills.filter(z=>z&&z.key&&z.always&&!named.includes(z));
+  return [...always,...named].slice(-3);
+ }
+ function applySkills(found,c){
+  if(!found||!found.length)return c;let base=null;
+  for(const z of found){const r=z.rules||{};const step={...r,durationSource:r.durationSec?'user':'default',required:r.required||[],forbidden:r.forbidden||[],corrections:r.corrections||[],removed:[],missing:[]};base=base?merge(base,step):{...step};}
+  // The request is the newer instruction: merge(skills, request) lets it override durations,
+  // aspect and logo position while required and forbidden phrases accumulate.
+  const userSaidLogo=c.logoFirst||c.logoLast||c.dropLogo;const out=merge({...c,...base,required:base.required,forbidden:base.forbidden,corrections:base.corrections,notes:c.notes,urls:c.urls},{...c,durationSec:c.durationSource==='user'?c.durationSec:null,aspect:c.aspect||null});
+  if(!userSaidLogo){out.logoFirst=!!(base.logoFirst);out.logoLast=!!(base.logoLast);}
+  if(c.durationSource!=='user'&&base.durationSec){out.durationSec=base.durationSec;out.durationSource='user';out.sceneCount=sceneCount(out.durationSec,out.explicitScenes);out.sceneSeconds=Math.round(out.durationSec/out.sceneCount*10)/10;}
+  if(base.noWebsite)out.forbidden=unique([...(out.forbidden||[]),...WEBSITE]);
+  for(const k of ['address','phone'])if(!out[k]&&base[k])out[k]=base[k];
+  out.missing=(c.missing||[]).filter(m=>!(m.field==='address'&&out.address)&&!(m.field==='phone'&&out.phone));
+  out.skillsApplied=found.map(z=>z.name);return out;
+ }
+ function skillCommand(text){
+  const t=soft(text).trim(),k=key(t);let m;
+  m=/^(?:(?:علم|علّم|عَلِّم)(?:ك|ه)?\s+|تعلم\s+|احفظ\s+|اضف\s+|أضف\s+|ضيف\s+|سو(?:ي)?\s+)?(?:مدار\s+)?(?:ال)?مهار[ةه]\s+(?:جديد[ةه]\s+)?(?:باسم\s+|اسمها\s+|بإسم\s+)?([^:：\n]{2,40}?)\s*(?:[:：]|\n)\s*([\s\S]{4,1500})$/.exec(t);
+  if(m)return {save:clean(m[1]),text:m[2]};
+  m=/^(?:امسح|احذف|الغ|الغي|شيل)\s+(?:ال)?مهار[ةه]\s+(.{2,40})$/.exec(t);if(m)return {remove:clean(m[1])};
+  m=/^(?:خل|خلي|اجعل|فعل|فعّل)\s+(?:ال)?مهار[ةه]\s+(.{2,40}?)\s+(?:دائم(?:ا|ه|ة)?|دايم(?:ا|ه)?|لكل\s+(?:ال)?(?:اعلانات|طلبات)|في\s+كل\s+(?:ال)?(?:اعلانات|اعلان|طلب))[.!؟\s]*$/.exec(k);if(m)return {always:clean(m[1]),on:true};
+  m=/^(?:وقف|اوقف|أوقف|عطل|عطّل)\s+(?:ال)?مهار[ةه]\s+(.{2,40}?)[.!؟\s]*$/.exec(k);if(m)return {always:clean(m[1]),on:false};
+  if(/^(?:وش|ايش|اعرض|عرض|ورني)\s+(?:ال)?مهارات(?:ك|ي|ه|ي اللي)?(?:\s+(?:المحفوظه|اللي\s+علمتك|اللي\s+تعرفها))?[.!؟\s]*$/.test(k))return {list:true};
+  return null;
+ }
+ function describeSkill(z){return '«'+z.name+'»'+(z.always?' (دائمة)':'')+': '+(z.text.length>90?z.text.slice(0,90)+'…':z.text);}
  function describeProfile(p){const parts=[];if(p.address)parts.push('العنوان: '+p.address);if(p.phone)parts.push('الرقم: '+p.phone);if(p.logoFirst)parts.push('الشعار أولاً');if(p.logoLast)parts.push('الشعار في الختام');if(p.noWebsite)parts.push('بدون موقع إلكتروني');if((p.corrections||[]).length)parts.push(p.corrections.length+' ملاحظة تصحيح');if(p.aspect)parts.push('المقاس '+p.aspect);return '«'+p.name+'»: '+(parts.join('، ')||'بدون تفضيلات');}
- return {VERSION,parse,declines,report,profileFrom,hasProfileFacts,findProfile,applyProfile,profileCommand,describeProfile,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
+ return {VERSION,parse,declines,report,skillFrom,findSkills,applySkills,skillCommand,describeSkill,profileFrom,hasProfileFacts,findProfile,applyProfile,profileCommand,describeProfile,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
 });
