@@ -304,7 +304,10 @@ for review in range(3):
   return decision['must_fix']
  issues.extend(confirmed_copy_issues(audit,copy,verify))
  Path('copy-review.json').write_text(json.dumps({'attempt':review+1,'candidate':copy,'issues':issues,'audit':audit,'verification':verification},ensure_ascii=False))
- if not [z for z in issues if not (review==2 and z.get('contract')=='missing')]:break
+ # Missing closing text and the logo reference are placed deterministically after review, so they never
+ # cost another model round; only forbidden copy and real editing issues are sent back.
+ if not [z for z in issues if z.get('contract')!='missing']:break
+ issues=[z for z in issues if z.get('contract')!='missing']
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
 

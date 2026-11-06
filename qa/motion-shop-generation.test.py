@@ -43,9 +43,19 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract},
   'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
  request={'protocol':1,'mode':'compose','project':project,'files':files};(job/'request.json').write_text(json.dumps(request,ensure_ascii=False));(evidence/'input.json').write_text(json.dumps(request,ensure_ascii=False,indent=1))
- execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=8400,env={**os.environ,'MADAR_MOTION_QA':'1','MADAR_MOTION_QA_CPU':'1','MADAR_MOTION_QA_CONTEXT':'8192'})
+ execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=8400,env={**os.environ,'MADAR_MOTION_QA':'1','MADAR_MOTION_QA_CPU':'1','MADAR_MOTION_QA_CONTEXT':'8192','MADAR_MOTION_QA_DIRECTOR_SECONDS':'7200'})
  for name in ['progress.json','project.json','story.json','director-runtime.log','director-response.txt','story-candidate.json','copy-review.json','reference-facts.json','brief-contract.json']:
   if (job/name).exists():shutil.copyfile(job/name,evidence/name)
+ # Artifacts are not always downloadable by reviewers, so the essentials go to the log as well.
+ log=(job/'director-runtime.log').read_text(errors='replace') if (job/'director-runtime.log').exists() else ''
+ calls=[l for l in log.splitlines() if l.startswith('DIRECTOR_GENERATED')]
+ tokens=sum(int(l.split()[1]) for l in calls if l.split()[1].isdigit());seconds=sum(float(l.split()[2]) for l in calls)
+ print('EVIDENCE model calls',len(calls),'tokens',tokens,'seconds',round(seconds),'tok/s',round(tokens/max(seconds,1),2),flush=True)
+ for l in calls:print('EVIDENCE',l,flush=True)
+ for name in ['progress.json','brief-contract.json']:
+  if (job/name).exists():print('EVIDENCE',name,(job/name).read_text()[:3000],flush=True)
+ if (job/'story.json').exists():
+  for i,z in enumerate(json.loads((job/'story.json').read_text()).get('scenes',[])):print('EVIDENCE scene',i+1,json.dumps({k:z.get(k) for k in ['title','caption','narration','reference']},ensure_ascii=False),flush=True)
  if execution.returncode:raise RuntimeError((job/'progress.json').read_text())
  result=json.loads((job/'result.json').read_text());p=result['project'];meta=result['file']
  combined=b''.join((job/f'result_{n}.bin').read_bytes() for n in range(meta['chunks']));assert len(combined)==meta['size'] and hashlib.sha256(combined).hexdigest()==meta['sha256']
@@ -55,6 +65,11 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  for i,scene in enumerate(p['scenes']):
   for label,at in [('a',scene['start']+.4),('b',(scene['start']+scene['end'])/2),('c',scene['end']-.3)]:
    subprocess.run(['ffmpeg','-v','error','-y','-ss',str(max(0,at)),'-i',str(video),'-frames:v','1','-vf','scale=360:-1',str(evidence/f'scene-{i+1:02d}{label}.jpg')],check=True)
+ mids=[evidence/f'scene-{i+1:02d}b.jpg' for i in range(len(p['scenes']))]
+ inputs=[x for m in mids for x in ['-i',str(m)]];cols=5;rows=math.ceil(len(mids)/cols)
+ subprocess.run(['ffmpeg','-v','error','-y',*inputs,'-filter_complex',''.join(f'[{i}:v]scale=200:-2[v{i}];' for i in range(len(mids)))+''.join(f'[v{i}]' for i in range(len(mids)))+f'xstack=inputs={len(mids)}:layout='+'|'.join(f'{(i%cols)*200}_{(i//cols)*356}' for i in range(len(mids)))+':fill=black','-q:v','5',str(evidence/'contact.jpg')],check=True)
+ import base64;print('EVIDENCE_CONTACT_BEGIN');print(base64.b64encode((evidence/'contact.jpg').read_bytes()).decode());print('EVIDENCE_CONTACT_END',flush=True)
+ print('EVIDENCE project',json.dumps({'verification':p.get('verification'),'scenes':[{k:z.get(k) for k in ['title','caption','seconds']} for z in p['scenes']]},ensure_ascii=False),flush=True)
  info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(video)]))
  (evidence/'ffprobe.json').write_text(json.dumps(info,indent=1))
  subprocess.run(['ffmpeg','-v','error','-i',str(video),'-f','null','-'],check=True)

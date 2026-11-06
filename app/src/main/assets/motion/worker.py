@@ -250,7 +250,9 @@ def compose(request,node):
         run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')));"],30)
     else:
         status('director',24);binary=director_python()
-        try:run([binary,'-I','director.py'],1800,env=env)
+        # CPU QA is several times slower than the T4; it may extend the director limit to measure the real work.
+        limit=int(os.environ['MADAR_MOTION_QA_DIRECTOR_SECONDS']) if os.environ.get('MADAR_MOTION_QA')=='1' and os.environ.get('MADAR_MOTION_QA_DIRECTOR_SECONDS','').isdigit() else 1800
+        try:run([binary,'-I','director.py'],limit,env=env)
         except subprocess.CalledProcessError:
             state=json.loads(Path('progress.json').read_text())
             raise ValueError(state.get('code','DIRECTOR_FAILED'))
