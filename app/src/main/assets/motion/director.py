@@ -311,7 +311,13 @@ for review in range(3):
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
 
-else:raise ValueError('CONTRACT_COPY' if issues and all(z.get('contract') for z in issues) else 'STORY_INVALID')
+else:
+ # The model kept forbidden wording after every round: remove those clauses rather than lose the film.
+ if issues and all(z.get('contract')=='forbidden' for z in issues):
+  local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
+  left=[z for z in violations(copy,contract) if not ('required_copy' in z or 'reference' in z)]+[z for z in local_rules.copy_issues(copy,local_contract) if z.get('contract')!='missing']
+  if left:raise ValueError('CONTRACT_COPY')
+ else:raise ValueError('CONTRACT_COPY' if issues and all(z.get('contract') for z in issues) else 'STORY_INVALID')
 for shot,edited in zip(story['scenes'],copy['scenes']):shot.update(edited)
 # One closing requirement set from both contracts: chat rules plus the online interpretation's
 # must-include phrases, branch call to action and verified address.

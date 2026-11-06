@@ -148,6 +148,20 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-nologo2-') as tmp:
  assert {c['id']:c for c in p['verification']}['logo_first']['ok'] is False,'the missing logo is reported'
 print('no identifiable logo: typography opening, reported, job not failed')
 
+# A stubborn model: forbidden copy every round and the logo on every scene. The film is still made,
+# the forbidden clauses are removed, and the logo stays on the opening and closing only.
+with tempfile.TemporaryDirectory(prefix='madar-contract-stubborn-') as tmp:
+ saved=FAKE_SERVER;FAKE_SERVER=saved.replace("shots=scenes(n,count==0)","shots=scenes(n,True)").replace("'reference':0}","'reference':1}")
+ r,job=run(brief,text,tmp);FAKE_SERVER=saved
+ assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
+ p=json.loads((job/'project.json').read_text());scenes=p['scenes']
+ joined=C.key(' '.join([z['title'],z['narration']][k] for z in scenes for k in (0,1))+' '+' '.join(e['text'] for z in scenes for e in z['composition']['elements'] if e['kind']=='text'))
+ for bad in ['نكهة الورد','موقعنا الإلكتروني','اطلب أونلاين','زوروا موقعنا']:assert C.key(bad) not in joined,bad
+ logo='asset_'+'b'*32+'.jpg';shown=[i for i,z in enumerate(scenes) if C.has_asset(z['composition'],logo)]
+ assert shown and shown[0]==0 and set(shown)<={0,len(scenes)-1},shown
+ assert {c['id']:c for c in p['verification']}['forbidden']['ok']
+print('stubborn model: forbidden clauses removed, logo kept to opening and closing, film delivered')
+
 # Online interpretation and chat contract together (Gemini answered): the director must apply
 # both without conflict, keep the logo first, and honour the executive contract's checks.
 TEXT_WITH_ADDRESS=text+'\nعنوان الفرع: الرياض – حي النرجس – طريق أبي بكر'
