@@ -1,0 +1,248 @@
+{
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "object",
+      "properties": {
+        "needs_information": {
+          "type": "boolean"
+        },
+        "question": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 250
+        },
+        "business_name": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "opening_logo": {
+          "type": "boolean"
+        },
+        "opening_quote": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240
+        },
+        "logo_index": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 7
+        },
+        "physical_visit": {
+          "type": "boolean"
+        },
+        "visit_quote": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240
+        },
+        "visit_text": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100
+        },
+        "address_required": {
+          "type": "boolean"
+        },
+        "address_quote": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240
+        },
+        "address": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 180
+        },
+        "address_evidence": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "address_source": {
+          "type": "string",
+          "enum": [
+            "client",
+            "source",
+            "missing"
+          ]
+        },
+        "rules": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "instruction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 220
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            },
+            "required": [
+              "instruction",
+              "evidence"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "must_include": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            },
+            "required": [
+              "text",
+              "evidence"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "forbidden_claims": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "claim": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "instruction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 220
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            },
+            "required": [
+              "subject",
+              "claim",
+              "instruction",
+              "evidence"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "omit_from_copy": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            },
+            "required": [
+              "text",
+              "evidence"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "needs_information",
+        "question",
+        "business_name",
+        "opening_logo",
+        "opening_quote",
+        "logo_index",
+        "physical_visit",
+        "visit_quote",
+        "visit_text",
+        "address_required",
+        "address_quote",
+        "address",
+        "address_evidence",
+        "address_source",
+        "rules",
+        "must_include",
+        "forbidden_claims",
+        "omit_from_copy"
+      ],
+      "additionalProperties": false
+    },
+    "image_catalog": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tool_screen",
+              "product_photo",
+              "place_photo",
+              "brand_logo",
+              "page_preview",
+              "platform_icon",
+              "unrelated",
+              "illustration",
+              "other"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "index",
+          "kind",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "contract",
+    "image_catalog"
+  ],
+  "additionalProperties": false
+}

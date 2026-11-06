@@ -24,10 +24,10 @@ final class MotionCheckpoint {
   String id=original.getString("id");
   for(String k:new String[]{"id","agentThread","agentTask","voiceMode","agentRequestKey"})if(!original.optString(k).equals(p.optString(k)))throw new IOException("MOTION_CHECKPOINT_INVALID");
   if(p.optString("agentRequestKey").isEmpty()||p.optJSONObject("direction")==null||!p.getJSONObject("direction").optString("layoutMode").equals("validated_scene_graph"))throw new IOException("MOTION_CHECKPOINT_INVALID");
-  JSONArray assets=checkpoint.getJSONArray("assets");if(assets.length()>15)throw new IOException("MOTION_CHECKPOINT_INVALID");long total=0;Set<String> seen=new HashSet<>();
+  JSONArray assets=checkpoint.getJSONArray("assets");if(assets.length()>28)throw new IOException("MOTION_CHECKPOINT_INVALID");long total=0;Set<String> seen=new HashSet<>();
   for(int i=0;i<assets.length();i++){
    ColabProbe.check(cancel);JSONObject meta=assets.getJSONObject(i);String name=meta.getString("name"),hash=meta.getString("sha256");long size=meta.getLong("size");int count=meta.getInt("chunks");
-   if(!name.matches("asset_[a-f0-9]{32}\\.jpg|speech_[0-6]\\.wav")||!seen.add(name)||!hash.matches("[a-f0-9]{64}")||size<1||size>32L*1024*1024||(total+=size)>96L*1024*1024||count!=(size+MotionCloud.CHUNK-1)/MotionCloud.CHUNK)throw new IOException("MOTION_CHECKPOINT_INVALID");
+   if(!name.matches("asset_[a-f0-9]{32}\\.jpg|speech_(?:[0-9]|1[0-9])\\.wav")||!seen.add(name)||!hash.matches("[a-f0-9]{64}")||size<1||size>32L*1024*1024||(total+=size)>96L*1024*1024||count!=(size+MotionCloud.CHUNK-1)/MotionCloud.CHUNK)throw new IOException("MOTION_CHECKPOINT_INVALID");
    File target=MotionProject.asset(c,id,name);
    if(target.isFile()){if(target.length()!=size||!MotionProject.hash(target).equals(hash))throw new IOException("MOTION_CHECKPOINT_INVALID");continue;}
    File temporary=new File(target.getPath()+".partial");

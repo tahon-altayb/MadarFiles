@@ -205,7 +205,7 @@ def speech(prepare=False):
 def checkpoint(project,assets,phase="directed"):
     extra=[]
     for i,name in enumerate(assets):
-        if not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg|speech_[0-6]\.wav',name):raise ValueError('REFERENCE_PATH')
+        if not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg|speech_(?:[0-9]|1[0-9])\.wav',name):raise ValueError('REFERENCE_PATH')
         extra.append(dict(name=name,**pack(Path(name),f'checkpoint_asset_{i}')))
     atomic('checkpoint.json',{'protocol':1,'project':project,'assets':extra,'phase':phase})
 

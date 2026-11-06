@@ -51,8 +51,8 @@ final class LocalAgent {
   if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");
   ColabProbe.check(cancel);JSONObject direct=AgentIntents.resolve(user,source,previous);
   if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");
-  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)&&android.os.SystemClock.elapsedRealtime()>=cloudBackoff){
-   status.update(-1,"Gemini · فهم الطلب والمرفقات");try{JSONObject answer=AgentCloud.plan(c,user,source,previous,cancel);cloudFailures=0;return provider(answer,"gemini");}catch(Exception cloud){ColabProbe.check(cancel);cloudFailures++;if(cloudFailures>=2)cloudBackoff=android.os.SystemClock.elapsedRealtime()+60000;if(!ready(c))throw cloud;status.update(-1,"تعذّر المساعد المتصل؛ تجربة المحرك المحلي مرة واحدة");}
+  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)){
+   status.update(-1,"Gemini · فهم الطلب والمرفقات ومراجعة الخطة");return provider(AgentCloud.plan(c,user,source,previous,cancel),"gemini");
   }
   if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");source=new JSONObject(source.toString());source.remove("_visual");
   if(!ready(c))throw new IOException("هذا الطلب المركب يحتاج اتصال Gemini أو تنزيل النموذج المحلي؛ الأوامر المباشرة تعمل فورًا");
@@ -62,11 +62,11 @@ final class LocalAgent {
   synchronized(inferenceLock){Engine engine=engine(c,file);ColabProbe.check(cancel);status.update(-1,"المساعد المحلي · فهم طلبك");
    try(Conversation chat=engine.createConversation(new ConversationConfig(Contents.Companion.of(prompt),Collections.emptyList(),Collections.emptyList(),new SamplerConfig(1,1.0,0.0,0),false,Collections.emptyList(),Collections.emptyMap(),null,false,768,new ThinkingConfig(false),true))){
     conversation=chat;ColabProbe.check(cancel);Message result=chat.sendMessage(Message.Companion.user(data.toString()),Collections.emptyMap(),null,null,null,768,new ThinkingConfig(false),ResponseFormat.Companion.json(AgentTools.schema(kind).toString()));ColabProbe.check(cancel);StringBuilder text=new StringBuilder();for(Content content:result.getContents().getContents())if(content instanceof Content.Text)text.append(((Content.Text)content).getText());
-    if(text.length()>8000)throw new IOException("رد المساعد غير مكتمل؛ اختصر الطلب");JSONObject plan=AgentTools.validate(new JSONObject(text.toString()),kind);if(c.getSharedPreferences("local_agent",0).getBoolean("learn",false)){JSONObject saved=memory(c).optJSONObject(kind+":"+plan.getString("tool"));if(saved!=null){Set<String> explicit=new HashSet<>();JSONArray fields=plan.getJSONArray("fields");for(int i=0;i<fields.length();i++)explicit.add(fields.getJSONObject(i).getString("name"));for(Iterator<String> keys=saved.keys();keys.hasNext();){String key=keys.next();if(!explicit.contains(key))fields.put(new JSONObject().put("name",key).put("value",saved.getString(key)));}}}return provider(AgentTools.validate(plan,kind),"local");
+    if(text.length()>8000)throw new IOException("رد المساعد غير مكتمل؛ اختصر الطلب");JSONObject plan=AgentTools.validate(new JSONObject(text.toString()),kind);if(c.getSharedPreferences("local_agent",0).getBoolean("learn",true)){JSONObject saved=memory(c).optJSONObject(kind+":"+plan.getString("tool"));if(saved!=null){Set<String> explicit=new HashSet<>();JSONArray fields=plan.getJSONArray("fields");for(int i=0;i<fields.length();i++)explicit.add(fields.getJSONObject(i).getString("name"));for(Iterator<String> keys=saved.keys();keys.hasNext();){String key=keys.next();if(!explicit.contains(key))fields.put(new JSONObject().put("name",key).put("value",saved.getString(key)));}}}return provider(AgentTools.validate(plan,kind),"local");
    }finally{conversation=null;}
   }
  }
  static JSONObject memory(Context c){try{return new JSONObject(c.getSharedPreferences("local_agent",0).getString("preferences","{}"));}catch(Exception e){return new JSONObject();}}
  static void remember(Context c,String kind,String tool,JSONObject options)throws Exception {if(!AgentTools.tools(kind).contains(tool))return;JSONObject preferences=memory(c),values=new JSONObject();for(String key:new String[]{"format","quality","ocrLanguage","musicOutput","musicMode","translationMode","target","geminiReview"})if(options.has(key)&&options.optString(key).length()<40)values.put(key,options.optString(key));preferences.put(kind+":"+tool,values);c.getSharedPreferences("local_agent",0).edit().putString("preferences",preferences.toString()).apply();}
- static void forget(Context c){c.getSharedPreferences("local_agent",0).edit().clear().apply();}
+ static void forget(Context c){AgentExamples.forget(c);c.getSharedPreferences("local_agent",0).edit().clear().putBoolean("learn",false).apply();}
 }
