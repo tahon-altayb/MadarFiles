@@ -58,7 +58,7 @@ final class AgentExecutive {
    try{review=reviewer.review(project);}catch(java.util.concurrent.CancellationException stopped){throw stopped;}catch(Exception unavailable){review=new JSONObject().put("status","uncertain").put("issues",new JSONArray().put("تعذرت المراجعة الذكية بعد التصدير؛ لا أعتبرها مراجعة ناجحة"));}
    project.put("agentReview",review.put("automaticRepairs",attempt));MotionProject.save(c,project);
    if(!review.getString("status").equals("repair")||review.getJSONArray("issues").length()==0||attempt==1)return project;
-   JSONObject prior=project.optJSONObject("result");if(prior!=null){JSONArray versions=project.optJSONArray("reviewVersions");if(versions==null)versions=new JSONArray();if(versions.length()<3)versions.put(prior);project.put("reviewVersions",versions);}
+   ColabProbe.check(cancel);JSONObject prior=project.optJSONObject("result");if(prior!=null){JSONArray versions=project.optJSONArray("reviewVersions");if(versions==null)versions=new JSONArray();if(versions.length()<3)versions.put(prior);project.put("reviewVersions",versions);}
    project.getJSONObject("creativeRequest").put("reviewFeedback",review.getJSONArray("issues"));project.remove("motionCheckpoint");project.remove("motionTransfer");project.remove("result");project.put("ready",false);MotionProject.save(c,project);
    progress.update(20,"رصدت المراجعة مخالفة محددة؛ أصححها مرة واحدة مع حفظ النسخة السابقة");project=runner.run(project);
   }return project;
