@@ -44,6 +44,7 @@ final class ColabSpeech {
   if(reviewed==null){diagnostic.record("AUDIO_DECODE");if(separateMusic)diagnostic.record("AUDIO_SEPARATION");decoded=SpeechAudio.decode(context,input,limitUs,separateMusic,cancel,(p,m)->{if(m.equals(SpeechAudio.FALLBACK))diagnostic.record("AUDIO_SEPARATION_FALLBACK");progress.update(p,m);});diagnostic.record("AUDIO_READY");}
   final AudioPipeline.Decoded audio=decoded;
   try(ColabRuntime runtime=new ColabRuntime(context,grant,cancel);RandomAccessFile in=audio==null?null:new RandomAccessFile(audio.pcm,"r")){
+   runtime.allocationEvents=diagnostic::allocation;
    long frames=audio==null?0:audio.pcm.length()/4,total=audio==null?0:Math.round(frames*16000.0/audio.sampleRate);
    if(reviewed==null&&(total<=0||total>600L*16000))throw new IOException("تجربة Colab متاحة حتى 10 دقائق؛ ابدأ بعينة 30 ثانية");
    final double duration=reviewed==null?total/16000.0:validateText(reviewed,language,target),offset=audio==null?0:audio.offsetUs/1000000.0;

@@ -9,6 +9,19 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class MotionStartupTest {
+ @Test public void runtimeReportContainsOnlyAllowedHardwareAndTimingFields()throws Exception{
+  Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();ColabDiagnostics diagnostic=new ColabDiagnostics(c,"MOTION_COMPOSE");
+  diagnostic.motionRuntime(new JSONObject().put("gpu","T4").put("driver","580.82.07").put("glibc","2.39").put("variant","t4_native").put("model_cached",true).put("probe_seconds",0.307).put("token","SECRET"));
+  String report=ColabDiagnostics.last(c);assertTrue(report.contains("Motion GPU: T4"));assertTrue(report.contains("driver: 580.82.07"));assertTrue(report.contains("glibc: 2.39"));assertTrue(report.contains("Motion runtime: t4_native"));assertTrue(report.contains("GPU probe: 0.307s"));assertFalse(report.contains("SECRET"));
+  diagnostic.motionRuntime(new JSONObject().put("gpu","https://private.invalid/SECRET").put("driver","580.82 SECRET").put("glibc","SECRET").put("variant","SECRET").put("probe_seconds",500));
+  report=ColabDiagnostics.last(c);assertFalse(report.contains("SECRET"));assertFalse(report.contains("https"));assertFalse(report.contains("500"));
+ }
+ @Test public void distinctGpuFailuresStayActionableAndDoNotClaimQuotaExhaustion()throws Exception{
+  for(String code:new String[]{"DIRECTOR_GPU_PLATFORM","DIRECTOR_GPU_BACKEND","DIRECTOR_GPU_OFFLOAD","DIRECTOR_GPU_PROBE_TIMEOUT","DIRECTOR_GPU_PROBE_RESPONSE","DIRECTOR_GPU_PROBE_FAILED"}){
+   assertTrue(ColabDiagnostics.safe(code));String text=MotionCloud.failure(code);assertFalse(text.contains("انتهى رصيد"));assertFalse(text.contains("اختر مورد GPU"));assertFalse(text.equals(MotionCloud.failure("UNKNOWN")));
+  }
+  assertNotEquals(MotionCloud.failure("DIRECTOR_GPU_BACKEND"),MotionCloud.failure("DIRECTOR_GPU_PROBE_TIMEOUT"));
+ }
  @Test public void motionAttemptReplacesOldMusicReportWithoutPrivateData()throws Exception{
   Context c=InstrumentationRegistry.getInstrumentation().getTargetContext();
   ColabDiagnostics old=new ColabDiagnostics(c);old.record("MUSIC_PROFILE_FX");

@@ -1,0 +1,96 @@
+name: Build native T4 motion runtime
+on:
+  push:
+    branches:
+      - diagnostics/motion-t4-native-20261106
+    paths:
+      - .github/workflows/motion-t4-native.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: motion-t4-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    container: nvidia/cuda:12.8.2-devel-ubuntu24.04
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git cmake ninja-build build-essential python3 pkg-config libssl-dev ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/llama.cpp
+          ref: 9309bf1bcfe8d52b0fb7ef906474db94041a5e0c
+          path: engine
+          persist-credentials: false
+      - name: Configure the pinned engine for native Turing code
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/engine"
+          test "$(git -C engine rev-parse HEAD)" = 9309bf1bcfe8d52b0fb7ef906474db94041a5e0c
+          nvcc --version
+          cmake -S engine -B engine/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            '-DCMAKE_INSTALL_RPATH=$ORIGIN' \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+            -DCMAKE_CUDA_ARCHITECTURES=75-real \
+            -DGGML_CUDA=ON \
+            -DGGML_CUDA_CCCL_VERSION=v3.4.3 \
+            -DGGML_CUDA_NCCL=OFF \
+            '-DGGML_CUDA_FA_QUANTS=f16-f16;q8_0-q8_0' \
+            -DGGML_NATIVE=OFF \
+            -DGGML_CPU_ALL_VARIANTS=OFF \
+            -DGGML_BACKEND_DL=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=ON \
+            -DLLAMA_BUILD_UI=OFF \
+            -DLLAMA_CURL=OFF
+      - name: Compile native GPU kernels and server
+        run: cmake --build engine/build --target llama-server --parallel 2
+      - name: Verify native sm_75 machine code and package runtime
+        run: |
+          mkdir -p package/runtime output
+          cuobjdump --list-elf engine/build/bin/libggml-cuda.so > output/sm75-cubins.txt
+          cuobjdump --list-ptx engine/build/bin/libggml-cuda.so > output/ptx-list.txt
+          python3 - <<'PY'
+          import pathlib,re,json,hashlib,shutil,subprocess,os
+          out=pathlib.Path('output'); listing=(out/'sm75-cubins.txt').read_text()
+          cubins=[s for s in listing.splitlines() if 'ELF file' in s]
+          assert cubins and all(re.search(r'sm_75(?:\D|$)',s) for s in cubins), 'Native sm_75 cubins were not produced'
+          assert not re.search(r'PTX file', (out/'ptx-list.txt').read_text()), 'Unexpected PTX-only fallback'
+          cache=pathlib.Path('engine/build/CMakeCache.txt').read_text()
+          assert re.search(r'^CMAKE_CUDA_ARCHITECTURES:[^=]+=75-real$',cache,re.M), 'Unexpected architecture selection'
+          dest=pathlib.Path('package/runtime'); source=pathlib.Path('engine/build/bin')
+          shutil.copy2(source/'llama-server',dest/'llama-server')
+          for path in source.glob('*.so*'):
+              if path.is_file():shutil.copy2(path,dest/path.name)
+          shutil.copy2('engine/LICENSE',dest/'LICENSE')
+          env={**os.environ,'LD_LIBRARY_PATH':str(dest.resolve())+':'+os.environ.get('LD_LIBRARY_PATH','')}
+          subprocess.run([str(dest.resolve()/'llama-server'),'--help'],env=env,stdout=subprocess.DEVNULL,check=True,timeout=20)
+          manifest={'upstream_tag':'b12089','upstream_commit':'9309bf1bcfe8d52b0fb7ef906474db94041a5e0c','cuda':'12.8.2','architecture':'75-real','native_cubin_count':len(cubins),'physical_gpu_inference_tested':False,'files':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(dest.iterdir()) if p.is_file()}}
+          (dest/'build-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          subprocess.run(['tar','-czf','output/madar-llama-b12089-cuda12-sm75.tar.gz','-C','package','runtime'],check=True)
+          archive=out/'madar-llama-b12089-cuda12-sm75.tar.gz'
+          manifest['archive_sha256']=hashlib.sha256(archive.read_bytes()).hexdigest();manifest['archive_bytes']=archive.stat().st_size
+          (out/'build-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          print(json.dumps({k:v for k,v in manifest.items() if k!='files'},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Madar-llama-b12089-native-T4
+          path: output/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Save build failure details
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: T4-native-build-diagnostics
+          path: |
+            engine/build/CMakeCache.txt
+            engine/build/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: ignore

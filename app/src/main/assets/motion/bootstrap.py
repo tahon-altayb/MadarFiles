@@ -49,7 +49,12 @@ def supervise(root, timeout=2400):
         def publish():
             nonlocal beat
             beat += 1
-            atomic(root, 'status.json', dict(state, job=root.name, heartbeat=beat))
+            payload=dict(state, job=root.name, heartbeat=beat)
+            try:
+                details=json.loads((root/'runtime-info.txt').read_text('utf-8'))
+                if isinstance(details,dict):payload['runtime']=details
+            except (OSError,ValueError):pass
+            atomic(root, 'status.json', payload)
         def failure(code):
             nonlocal state
             state = {'stage': 'failed', 'progress': 0, 'code': code}

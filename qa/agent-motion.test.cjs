@@ -89,6 +89,27 @@ await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,s
 // A v57 saved dropdown choice has no new selection flag; do not revert it on upgrade.
 await page.evaluate(r=>receive({type:'agentChats',data:{version:1,active:'legacyVoice',threads:[{id:'legacyVoice',title:'اختيار محفوظ',messages:[],attachments:[],motionVoice:'none',motionFailure:'تعذر الصوت',motionRetry:{prompt:r.prompt,voice:'silma',attachments:[],previous:''}}]}}),maleFailure);await acceptChoices(page);
 await page.locator('#agentInput').fill(maleFailure.prompt);await page.locator('#agentSend').click();await acceptChoices(page);const legacyVoice=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').at(-1));assert.equal(legacyVoice.voice,'none');assert.equal(await page.locator('#agentMotionVoice').inputValue(),'none');await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),legacyVoice);await acceptChoices(page);
+// Reported reconnect phrases must resume a completed transfer without the general planner.
+await page.evaluate(r=>receive({type:'agentChats',data:{version:1,active:'transferRetry',threads:[{id:'transferRetry',title:'تنزيل الفيديو',messages:[],attachments:[],motionVoice:'none',motionFailure:'اكتملت المعالجة وتعذر تنزيل النتيجة',motionResumeProject:'f'.repeat(32),motionRetry:{prompt:r.prompt,voice:'none',attachments:[],previous:''}}]}}),silentChoice);await acceptChoices(page);
+const plansBeforeTransfer=await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan').length);
+for(const text of ['اعد الاتصال','اعد الاتصال بال colab وارسلي المقطع جاهز']){
+ await page.locator('#agentInput').fill(text);await page.locator('#agentSend').click();await acceptChoices(page);
+ const resumedTransfer=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').at(-1));assert.equal(resumedTransfer.thread,'transferRetry');assert.equal(resumedTransfer.resumeProject,'f'.repeat(32));assert.equal(resumedTransfer.voice,'none');assert.equal(resumedTransfer.prompt,silentChoice.prompt);assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan').length),plansBeforeTransfer);
+ const busyStarts=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length);
+ await page.locator('#agentInput').fill('وش المشكلة بالضبط؟');await page.locator('#agentSend').click();
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length),busyStarts);
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action!=='agentChatsSave').at(-1).action),'agentMotionStatus');
+ const startsBeforeBusyRetry=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length);await page.locator('#agentInput').fill('أعد الاتصال');await page.locator('#agentSend').click();assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length),startsBeforeBusyRetry);assert.equal(await page.evaluate(()=>requests.filter(r=>r.action!=='agentChatsSave').at(-1).action),'agentMotionStatus');
+ await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'f'.repeat(32),status:'error',checkpoint:true,transfer:true,message:'اكتملت المعالجة وتعذر تنزيل النتيجة'}),resumedTransfer);await acceptChoices(page);
+}
+// A question about the saved failure must not become a new model/planner request.
+for(const text of ['وش المشكلة بالضبط؟','وش المشكله بالضبط ?','وش السبب بالضبط؟']){
+ const starts=await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length);
+ await page.locator('#agentInput').fill(text);await page.locator('#agentSend').click();await acceptChoices(page);
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan').length),plansBeforeTransfer);
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentMotionStart').length),starts);
+ assert.match(await page.locator('#agentLog').textContent(),/اكتملت المعالجة وتعذر تنزيل النتيجة/);
+}
 // A ten-minute planning phase must not become an invented 72-minute remaining time.
 await page.clock.install({time:new Date('2026-11-05T02:00:00Z')});
 await page.evaluate(()=>{receive({type:'agentChats',data:{version:1,active:'timing',threads:[{id:'timing',title:'الوقت',messages:[],attachments:[],task:{id:'timingTask',tool:'motionStudio',started:Date.now()-10*60000}}]}});receive({type:'motionState',thread:'timing',task:'timingTask',status:'running',message:'تصميم المشاهد',progress:24});});await acceptChoices(page);

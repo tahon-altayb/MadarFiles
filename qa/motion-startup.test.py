@@ -3,18 +3,17 @@ The small worker fixture isolates startup; model/render coverage has separate te
 """
 import importlib.util,json,os,signal,socket,subprocess,sys,tempfile,time,urllib.request,uuid
 from pathlib import Path
-import websocket
 SOURCE=Path('app/src/main/assets/motion/bootstrap.py').resolve()
 BOOTSTRAP=SOURCE.read_text()
 
 def process_cases():
  spec=importlib.util.spec_from_file_location('motion_bootstrap',SOURCE);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
  with tempfile.TemporaryDirectory() as tmp:
-  root=Path(tmp);job=root/('madar_'+uuid.uuid4().hex);job.mkdir();(job/'request.json').write_text('{}')
+  root=Path(tmp);job=root/('madar_'+uuid.uuid4().hex);job.mkdir();(job/'request.json').write_text('{}'); (job/'runtime-info.txt').write_text(json.dumps({'gpu':'T4','driver':'580.82.07','glibc':'2.39','variant':'t4_native','probe_seconds':0.307}))
   (job/'worker.py').write_text("import json,time\nfrom pathlib import Path\nwith Path('invocations').open('a') as f:f.write('once\\n')\ntime.sleep(.7)\nPath('result.json').write_text('{}')\nPath('progress.json').write_text(json.dumps(dict(stage='done',progress=100)))")
   running=[subprocess.Popen([sys.executable,str(SOURCE),'--supervise',str(job)]) for _ in range(3)]
   for p in running:assert p.wait(timeout=10)==0
-  m.supervise(job);assert (job/'invocations').read_text()=='once\n';assert json.loads((job/'status.json').read_text())['stage']=='done'
+  m.supervise(job);assert (job/'invocations').read_text()=='once\n';assert json.loads((job/'status.json').read_text())['stage']=='done'; assert json.loads((job/'status.json').read_text())['runtime']['variant']=='t4_native'
   old=Path.cwd();sibling=root/'sibling';sibling.mkdir()
   try:os.chdir(sibling);assert m.locate(job.name)==job
   finally:os.chdir(old)
@@ -23,6 +22,7 @@ def process_cases():
  print('PASS production supervisor processes: concurrent/late replay exactly once, sibling paths, early failure and timeout')
 
 def main():
+ import websocket
  with tempfile.TemporaryDirectory(prefix='madar-motion-start-') as tmp:
   root=Path(tmp)
   with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]

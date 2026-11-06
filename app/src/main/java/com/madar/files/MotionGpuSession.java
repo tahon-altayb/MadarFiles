@@ -20,8 +20,11 @@ final class MotionGpuSession {
  static synchronized boolean available(Context c,String owner){return available(owner)&&idle.runtime.grant.project.equals(c.getSharedPreferences("colab_connection",0).getString("project",idle.runtime.grant.project));}
  static synchronized boolean held(){return idle!=null||active!=null||closing;}
  static Lease acquire(Context c,ColabCredentials.Grant grant,String owner,AtomicBoolean caller)throws Exception{
+  return acquire(c,grant,owner,caller,false);
+ }
+ static Lease acquire(Context c,ColabCredentials.Grant grant,String owner,AtomicBoolean caller,boolean completedTransfer)throws Exception{
   synchronized(MotionGpuSession.class){
-   String saved=c.getSharedPreferences("colab_owned_runtime",0).getString("reviewOwner","");if(idle==null&&!saved.isEmpty()&&c.getSharedPreferences("colab_owned_runtime",0).getBoolean("reviewBusy",false))throw new IOException("توجد معالجة موشن سابقة لم يؤكد اكتمالها؛ أنهِ الجلسة السابقة من إعدادات Colab قبل إعادة المحاولة");if(idle==null&&!saved.isEmpty()&&!saved.equals(owner))throw new IOException("اعتمد جلسة المحادثة السابقة أو أغلقها قبل إنشاء موشن في محادثة أخرى");
+   String saved=c.getSharedPreferences("colab_owned_runtime",0).getString("reviewOwner","");if(idle==null&&!saved.isEmpty()&&c.getSharedPreferences("colab_owned_runtime",0).getBoolean("reviewBusy",false)&&!(completedTransfer&&saved.equals(owner)))throw new IOException("توجد معالجة موشن سابقة لم يؤكد اكتمالها؛ أنهِ الجلسة السابقة من إعدادات Colab قبل إعادة المحاولة");if(idle==null&&!saved.isEmpty()&&!saved.equals(owner))throw new IOException("اعتمد جلسة المحادثة السابقة أو أغلقها قبل إنشاء موشن في محادثة أخرى");
    if(closing||active!=null)throw new IOException("انتظر انتهاء معالجة الموشن أو إغلاق جلسته");
    if(idle!=null&&!idle.owner.equals(owner))throw new IOException("توجد جلسة مراجعة لمحادثة أخرى؛ اعتمد نسختها أو أغلقها من الإشعار أولًا");
    if(idle!=null&&grant!=null&&!idle.runtime.grant.project.equals(grant.project))throw new IOException("اعتمد جلسة الموشن الحالية قبل تغيير حساب المعالجة");

@@ -24,16 +24,14 @@ images=brief.get('images',[])
 if not isinstance(images,list) or len(images)>8 or any(not re.fullmatch(r'asset_[a-f0-9]{32}\.jpg',f) for f in images):raise ValueError('REFERENCE_PATH')
 Path('progress.json').write_text(json.dumps({'stage':'director','progress':24}))
 if os.uname().machine not in ['x86_64','amd64']:raise ValueError('RUNTIME_PLATFORM')
-stage('director_download');from director_runtime import options,threads,offloaded
+stage('director_download');from director_runtime import options,threads,offloaded,server_args,verify_cuda,verify_model_file,runtime_info
 engines=options()
 weights=hf_hub_download(MODEL,'Qwen3.5-9B-UD-Q4_K_XL.gguf',revision=REVISION)
 vision=hf_hub_download(MODEL,'mmproj-F16.gguf',revision=REVISION)
 # Verify the exact redistributed files whose license and upstream provenance were reviewed.
-for file,expected in [(weights,'6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293'),(vision,'f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f')]:
- digest=hashlib.sha256()
- with open(file,'rb') as stream:
-  for block in iter(lambda:stream.read(1024*1024),b''):digest.update(block)
- if digest.hexdigest()!=expected:raise ValueError('MODEL_HASH')
+cached=[]
+for file,expected in [(weights,'6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293'),(vision,'f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f')]:cached.append(verify_model_file(file,expected))
+runtime_info(model_cached=all(cached))
 with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
 context_size=16384
 try:
@@ -66,20 +64,17 @@ for engine in engines:
  stage('director_load')
  selected_context=min(context_size,8192) if engine['gpu'] else context_size
  try:
-  server=subprocess.Popen([str(engine['binary']),'-m',weights,'--mmproj',vision,'--host','127.0.0.1','--port',str(port),'--api-key',key,'-c',str(selected_context),'-ctk','q8_0','-ctv','q8_0','-fa','on','--image-max-tokens','384','-np','1','-t',str(threads()),'-tb',str(threads()),'-ngl','99' if engine['gpu'] else '0','--no-webui'],env=engine['env'],stdout=log,stderr=log)
+  server=subprocess.Popen(server_args(engine,weights,vision,port,key,selected_context),env=engine['env'],stdout=log,stderr=log)
  except OSError:
   if engine['gpu']:continue
   raise ValueError('RUNTIME_START')
- deadline=time.monotonic()+120;healthy=False
+ deadline=time.monotonic()+180;healthy=False
  while server.poll() is None and time.monotonic()<deadline:
   try:local_request('/health',timeout=3);healthy=True;break
   except (OSError,ValueError):time.sleep(.3)
  log.flush()
  if healthy and engine['gpu']:
-  try:
-   probe=local_request('/v1/chat/completions',{'model':'local','messages':[{'role':'user','content':'اكتب نعم'}],'max_tokens':8,'temperature':0,'chat_template_kwargs':{'enable_thinking':False}},timeout=45)
-   healthy=bool(probe.get('choices'))
-  except (OSError,ValueError):healthy=False
+  verify_cuda(local_request,'director-runtime.log')
  if healthy and (not engine['gpu'] or offloaded(Path('director-runtime.log').read_text(errors='replace'))):
   active_engine='cuda' if engine['gpu'] else 'cpu'
   Path('director-engine.json').write_text(json.dumps({'active':active_engine,'verified':True,'threads':threads()}))
@@ -89,7 +84,7 @@ for engine in engines:
   try:server.wait(timeout=10)
   except subprocess.TimeoutExpired:server.kill();server.wait(timeout=5)
  if not engine['gpu']:raise ValueError('RUNTIME_START')
-else:raise ValueError('RUNTIME_START')
+else:raise ValueError('DIRECTOR_GPU_VERIFY')
 def string(limit):return {'type':'string','minLength':1,'maxLength':limit}
 def obj(properties):return {'type':'object','properties':properties,'required':list(properties),'additionalProperties':False}
 SHOT=obj({'title':string(45),'narration':string(220),'caption':string(95),'visual':string(140),'reference':{'enum':[-1]+list(range(len(images)))}})
