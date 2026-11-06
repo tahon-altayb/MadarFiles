@@ -177,7 +177,6 @@ if rejected:
 Path('source-assets.json').write_text(json.dumps(generated))
 if brief.get('referenceMode')=='page' and not images:raise ValueError('SOURCE_IMAGES_UNAVAILABLE')
 logo_index=brief_contract.logo_index(client_contract,images,reference_facts)
-if (client_contract.get('logoFirst') or client_contract.get('logoLast')) and logo_index is None:raise ValueError('LOGO_UNAVAILABLE')
 logo_name=images[logo_index] if logo_index is not None else None
 source_cap=5000 if (client_contract.get('sceneCount') or 4)>7 else 10000
 source_facts=[{'url':s.get('url',''),'text':s.get('text','')[:max(2500,source_cap//max(1,len(brief.get('sources',[]))))]} for s in brief.get('sources',[])[:2] if s.get('status')!='failed']
@@ -196,7 +195,7 @@ if re.search(r'16\s*[:x×]\s*9|بالعرض|عرضي|[أا]فقي',latest):aspec
 elif re.search(r'1\s*[:x×]\s*1(?![0-9])|مربع',latest):aspect='1:1'
 elif re.search(r'9\s*[:x×]\s*16|عمودي|بالطول',latest):aspect='9:16'
 if aspect not in ['9:16','16:9','1:1']:aspect='9:16'
-scene_count,scene_seconds,aspect,(narration_low,narration_high)=brief_contract.plan(client_contract,brief['text'],chunks,aspect)
+scene_count,scene_seconds,aspect,(narration_low,narration_high)=brief_contract.plan(client_contract,brief['text'],chunks,aspect,len(previous.get('scenes',[])))
 narration_range=f'{narration_low}-{narration_high}'
 STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
 feedback=''
@@ -272,7 +271,8 @@ else:raise ValueError('CONTRACT_COPY' if issues and all(z.get('contract') for z 
 for shot,edited in zip(story['scenes'],copy['scenes']):shot.update(edited)
 enforced=brief_contract.enforce_closing(story['scenes'],client_contract)
 logo_targets=brief_contract.logo_scenes(client_contract,len(story['scenes']))
-for index in logo_targets:story['scenes'][index]['reference']=logo_index
+# Without an identified logo the scene is typography only: never a storefront or product photo in its place.
+for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
 story['title']=copy['title']
 if brief.get('appFacts') and 'مدار' not in json.dumps(story,ensure_ascii=False):raise ValueError('STORY_INVALID')
 story.update(theme=theme,aspect=aspect,concept=story['title'])

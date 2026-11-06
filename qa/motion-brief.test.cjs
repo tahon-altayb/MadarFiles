@@ -42,7 +42,9 @@ for(const t of ['ماعندنا موقع الكتروني','ما عندنا مت
 assert.ok(!B.parse('اكتب مكان الموقع').noWebsite,'«الموقع» alone means the location');
 assert.ok(B.parse('اكتب العنوان').requireAddress);assert.ok(B.parse('اكتب رقم الجوال').requirePhone);
 assert.equal(B.parse('اكتب العنوان: الرياض حي الملقا').address,'الرياض حي الملقا');
-assert.equal(B.parse('فرعنا في جدة حي الروضة').address,'جدة حي الروضة');
+assert.equal(B.parse('موقع الفرع: جدة حي الروضة').address,'جدة حي الروضة');
+// Descriptions are not addresses (review findings): only a labelled address is taken.
+for(const t of ['احنا مقهى في جدة نقدم شاهي على الجمر','فرعنا الجديد افتتح في الخبر، سو له اعلان','احنا عندنا افضل قهوة','فرعنا في جدة حي الروضة'])assert.equal(B.parse(t).address,'',t);
 assert.equal(B.parse('تواصلوا 0551234567').phone,'0551234567');
 assert.deepEqual(B.parse('لا تكتب الأسعار').forbidden,['الأسعار']);
 assert.deepEqual(B.parse('اكتب «خصم 20% على كل المنتجات»').required,['خصم 20% على كل المنتجات']);
@@ -61,4 +63,30 @@ assert.equal(merged.durationSec,30);assert.ok(merged.logoFirst&&merged.noWebsite
 // The chat report lists failures first and offers a next step.
 assert.match(B.report([{label:'أ',ok:true},{label:'ب',ok:false,detail:'سبب'}]),/✗ ب — سبب\n✓ أ[\s\S]*أعد المحاولة/);
 assert.equal(B.report([]),'');
+// Review findings: directions are not on-screen text.
+for(const t of ['سو اعلان وحط الشعار بالبداية','حط صور المنتجات','حط الشعار بالاخير واول مشهد يكون للقهوة','خلي الخلفية سوداء'])assert.deepEqual(B.parse(t).required,[],t);
+assert.ok(B.parse('سو اعلان وحط الشعار بالبداية').logoFirst);
+assert.deepEqual(B.parse('حط عبارة خصم 20% اليوم').required,['خصم 20% اليوم']);assert.deepEqual(B.parse('حط «عرض لا يفوتك»').required,['عرض لا يفوتك']);
+assert.deepEqual(B.parse('اكتب «عرض لا يفوتك»').required,['عرض لا يفوتك'],'a quoted «لا» stays inside the phrase');
+// Logo position: negation and neighbouring clauses.
+assert.ok(!B.parse('الشعار مو لازم يكون اول شي').logoFirst);
+let pos=B.parse('ابدا بالمنتجات وحط الشعار بالاخير');assert.ok(pos.logoLast&&!pos.logoFirst);
+// Declining the logo drops the requirement, so no cloud job fails for it.
+pos=B.parse('سوي اعلان موشن وابي الشعار في الاول',{answers:{logo:'skip'}});assert.ok(!pos.logoFirst&&!pos.missing.length);
+assert.equal(B.parse('سوي اعلان موشن وابي الشعار في الاول').missing[0].field,'logo');
+// Only the film's own length counts.
+for(const [t,v] of [['سو اعلان 8 مشاهد، كل مشهد 4 ثواني',32],['ابي 6 مشاهد كل مشهد 5 ثواني',30],['اعلان عن التوصيل خلال 30 دقيقة',null],['الطلب جاهز خلال 10 ثواني',null],['نجهز الطلب في دقيقة',null],['اعلان 30 ثانية والشعار يظهر 3 ثواني',30],['موديل 2024 s',null]]){const c2=B.parse(t);assert.equal(c2.durationSec,v,t);assert.ok(c2.sceneSeconds>=2,t);}
+assert.equal(B.parse('سو اعلان 8 مشاهد، كل مشهد 4 ثواني').sceneCount,8);
+for(const t of ['عرض ابريل','شقة 120 متر مربع'])assert.equal(B.parse(t).aspect,null,t);
+// Revisions can switch and remove constraints, not only add them.
+const base=B.parse('سوي اعلان، الشعار اول شي، اكتب زورونا اليوم');
+let rev=B.merge(base,B.parse('عدل الاعلان وخل الشعار في الاخير بدل الاول'));assert.ok(rev.logoLast&&!rev.logoFirst);
+rev=B.merge(base,B.parse('شيل عبارة زورونا اليوم'));assert.deepEqual(rev.required,[]);
+rev=B.merge(base,B.parse('شيل الشعار'));assert.ok(!rev.logoFirst&&!rev.logoLast);
+// The request itself is brief, not a hidden note.
+assert.ok(!B.parse('سو اعلان لساعة بطارية تكفي 7 ايام').notes.length);
+// Every script the page loads must be served by the app (review finding: a new file was blocked on device).
+const fs=require('fs'),path=require('path');const root=path.join(__dirname,'..');
+const html=fs.readFileSync(path.join(root,'app/src/main/assets/index.html'),'utf8'),main=fs.readFileSync(path.join(root,'app/src/main/java/com/madar/files/MainActivity.java'),'utf8');
+for(const [,src] of html.matchAll(/<script src="([^"]+)"/g)){assert.ok(main.includes('"'+src+'"'),src+' missing from the copied web files');const needle=src.split('.').join('\\\\.');let served=0;for(let at=main.indexOf(needle);at>=0;at=main.indexOf(needle,at+1))if('(|"'.includes(main[at-1])&&'|)"'.includes(main[at+needle.length]))served++;assert.equal(served,2,src+' missing from a served-file pattern');}
 console.log('motion brief contract: real request, dialect variants, answers, merge and report');

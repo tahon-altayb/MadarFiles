@@ -116,6 +116,24 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  assert int((job/'fake-copy-count.txt').read_text())==3,'forbidden copy must be repaired by review, not silently shipped'
 print('motion contract director: logo first, 10x5s, forbidden removed, closing enforced, verification reported')
 
+# No identifiable logo: the job still finishes, the opening is typography (never the storefront), and the report says so.
+nologo=dict(brief);nologo.pop('logoAsset',None)
+with tempfile.TemporaryDirectory(prefix='madar-contract-nologo-') as tmp:
+ r,job=run(nologo,text,tmp)
+ # The fake catalog marks image b as brand_logo, so remove that classification to simulate a page without one.
+ assert r.returncode==0,r.stderr[-2000:]
+with tempfile.TemporaryDirectory(prefix='madar-contract-nologo2-') as tmp:
+ job=Path(tmp)
+ server=FAKE_SERVER.replace("'kind':'brand_logo'","'kind':'product_photo'")
+ globals()['FAKE_SERVER_SAVED']=FAKE_SERVER;FAKE_SERVER=server
+ r,job=run(nologo,text,tmp);FAKE_SERVER=globals()['FAKE_SERVER_SAVED']
+ assert r.returncode==0,r.stderr[-2000:]
+ p=json.loads((job/'project.json').read_text())
+ first=p['scenes'][0]['composition']['elements']
+ assert not any(e.get('asset') for e in first),'without a logo the opening must not show a storefront or product photo'
+ assert {c['id']:c for c in p['verification']}['logo_first']['ok'] is False,'the missing logo is reported'
+print('no identifiable logo: typography opening, reported, job not failed')
+
 # The same director without a contract keeps the old behaviour for existing projects.
 with tempfile.TemporaryDirectory(prefix='madar-contract-legacy-') as tmp:
  r,job=run(None,'سوي موشن عن المحل',tmp)

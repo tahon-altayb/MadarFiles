@@ -17,55 +17,76 @@
  const FIRST='(?:اول(?:ا|ه)?|بالاول|في الاول|البدايه|بالبدايه|في البدايه|المقدمه|بالمقدمه|يبدا|نبدا|ابدا|افتتح|تفتتح|يفتتح|اول شي|اول مشهد|اول لقطه|المشهد الاول)';
  const LAST='(?:اخر(?:ه|شي)?|بالاخير|في الاخير|الاخير|النهايه|بالنهايه|في النهايه|الختام|بالختام|الخاتمه|اخر مشهد|المشهد الاخير|يختم|نختم|اختم)';
  const NEG='(?:لا|ما|مو|مب|بدون|بلا|دون)';
- const PLACE=/حي|شارع|طريق|مخرج|بجوار|مقابل|خلف|قرب|جنب|عند|مدينه|محافظه|الرياض|جده|مكه|المدينه|الدمام|الخبر|الظهران|الاحساء|الهفوف|بريده|عنيزه|القصيم|حايل|حائل|تبوك|ابها|خميس مشيط|جازان|جيزان|نجران|الباحه|الطايف|الطائف|ينبع|الجبيل|القطيف|سكاكا|الجوف|عرعر|الخرج|المجمعه|الزلفي|الكويت|دبي|ابوظبي|الدوحه|المنامه|مسقط|maps\.app\.goo\.gl|goo\.gl\/maps|google\.[a-z.]+\/maps/;
+ // A value counts as an address only with a street-level cue or a city at its start;
+ // loose words such as عند/قرب or a city mentioned in passing do not make an address.
+ const STREET=/(?:^|\s)(?:حي|شارع|طريق|مخرج|ش\.)\s+\S/;
+ const CITY=/^(?:مدينه\s+)?(?:الرياض|جده|مكه|المدينه(?:\s+المنوره)?|الدمام|الخبر|الظهران|الاحساء|الهفوف|بريده|عنيزه|القصيم|حايل|حائل|تبوك|ابها|خميس\s+مشيط|جازان|جيزان|نجران|الباحه|الطايف|الطائف|ينبع|الجبيل|القطيف|سكاكا|الجوف|عرعر|الخرج|المجمعه|الزلفي|الكويت|دبي|ابوظبي|الدوحه|المنامه|مسقط)(?:\s|$|[،,–-])/;
+ const MAPLINK=/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.[a-z.]+\/maps)[^\s]*/i;
  const META_ADDRESS=/^(?:مكان|عنوان|موقع|لوكيشن|لوكيشين|الخريطه|خريطه|اللوكيشن|العنوان|المكان)(?:\s|$)|^(?:مكان|عنوان)\s+(?:ال)?(?:موقع|فرع|محل|المحل|الفرع)/;
  const META_PHONE=/^(?:رقم|الرقم|جوال|الجوال|التواصل|تواصل|واتس|الواتس|رقم التواصل|رقم الجوال)(?:\s|$)/;
  const META_NAME=/^(?:اسم|الاسم)\s+(?:المحل|المتجر|النشاط|المطعم|الكوفي|المقهي|الشركه)/;
+ // «حط ...» / «خلي ...» about pictures, the logo or layout is a direction, not on-screen text.
+ const VISUAL=new RegExp(`^(?:${'(?:ال)?(?:شعار|لوقو|لوجو|لوغو|لوكو)|logo'}|(?:ال)?صور|صوره|الصوره|(?:ال)?لقط|(?:ال)?فيديو|(?:ال)?مقطع|(?:ال)?خلفي|(?:ال)?الوان|(?:ال)?لون|(?:ال)?خط(?:\\s|$)|(?:ال)?حركات|(?:ال)?انتقال|(?:ال)?منتج|(?:ال)?منتجات|(?:ال)?مشهد|(?:ال)?مشاهد|(?:ال)?صوت|(?:ال)?تعليق|(?:ال)?موسيقي)`);
  const WEBSITE=['موقع إلكتروني','موقع الكتروني','الموقع الإلكتروني','الموقع الالكتروني','موقعنا الإلكتروني','موقعنا الالكتروني','متجر إلكتروني','متجر الكتروني','متجرنا الإلكتروني','متجرنا الالكتروني','زوروا موقعنا','زورو موقعنا','اطلب أونلاين','اطلب اونلاين','www','.com','عبر موقعنا','من موقعنا'];
 
  function duration(t){
-  // t is key-normalized. Times that start an editing range are not durations.
-  let found=null;const re=/(\d{1,3}(?:\.\d)?)\s*(?:ثانيه|ثواني|ثوان|ثوانٍ|ث(?=\s|$|[.،])|sec(?:onds?)?(?=\s|$)|s(?=\s|$))/g;let m;
-  while((m=re.exec(t))){const before=t.slice(Math.max(0,m.index-14),m.index);if(/(?:من|الي|حتي|لين|عند|بعد|قبل)\s*(?:ال)?(?:ثانيه)?\s*$/.test(before))continue;found=Number(m[1]);}
-  if(found===null){
-   if(/دقيقه\s*و\s*نص|دقيقه\s*ونص/.test(t))found=90;
-   else if(/(?:نص|نصف)\s*دقيقه/.test(t))found=30;
-   else if(/دقيقتين/.test(t))found=120;
-   else{const minutes=/(\d{1,2})\s*(?:دقيقه|دقايق|دقائق)/.exec(t);if(minutes)found=Number(minutes[1])*60;else if(/(?:^|\s)(?:مدته|مدتها|مده|طوله|طولها)?\s*دقيقه(?:\s+وحده|\s+واحده)?(?=\s|$|[.،])/.test(t))found=60;}
-  }
-  return found===null?null:Math.max(6,Math.min(180,found));
+  // t is key-normalized. Only the film's own length counts: per-scene times,
+  // delivery promises, editing ranges and product facts are ignored.
+  const SKIP=/(?:كل|لكل)\s*(?:مشهد|لقطه|واحد|وحده)|(?:المشهد|اللقطه|الشعار|العنوان|النص|يظهر|تظهر|يبقي|تبقي|خلال|جاهز|يجهز|نجهز|التوصيل|توصيل|توصل|يوصل|بعد|قبل|عند|من|الي|حتي|لين|كل|في|موديل|مده\s+الشحن)\s*(?:ال)?(?:ثانيه)?\s*$/;
+  const CUE=/(?:مدته|مدتها|مده|المده|طوله|طولها|بطول|اعلان|موشن|فيديو|مقطع)\s*(?:\S+\s+){0,2}$/;
+  const units='(?:ثانيه|ثواني|ثوان|ث(?=\\s|$|[.،,])|sec(?:onds?)?(?=\\s|$)|s(?=\\s|$))';
+  const cands=[];let m;const re=new RegExp('(?<![\\d.])(\\d{1,3}(?:\\.\\d)?)\\s*'+units,'g');
+  while((m=re.exec(t))){const before=t.slice(Math.max(0,m.index-22),m.index);if(SKIP.test(before))continue;cands.push({v:Number(m[1]),cue:CUE.test(before)});}
+  const mins=[[/دقيقه\s*و\s*نص|دقيقه\s*ونص/,90],[/(?:نص|نصف)\s*دقيقه/,30],[/دقيقتين/,120]];
+  for(const [r,v] of mins){const x=r.exec(t);if(x){const before=t.slice(Math.max(0,x.index-22),x.index);if(!SKIP.test(before))cands.push({v,cue:CUE.test(before)});}}
+  const mm=/(?<![\d.])(\d{1,2})\s*(?:دقيقه|دقايق|دقائق)/.exec(t);if(mm){const before=t.slice(Math.max(0,mm.index-22),mm.index);if(!SKIP.test(before))cands.push({v:Number(mm[1])*60,cue:CUE.test(before)});}
+  // A bare «دقيقة» is a length only right after a length cue: «مدته دقيقة», «اعلان دقيقة».
+  const one=/(?:مدته|مدتها|مده|طوله|طولها|بطول|اعلان|موشن|فيديو)\s+دقيقه(?:\s+(?:وحده|واحده))?(?=\s|$|[.،,])/.exec(t);if(one&&!cands.some(c=>c.cue))cands.push({v:60,cue:true});
+  if(!cands.length)return null;const pick=cands.find(c=>c.cue)||cands[0];
+  return Math.max(6,Math.min(180,pick.v));
  }
+ function perScene(t){const m=/(?:كل|لكل)\s*(?:مشهد|لقطه)\s*(?:مدته|مده|طوله)?\s*(\d{1,2}(?:\.\d)?)\s*(?:ثانيه|ثواني|ثوان|ث)/.exec(t);return m?Number(m[1]):null;}
  function aspect(t){
   if(/16\s*[:x×]\s*9|افقي|عرضي|بالعرض|يوتيوب|youtube|للتلفزيون|للشاشه/.test(t))return '16:9';
-  if(/1\s*[:x×]\s*1(?!\d)|مربع|بوست\s*(?:انستا|انستقرام)/.test(t))return '1:1';
-  if(/9\s*[:x×]\s*16|عمودي|طولي|بالطول|للجوال|للجول|ستوري|ستوريز|ريلز|ريل|سناب|تيك\s*توك|تيكتوك|شورتس|reels|story|tiktok/.test(t))return '9:16';
+  if(/1\s*[:x×]\s*1(?!\d)|(?<!متر\s)(?<!امتار\s)(?<!م\s)مربع|بوست\s*(?:انستا|انستقرام)/.test(t))return '1:1';
+  if(/9\s*[:x×]\s*16|عمودي|طولي|بالطول|للجوال|للجول|(?:^|\s)(?:ستوري|ستوريز|ريلز|ريل|سناب|شورتس|reels|story|tiktok)(?=\s|$|[.،,])|تيك\s*توك|تيكتوك/.test(t))return '9:16';
   return null;
  }
  function sceneCount(seconds,explicit){
-  if(Number.isInteger(explicit))return Math.max(3,Math.min(12,explicit));
+  // At least two seconds a scene; an explicit count wins within that bound.
+  const limit=Math.max(3,Math.floor((seconds||30)/2));
+  if(Number.isInteger(explicit))return Math.max(3,Math.min(12,limit,explicit));
   // About five seconds per scene keeps the film moving; ten scenes is the
   // ceiling that the planner context on a T4 can safely hold.
   return Math.max(4,Math.min(10,Math.round((seconds||30)/5)));
  }
  function sentences(text){return soft(text).split(/\n+|(?<=[.!؟?])\s+|\s*[•·]\s*/).map(s=>s.trim()).filter(Boolean);}
  // A clause boundary inside run-on dialect: "...فرعنا واكتب ..." / "... وخلي ...".
- const CLAUSE=/\s+(?=و?\s*(?:اكتب|أكتب|حط|ضع|خلي|خل|لا|ما\s+(?:تكتب|تحط|تذكر)|اذا|إذا|لو|ابي|أبي|ابغى|أبغى|ابغي|استخدم|ابدا|ابدأ|الورد|ماعندنا|ما\s+عندنا)\s)/;
+ const CLAUSE=/\s+(?=و?\s*(?:اكتب|أكتب|حط|ضع|خلي|خل|لا\s+(?:تكتب|تحط|تذكر)|ما\s+(?:تكتب|تحط|تذكر)|شيل|احذف|امسح|اذا|إذا|لو|ابي|أبي|ابغى|أبغى|ابغي|استخدم|ابدا|ابدأ|ماعندنا|ما\s+عندنا)\s)/;
+ const quoted=s=>{const m=/[«"“]([^»"”]{2,90})[»"”]/.exec(s);return m?clean(m[1]):'';};
 
  function literals(text,result){
-  // "اكتب X" adds a required on-screen text; "لا تكتب X" forbids it.
+  // «اكتب X» or a quoted «حط "X"» adds required on-screen text; «لا تكتب X» forbids it;
+  // «شيل/احذف X» removes earlier text in a revision.
   for(const raw of sentences(text)){
-   const parts=raw.split(CLAUSE).map(s=>s.trim()).filter(Boolean);
-   for(const part of parts){
-    const k=key(part);
-    let m=/^(?:و\s*)?(?:لا|ما|بدون)\s*(?:تكتب|تحط|تذكر|ذكر|كتابه)\s+(.{2,80})$/.exec(soft(part).replace(/^و\s*/,''));
-    if(m){const v=clean(m[1]);if(v)result.forbidden.push(v);continue;}
-    m=/^(?:و\s*)?(?:اكتب|أكتب|حط|ضع)\s+(?:لهم\s+|فيه\s+|فيها\s+|بالنهايه\s+|بالنهاية\s+|في\s+النهايه\s+|في\s+النهاية\s+|بالاخير\s+|بالأخير\s+|عباره\s+|عبارة\s+|جمله\s+|جملة\s+|كلمه\s+|كلمة\s+|نص\s+)*(.{2,90})$/.exec(soft(part));
-    if(!m)continue;const value=clean(m[1]),v=key(value);
-    if(!value)continue;
+   for(const part of raw.split(CLAUSE).map(s=>s.trim()).filter(Boolean)){
+    const plain=soft(part).replace(/^و\s*/,'');
+    let m=/^(?:لا|ما|بدون)\s*(?:تكتب|تحط|تذكر|ذكر|كتابه)\s+(.{2,80})$/.exec(plain);
+    if(m){const v=quoted(m[1])||clean(m[1]);if(v&&!VISUAL.test(key(v)))result.forbidden.push(v);else if(v&&new RegExp(LOGO).test(key(v)))result.dropLogo=true;continue;}
+    m=/^(?:شيل|احذف|امسح|الغ|الغي)\s+(?:عباره\s+|عبارة\s+|جمله\s+|جملة\s+|كلمه\s+|كلمة\s+|نص\s+)?(.{2,80})$/.exec(plain);
+    if(m){const v=quoted(m[1])||clean(m[1]);if(new RegExp(LOGO).test(key(v)))result.dropLogo=true;else if(v)result.removed.push(v);continue;}
+    m=/^(?:اكتب|أكتب|حط|ضع)\s+(.{2,100})$/.exec(plain);
+    if(!m)continue;
+    const verb=/^(?:اكتب|أكتب)/.test(plain),body=m[1];
+    let value=quoted(body);
+    const labelled=/^(?:لهم\s+|فيه\s+|فيها\s+)?(?:بالنهايه|بالنهاية|في\s+النهايه|في\s+النهاية|بالاخير|بالأخير|في\s+الاخير|في\s+الأخير)?\s*(?:عباره|عبارة|جمله|جملة|كلمه|كلمة|نص)\s+(.{2,90})$/.exec(body);
+    if(!value&&labelled)value=clean(labelled[1]);
+    if(!value&&verb)value=clean(body.replace(/^(?:لهم|فيه|فيها)\s+/,'').replace(/^(?:بالنهايه|بالنهاية|في\s+النهايه|في\s+النهاية|بالاخير|بالأخير|في\s+الاخير|في\s+الأخير)\s+/,''));
+    if(!value)continue;const v=key(value);
     if(META_ADDRESS.test(v)){result.requireAddress=true;continue;}
     if(META_PHONE.test(v)){result.requirePhone=true;continue;}
     if(META_NAME.test(v)){result.requireName=true;continue;}
-    if(value.length>60||/^(?:ان|إن|انه|إنه|عن)\s/.test(v))continue;
+    if(!quoted(body)&&(VISUAL.test(v)||value.length>60||/^(?:ان|إن|انه|إنه|عن)\s/.test(v)))continue;
     result.required.push(value);
     if(/زورونا|زوروا|زورو|تفضلوا|حياكم|ننتظركم/.test(v)&&/فرع|محل|معرض|مقر/.test(v))result.visitBranch=true;
    }
@@ -73,70 +94,92 @@
  }
  function corrections(text,result){
   for(const raw of sentences(text)){const s=key(raw);
-   const m=/(?:^|\s)((?:ال)?[ء-ي]{2,})\s+(?:ليس|ليست|مو|موب|مب|مهو|مهي|ماهو|ماهي|ما\s+هو|ما\s+هي|مش)\s+([ء-ي]{2,})(?=.*(?:تراه|تراها|بس|بل|انما|لكن|وانما|هو|هي|مجرد|عشان))/.exec(s);
-   if(!m)continue;const subject=m[1],attr=m[2],bare=subject.replace(/^ال/,'');
+   const m=/(?:^|\s)((?:ال)?[ء-ي]{2,})\s+(?:ليس|ليست|مو|موب|مب|مهو|مهي|ماهو|ماهي|ما\s+هو|ما\s+هي|مش)\s+([ء-ي]{2,})(?=.*(?:تراه|تراها|بس|بل|انما|لكن|وانما|مجرد|عشان))/.exec(s);
+   if(!m||/^(?:لازم|ضروري|مهم)$/.test(m[2]))continue;const subject=m[1],attr=m[2],bare=subject.replace(/^ال/,'');
    const attrs=/^(?:نكهه|طعم|مذاق)$/.test(attr)?['نكهه','طعم','مذاق']:[attr];
    const forms=[];for(const a of attrs)for(const s2 of [subject,bare])forms.push(`${a} ${s2}`,`ب${a} ${s2}`);
    result.corrections.push({text:clean(raw),subject,wrong:attr});result.forbidden.push(...forms);
   }
  }
+ // Only an explicitly labelled address is taken from free text; anything else is asked.
  function address(text){
   for(const raw of sentences(text)){
-   const s=soft(raw);let m=/(?:العنوان|عنواننا|عنوان\s+الفرع|عنوان\s+المحل|موقع\s+الفرع|موقع\s+المحل|موقعنا|فرعنا|محلنا|نحن|احنا)\s*(?:هو|في|ب|:|-|–)?\s*(.{3,90})/.exec(s);
-   if(m){const v=clean(m[1].split(/\s+و\s*(?:اكتب|حط|خلي)\s/)[0]);if(v&&PLACE.test(key(v))&&!/الكتروني|إلكتروني/.test(v))return v;}
-   const place=/((?:حي|شارع|طريق|مخرج)\s+[^\n.،]{2,60})/.exec(s);if(place&&!/^(?:اكتب|حط)/.test(key(s)))return clean(place[1]);
+   const s=soft(raw);const m=/(?:العنوان|عنواننا|عنوان\s+الفرع|عنوان\s+المحل|موقع\s+الفرع|موقع\s+المحل|موقعنا|لوكيشن(?:نا)?)\s*(?:هو|:|-|–)?\s*(?:في\s+)?(.{3,90})/.exec(s);
+   if(!m)continue;const v=clean(m[1].split(/\s+و\s*(?:اكتب|حط|خلي|سو)\s|،\s*(?:سو|اكتب|حط)/)[0]);const k=key(v);
+   if(v&&!/الكتروني|إلكتروني/.test(v)&&(STREET.test(' '+k)||CITY.test(k)||MAPLINK.test(v)))return v;
   }
-  const link=/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.[a-z.]+\/maps)[^\s]*/i.exec(soft(text));
-  return link?link[0]:'';
+  const link=MAPLINK.exec(soft(text));return link?link[0]:'';
  }
  function phone(text){const m=/(?:\+?966|0)5\d{8}|\b9200\d{5}\b|\b800\d{7}\b/.exec(soft(text).replace(/[\s-]/g,''));return m?m[0]:'';}
+ // Logo position per clause: «حط الشعار بالاخير» must not also read as «first» from a
+ // neighbouring «ابدا بالمنتجات», and a negated position («مو لازم يكون اول») does not count.
+ function logoPosition(text){
+  let first=false,last=false;const neg=/(?:^|\s)(?:لا|ما|مو|مب|مش|ليس|بدون|مو\s*لازم|مب\s*لازم|مهو)(?:\s|$)/;
+  for(const raw of sentences(text))for(const part of soft(raw).split(CLAUSE)){const c=key(part);if(!new RegExp(LOGO).test(c))continue;
+   const f=new RegExp(`(?:${LOGO})([^.\\n]{0,30}?)${FIRST}|${FIRST}\\s+(?:\\S+\\s+)?(?:ب|و)?(?:${LOGO})`).exec(c);
+   const l=new RegExp(`(?:${LOGO})([^.\\n]{0,30}?)${LAST}|${LAST}\\s+(?:\\S+\\s+)?(?:ب|و)?(?:${LOGO})`).exec(c);
+   const negated=x=>x&&(neg.test(' '+(x[1]||'')+' ')||neg.test(' '+c.slice(Math.max(0,x.index-12),x.index)+' '));
+   if(l&&!negated(l))last=true;else if(f&&!negated(f))first=true;
+  }
+  return {first,last};
+ }
 
  function parse(text,context={}){
   const t=key(text),answers=context.answers||{};
-  const result={version:VERSION,durationSec:null,durationSource:'default',aspect:null,music:false,musicRequested:false,logoFirst:false,logoLast:false,visitBranch:false,noWebsite:false,requireAddress:false,requirePhone:false,requireName:false,address:'',phone:'',businessName:'',required:[],forbidden:[],corrections:[],notes:[],askWhenMissing:false,explicitScenes:null,sceneCount:0,sceneSeconds:0,urls:[],logoAttachment:'',missing:[]};
-  const d=duration(t);if(d){result.durationSec=d;result.durationSource='user';}
-  const explicit=/(\d{1,2})\s*(?:مشاهد|مشهد|لقطات|لقطه)/.exec(t);if(explicit)result.explicitScenes=Number(explicit[1]);
+  const result={version:VERSION,durationSec:null,durationSource:'default',aspect:null,music:false,musicRequested:false,logoFirst:false,logoLast:false,dropLogo:false,visitBranch:false,noWebsite:false,requireAddress:false,requirePhone:false,requireName:false,address:'',phone:'',businessName:'',required:[],forbidden:[],removed:[],corrections:[],notes:[],askWhenMissing:false,explicitScenes:null,sceneCount:0,sceneSeconds:0,urls:[],logoAttachment:'',missing:[]};
+  const explicit=/(?<![\d.])(\d{1,2})\s*(?:مشاهد|مشهد|لقطات|لقطه)/.exec(t);if(explicit)result.explicitScenes=Number(explicit[1]);
+  const d=duration(t),each=perScene(t);
+  if(d){result.durationSec=d;result.durationSource='user';}
+  else if(each&&result.explicitScenes){result.durationSec=Math.max(6,Math.min(180,each*result.explicitScenes));result.durationSource='user';}
   result.aspect=aspect(t);
   result.musicRequested=/(?:مع|حط|ضيف|اضف|ابي|ابغي|ابغى)\s+(?:\S+\s+)?(?:موسيقي|موسيقى|اغنيه|ميوزك|music)/.test(t)&&!new RegExp(NEG+'\\s*(?:\\S+\\s+)?(?:موسيقي|موسيقى)').test(t);
-  result.logoFirst=new RegExp(`(?:${LOGO})[^.\\n]{0,40}${FIRST}|${FIRST}[^.\\n]{0,25}(?:${LOGO})`).test(t)&&!new RegExp(`(?:لا|ما|بدون)\\s+(?:تحط|تبدا|تبدأ)\\s+(?:ب)?(?:${LOGO})`).test(t);
-  result.logoLast=new RegExp(`(?:${LOGO})[^.\\n]{0,40}${LAST}|${LAST}[^.\\n]{0,25}(?:${LOGO})`).test(t);
+  const position=logoPosition(text);result.logoFirst=position.first;result.logoLast=position.last;
   result.noWebsite=/(?:ما|ماعندنا|ما\s*عندنا|ما\s*لنا|مالنا|ليس\s*لدينا|لا\s*يوجد|لا\s*نملك|مافي|ما\s*في|مافيه|ما\s*فيه|بدون|مب|مو)\s*(?:عندنا\s*)?(?:اي\s*)?(?:موقع\s*(?:الكتروني|ويب|انترنت|اونلاين)|متجر\s*(?:الكتروني|اونلاين)|ويب\s*سايت|website|اونلاين)/.test(t);
   if(result.noWebsite)result.forbidden.push(...WEBSITE);
   result.askWhenMissing=/(?:اذا|لو|ان)\s*(?:نقصتك|نقصك|نقص|ناقصك|ينقصك|احتجت)|اسالني|سالني|ارجع\s*لي/.test(t);
   result.urls=unique((soft(text).match(/https?:\/\/[^\s<>"،]+/g)||[]).map(u=>u.replace(/[).,!?؛]+$/,''))).slice(0,2);
   literals(text,result);corrections(text,result);
+  if(result.dropLogo){result.logoFirst=false;result.logoLast=false;}
   if(/زورونا|زوروا|تفضلوا|حياكم|ننتظركم/.test(t)&&/فرع|محل|معرض/.test(t))result.visitBranch=true;
   const skip=v=>v==='skip';
   result.address=skip(answers.address)?'':clean(answers.address||'')||address(text);result.phone=skip(answers.phone)?'':clean(answers.phone||'')||phone(text);
   if(skip(answers.address))result.requireAddress=false;if(skip(answers.phone))result.requirePhone=false;if(skip(answers.name))result.requireName=false;
-  if(answers.name)result.businessName=clean(answers.name);
+  if(skip(answers.logo)){result.logoFirst=false;result.logoLast=false;}
+  if(answers.name&&!skip(answers.name))result.businessName=clean(answers.name);
   const name=/(?:اسم\s+(?:المحل|المتجر|النشاط|المطعم|الكوفي|المقهى|المقهي))\s*(?:هو|:)?\s*([^\n.،]{2,40})/.exec(soft(text));if(name&&!result.businessName)result.businessName=clean(name[1]);
   if(context.logoAttachment)result.logoAttachment=String(context.logoAttachment);
-  // Sentences addressed to the agent are directions, never audience copy.
-  for(const raw of sentences(text)){const s=key(raw);if(/^(?:سو|سوي|سوو|اعمل|صمم|ابي|ابغي|ابغى|خلي|خل|اكتب|حط|ضع|لا|اذا|لو|اسالني|استخدم|ابدا|بدون|مدته|مدتها)\s|ماعندنا|ما\s*عندنا\s*موقع/.test(s)||result.corrections.some(c=>key(c.text)===s))result.notes.push(clean(raw));}
+  // Notes are the client's side remarks to the agent (formatting directions, corrections,
+  // "we have no website"): never audience copy. The request itself stays ordinary brief.
+  for(const raw of sentences(text))for(const part of soft(raw).split(CLAUSE)){const s=key(part).replace(/^و\s*/,'');if(/^(?:خلي|خل|اكتب|حط|ضع|لا\s+(?:تكتب|تحط|تذكر)|اذا|لو|اسالني|شيل|احذف)\s|ماعندنا|ما\s*عندنا\s*(?:موقع|متجر)/.test(s)||result.corrections.some(c=>key(c.text)===key(raw)))result.notes.push(clean(part));}
   result.required=unique(result.required);result.forbidden=unique(result.forbidden.map(clean));result.notes=unique(result.notes).slice(0,12);
   const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes);result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
   const images=context.images||0,hasUrl=result.urls.length>0;
-  if(result.requireAddress&&!result.address)result.missing.push({field:'address',blocking:true,question:'وش عنوان الفرع اللي أكتبه في آخر الإعلان؟ اكتبه مثل: الرياض – حي النرجس – طريق أبي بكر.'});
-  if(result.requirePhone&&!result.phone)result.missing.push({field:'phone',blocking:true,question:'وش رقم التواصل اللي تبيه يظهر في الإعلان؟'});
+  if(result.requireAddress&&!result.address)result.missing.push({field:'address',blocking:true,question:'وش عنوان الفرع اللي أكتبه في آخر الإعلان؟ اكتبه مثل: الرياض – حي النرجس – طريق أبي بكر. وإذا ما تبيه اكتب «بدون عنوان».'});
+  if(result.requirePhone&&!result.phone)result.missing.push({field:'phone',blocking:true,question:'وش رقم التواصل اللي تبيه يظهر في الإعلان؟ وإذا ما تبيه اكتب «بدون رقم».'});
   if(result.requireName&&!result.businessName&&!hasUrl)result.missing.push({field:'name',blocking:true,question:'وش اسم المحل اللي يظهر في الإعلان؟'});
-  if((result.logoFirst||result.logoLast)&&!images&&!hasUrl&&!skip(answers.logo))result.missing.push({field:'logo',blocking:true,question:'أرفق صورة الشعار من زر + عشان أبدأ الإعلان فيه.'});
+  if((result.logoFirst||result.logoLast)&&!images&&!hasUrl)result.missing.push({field:'logo',blocking:true,question:'أرفق صورة الشعار من زر + ثم اكتب «كمل»، أو اكتب «بدون شعار» وأبدأ باسم المحل.'});
   return result;
  }
  function merge(previous,next){
-  // A revision keeps every earlier constraint unless the new message changes it.
+  // A revision keeps earlier constraints unless the new message changes or removes them.
   if(!previous||typeof previous!=='object')return next;const out={...previous};
   for(const k of ['durationSec','aspect','address','phone','businessName','logoAttachment','explicitScenes'])if(next[k]!==null&&next[k]!==''&&next[k]!==undefined)out[k]=next[k];
-  for(const k of ['logoFirst','logoLast','visitBranch','noWebsite','requireAddress','requirePhone','requireName','askWhenMissing'])out[k]=!!(previous[k]||next[k]);
-  for(const k of ['required','forbidden','notes'])out[k]=unique([...(previous[k]||[]),...(next[k]||[])]);
+  for(const k of ['visitBranch','noWebsite','requireAddress','requirePhone','requireName','askWhenMissing'])out[k]=!!(previous[k]||next[k]);
+  // A newly stated logo position replaces the old one; «شيل الشعار» clears both.
+  if(next.dropLogo){out.logoFirst=false;out.logoLast=false;}else if(next.logoFirst||next.logoLast){out.logoFirst=!!next.logoFirst;out.logoLast=!!next.logoLast;}
+  const gone=new Set([...(next.removed||[]),...(next.forbidden||[])].map(key));
+  out.required=unique([...(previous.required||[]).filter(r=>!gone.has(key(r))),...(next.required||[])]);
+  out.forbidden=unique([...(previous.forbidden||[]),...(next.forbidden||[])]).filter(f=>!(next.required||[]).some(r=>key(r)===key(f)));
+  out.notes=unique([...(previous.notes||[]),...(next.notes||[])]).slice(-12);
   out.corrections=[...(previous.corrections||[]),...(next.corrections||[])].filter((c,i,a)=>a.findIndex(z=>z.text===c.text)===i);
   if(next.durationSource==='user')out.durationSource='user';
-  const seconds=out.durationSec||30;out.sceneCount=sceneCount(seconds,out.explicitScenes);out.sceneSeconds=Math.round(seconds/out.sceneCount*10)/10;out.missing=next.missing||[];out.urls=next.urls?.length?next.urls:(previous.urls||[]);out.musicRequested=!!next.musicRequested;return out;
+  const seconds=out.durationSec||30;out.sceneCount=sceneCount(seconds,out.explicitScenes);out.sceneSeconds=Math.round(seconds/out.sceneCount*10)/10;out.missing=next.missing||[];out.urls=next.urls?.length?next.urls:(previous.urls||[]);out.musicRequested=!!next.musicRequested;out.removed=[];out.dropLogo=false;return out;
  }
- function summary(c){
+ function summary(c,{revision=false}={}){
   const lines=[];const shape={'9:16':'عمودي للجوال','16:9':'أفقي','1:1':'مربع'}[c.aspect||'9:16'];
   const secs=n=>n+(n>2&&n<=10?' ثواني':' ثانية');
-  lines.push(`المدة ${secs(c.durationSec||30)}${c.durationSource==='user'?'':' (افتراضي)'} · ${shape} · ${c.sceneCount} مشاهد تقريبًا، كل مشهد ${secs(c.sceneSeconds)} · بدون موسيقى`);
+  if(revision&&c.durationSource!=='user')lines.push(`نفس مدة ومشاهد النسخة السابقة · ${shape} · بدون موسيقى`);
+  else lines.push(`المدة ${secs(c.durationSec||30)}${c.durationSource==='user'?'':' (افتراضي)'} · ${shape} · ${c.sceneCount} مشاهد تقريبًا، كل مشهد ${secs(c.sceneSeconds)} · بدون موسيقى`);
   if(c.logoFirst)lines.push('أبدأ بالشعار في أول مشهد');if(c.logoLast)lines.push('الشعار في آخر مشهد');
   if(c.required.length)lines.push('أكتب في الإعلان: '+c.required.map(x=>'«'+x+'»').join('، '));
   if(c.address)lines.push('العنوان: '+c.address);if(c.phone)lines.push('رقم التواصل: '+c.phone);

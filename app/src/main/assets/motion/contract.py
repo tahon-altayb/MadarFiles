@@ -29,9 +29,12 @@ def load(brief):
 def scene_count_for(seconds):
  return max(4,min(10,round((seconds or 30)/5)))
 
-def plan(contract,text,chunks,aspect):
+def plan(contract,text,chunks,aspect,previous_count=0):
  """Scene count, seconds per scene, aspect and narration word range."""
+ user_length=contract.get('durationSource')=='user' or isinstance(contract.get('explicitScenes'),int)
  if chunks:count=4
+ # A revision without a new length keeps the film's existing scene count.
+ elif previous_count and contract and not user_length:count=max(3,min(12,previous_count))
  elif isinstance(contract.get('sceneCount'),int) and 3<=contract['sceneCount']<=12:count=contract['sceneCount']
  else:
   requested=list(re.finditer(r'(\d{1,2}|[٣-٩])\s*مشاهد',text or ''))
@@ -43,7 +46,9 @@ def plan(contract,text,chunks,aspect):
  if not isinstance(total,(int,float)):
   match=list(re.finditer(r'(?:مدة|مدته|المدة)\s*(\d{1,3})\s*(?:ثانية|ثوان|ث)',text or ''))
   total=int(match[-1].group(1)) if match else None
- seconds=max(1,min(120,total/count)) if total else 6
+ if total:seconds=max(1,min(120,total/count))
+ elif contract and isinstance(contract.get('sceneSeconds'),(int,float)) and not previous_count:seconds=max(2,min(60,float(contract['sceneSeconds'])))
+ else:seconds=6
  if contract.get('aspect') in ['9:16','16:9','1:1']:aspect=contract['aspect']
  # Arabic TTS speaks roughly 2.2 words a second; size narration to the slot.
  high=max(5,min(16,round(seconds*2.2)));low=max(4,high-4)
@@ -86,22 +91,28 @@ def copy_issues(copy,c):
  return issues
 
 def enforce_closing(scenes,c):
- """Deterministically place still-missing client text on the final scene. Returns what changed."""
+ """Deterministically place still-missing client text on the final scene. Returns what changed.
+
+ The first missing phrase becomes the closing title; every other missing item
+ (more phrases, the address, the phone) is joined into the caption so none
+ overwrites another. Items that cannot fit stay missing and are reported."""
  if not scenes or not c:return []
- changed=[];last=scenes[-1]
- everything=lambda:key(' '.join(t for s in scenes for t in scene_texts(s)))
- for phrase in c.get('required',[]):
-  if key(phrase) in everything():continue
-  if len(phrase)<=45 and key(phrase)!=key(last.get('caption','')):last['title']=phrase;changed.append('title')
-  elif len(phrase)<=95:last['caption']=phrase;changed.append('caption')
+ last=scenes[-1];everything=key(' '.join(t for s in scenes for t in scene_texts(s)))
+ missing=[p for p in c.get('required',[]) if key(p) not in everything]
  address=str(c.get('address') or '')
- if address and not address.startswith('http') and key(address) not in everything():
-  caption=address if len(address)<=95 else address[:94].rsplit(' ',1)[0]
-  if key(caption)!=key(last.get('title','')):last['caption']=caption;changed.append('caption')
+ extras=[address] if address and not address.startswith('http') and key(address) not in everything else []
  phone=str(c.get('phone') or '')
- if phone and phone not in everything().replace(' ',''):
-  extra=(' · '+phone)
-  if len(last.get('caption',''))+len(extra)<=95:last['caption']=last.get('caption','')+extra;changed.append('caption')
+ if phone and phone not in everything.replace(' ',''):extras.append(phone)
+ if not missing and not extras:return []
+ changed=[]
+ if missing and len(missing[0])<=45:last['title']=missing.pop(0);changed.append('title')
+ parts=[]
+ for item in missing+extras:
+  if len(' · '.join(parts+[item]))<=95:parts.append(item)
+ if parts:
+  caption=' · '.join(parts)
+  if key(caption)==key(last.get('title','')):caption=caption+' ·'
+  last['caption']=caption;changed.append('caption')
  return changed
 
 def logo_index(c,images,facts):
@@ -135,6 +146,7 @@ def verification(c,scenes,count,aspect,logo,sources):
  joined=key(' '.join(texts))
  for phrase in c.get('required',[]):add('required','مكتوب: «'+phrase+'»',key(phrase) in joined)
  if c.get('address') and not str(c['address']).startswith('http'):add('address','العنوان مكتوب: '+c['address'],key(c['address']) in joined)
+ if c.get('phone'):add('phone','رقم التواصل مكتوب: '+c['phone'],c['phone'] in joined.replace(' ',''))
  if c.get('noWebsite'):add('no_website','بدون ذكر موقع إلكتروني',not forbidden_hits(texts,{'forbidden':['موقع الكتروني','الموقع الالكتروني','موقعنا','اطلب اونلاين','www','.com']}))
  add('aspect','المقاس '+aspect,aspect in ['9:16','16:9','1:1'])
  add('music','بدون موسيقى',True)

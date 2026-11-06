@@ -40,5 +40,25 @@ await page.evaluate(()=>receive({type:'agentChats',data:{version:1,active:'phone
 await send('سوي إعلان موشن للمحل واكتب رقم الجوال');assert.match(await page.locator('#agentLog').textContent(),/رقم التواصل/);
 await send('لا ما ابي رقم');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
 const declined=(await starts()).at(-1);assert.equal(declined.thread,'phone');assert.equal(declined.contract.requirePhone,false);
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'f'.repeat(32),status:'done',concept:'',result:{name:'madar_result_3.mp4',mime:'video/mp4',size:1000}}),declined);
+// 7. «كمل» after the logo question is not taken as the answer; attaching the logo then continuing asks which image it is.
+await page.evaluate(()=>receive({type:'agentChats',data:{version:1,active:'logoLater',threads:[{id:'logoLater',title:'شعار',messages:[],attachments:[]}]}}));
+await send('سوي اعلان موشن للمحل وابي الشعار في الاول');assert.match(await page.locator('#agentLog').textContent(),/أرفق صورة الشعار/);
+const asked=async()=>((await page.locator('#agentLog').textContent()).match(/أرفق صورة الشعار/g)||[]).length;const before=await asked();
+await send('كمل');assert.equal(await asked(),before+1,'asks again instead of storing «كمل»');assert.equal((await starts()).filter(r=>r.thread==='logoLater').length,0);
+await page.evaluate(()=>{const data=JSON.parse(JSON.stringify(requests.filter(r=>r.action==='agentChatsSave').at(-1).data));const t=data.threads.find(x=>x.id==='logoLater');t.attachments.push({attachmentId:'55555555-5555-5555-5555-555555555555',kind:'image',name:'IMG_1.jpg'},{attachmentId:'66666666-6666-6666-6666-666666666666',kind:'image',name:'IMG_2.jpg'});receive({type:'agentChats',data});});
+await send('كمل');assert.match(await page.locator('.agentChoiceCard').first().textContent(),/أي صورة هي الشعار/);
+await page.locator('.agentChoiceCard select').first().selectOption('66666666-6666-6666-6666-666666666666');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
+const later=(await starts()).at(-1);assert.equal(later.thread,'logoLater');assert.equal(later.contract.logoAttachment,'66666666-6666-6666-6666-666666666666');
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'1'.repeat(32),status:'done',concept:'',result:{name:'madar_result_4.mp4',mime:'video/mp4',size:1000}}),later);
+// 8. Declining the logo drops the requirement before any cloud job.
+await page.evaluate(()=>receive({type:'agentChats',data:{version:1,active:'noLogo',threads:[{id:'noLogo',title:'بدون',messages:[],attachments:[]}]}}));
+await send('سوي اعلان موشن عن القهوة وابي الشعار في الاول');await send('ما عندي شعار');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
+const noLogo=(await starts()).at(-1);assert.equal(noLogo.thread,'noLogo');assert.ok(!noLogo.contract.logoFirst&&!noLogo.contract.logoAttachment);
+// 9. A single photo is not sent as the logo when no logo position was requested.
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'2'.repeat(32),status:'done',concept:'',result:{name:'madar_result_5.mp4',mime:'video/mp4',size:1000}}),noLogo);
+await page.evaluate(()=>receive({type:'agentChats',data:{version:1,active:'onePhoto',threads:[{id:'onePhoto',title:'صورة',messages:[],attachments:[{attachmentId:'77777777-7777-7777-7777-777777777777',kind:'image',name:'product.jpg'}]}]}}));
+await send('سوي اعلان موشن للمنتج');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
+const onePhoto=(await starts()).at(-1);assert.equal(onePhoto.thread,'onePhoto');assert.equal(onePhoto.contract.logoAttachment,'');
 assert.deepEqual(errors,[]);await browser.close();console.log('agent motion brief: asks missing address, chooses logo, summarises, passes contract, reports checks, keeps constraints');
 })().catch(e=>{console.error(e);process.exit(1);});

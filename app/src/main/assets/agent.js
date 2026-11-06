@@ -91,8 +91,8 @@
   }
   const setup=thread.motionSetup||{};if(setup.references==='upload'&&!refs.some(a=>a.kind==='image')){thread.motionPending={kind:'referencesUpload',text,previous,voice:$('agentMotionVoice').value,setup:{...setup}};save(true);return line('أرفق الصور من زر +، واخترها معًا أو على دفعات. عندما تنتهي اكتب «كمل»؛ لن أبدأ قبل اكتمال مراجعك.');}
   delete thread.motionPending;
-  const chosenLogo=answers.logo||(thread.motionSetup||{}).logo||(contract.logoFirst||contract.logoLast?logoGuess?.attachmentId:'')||'';if(chosenLogo&&chosenLogo!=='auto'&&imageRefs.some(a=>a.attachmentId===chosenLogo))contract.logoAttachment=chosenLogo;
-  thread.motionContract=contract;line(MadarMotionBrief.summary(contract));
+  const chosenLogo=contract.logoFirst||contract.logoLast?answers.logo||(thread.motionSetup||{}).logo||logoGuess?.attachmentId||'':'';if(chosenLogo&&chosenLogo!=='auto'&&imageRefs.some(a=>a.attachmentId===chosenLogo))contract.logoAttachment=chosenLogo;
+  thread.motionContract=contract;line(MadarMotionBrief.summary(contract,{revision:!!previous}));
   launchMotion({contract,answers,prompt:text,attachments:refs.filter(a=>a.kind==='image'||$('agentMotionVoice').value==='recording'&&a===(selectedAudio||refs.find(r=>r.kind==='audio'))).map(a=>a.attachmentId),voice:$('agentMotionVoice').value,previous,revisionKind:options.revisionKind||'',selectedAttachment:state.source?.attachmentId||'',assetRole:options.assetRole||'',setup:{...(thread.motionSetup||{})}});
  }
  function motionReplyVoice(text){const t=motionWords(text).replace(/^(?:طيب[ ،]*)?(?:خليه|خلي|خله|خل|اجعله|اجعل|غير|بدل)\s+(?:(?:الموشن|الاعلان|الفيديو)\s+)?/,'');if(/^(?:الصوت\s+)?(?:الرجالي(?:\s+المعتمد)?|المعتمد|الافتراضي|سيلما|silma)[.!؟\s]*$/i.test(t))return 'silma';if(/^(?:(?:بدون|دون|بلا)\s+(?:اي\s+)?(?:صوت|تعليق(?:\s+صوتي)?)(?:\s+(?:رجالي|الرجالي|المعتمد))?|صامت)[.!؟\s]*$/.test(t))return 'none';if(/^(?:تسجيلي|بصوتي|التسجيل الشخصي|التسجيل المرفق)[.!؟\s]*$/.test(t))return 'recording';return null;}
@@ -107,7 +107,8 @@
   if(otherTool){waiting.paused=true;if(record)line(text,'user');input.value='';line('طلب الموشن محفوظ. يمكنك الرجوع إليه بكتابة «كمل الموشن».');save(true);return 'recorded';}
   if(record)line(text,'user');input.value='';
   if(explicitCancel||/^(?:إلغاء|الغاء|ألغ|الغي|توقف|اترك الطلب)[.!؟\s]*$/.test(text)){delete thread.motionPending;save(true);line('ألغيت طلب الموشن المعلّق.');return true;}
-  if(waiting.kind==='brief'&&waiting.field&&!resume){delete waiting.paused;const value=MadarMotionBrief.declines(text)?'skip':text;startMotion(waiting.text,{previous:waiting.previous||'',voice:waiting.voice,answers:{...(waiting.answers||{}),[waiting.field]:value}});return true;}
+  // «كمل» after attaching the logo (or without answering) re-checks the request instead of becoming the answer.
+  if(waiting.kind==='brief'&&waiting.field&&!resume){delete waiting.paused;const proceed=/^(?:كمل|كمّل|أكمل|اكمل|تابع|استمر|خلاص|تم|ارفقته|أرفقته|ارفقتها|أرفقتها)[.!؟\s]*$/.test(text.trim());const answers={...(waiting.answers||{})};if(!proceed||waiting.field!=='logo'&&MadarMotionBrief.declines(text))answers[waiting.field]=MadarMotionBrief.declines(text)?'skip':text;startMotion(waiting.text,{previous:waiting.previous||'',answers});return true;}
   const chosen=motionReplyVoice(text),continuation=resume||motionFollowup(text).retry||/^(?:كمل|كمّل|أكمل|اكمل|تابع|استمر)[.!؟\s]*$/.test(text);delete waiting.paused;
   if(chosen||continuation){startMotion(waiting.text,{previous:waiting.previous||'',voice:chosen||$('agentMotionVoice').value||waiting.voice});return true;}
   if(waiting.kind==='topic'){startMotion(waiting.text+'\nالفكرة المطلوبة:\n'+text,{previous:waiting.previous||'',voice:waiting.voice,descriptionSupplied:true});return true;}
