@@ -89,4 +89,19 @@ assert.ok(!B.parse('سو اعلان لساعة بطارية تكفي 7 ايام'
 const fs=require('fs'),path=require('path');const root=path.join(__dirname,'..');
 const html=fs.readFileSync(path.join(root,'app/src/main/assets/index.html'),'utf8'),main=fs.readFileSync(path.join(root,'app/src/main/java/com/madar/files/MainActivity.java'),'utf8');
 for(const [,src] of html.matchAll(/<script src="([^"]+)"/g)){assert.ok(main.includes('"'+src+'"'),src+' missing from the copied web files');const needle=src.split('.').join('\\\\.');let served=0;for(let at=main.indexOf(needle);at>=0;at=main.indexOf(needle,at+1))if('(|"'.includes(main[at-1])&&'|)"'.includes(main[at+needle.length]))served++;assert.equal(served,2,src+' missing from a served-file pattern');}
+// Shop profiles: applied by name or link only; one profile may answer «المحل».
+{const saved=B.profileFrom(B.parse(real,{images:3,answers:{address:'شارع الجال - خلف مربع الزينه'}}),'شاهي جمر');
+ assert.equal(saved.address,'شارع الجال - خلف مربع الزينه');assert.ok(saved.logoFirst&&saved.noWebsite&&saved.corrections.length===1);
+ const other=B.profileFrom(B.parse('ابدأ بالشعار',{answers:{}}),'العبور للاتصالات');other.address='الرياض حي العليا';
+ const next=B.parse('سو اعلان لشاهي جمر واكتب زورونا في فرعنا وحط العنوان',{images:2});assert.equal(next.missing[0].field,'address');
+ let applied=B.applyProfile(B.findProfile([other,saved],'سو اعلان لشاهي جمر واكتب زورونا في فرعنا وحط العنوان'),next);
+ assert.equal(applied.address,'شارع الجال - خلف مربع الزينه');assert.equal(applied.missing.length,0);assert.ok(applied.logoFirst&&applied.noWebsite);assert.ok(B.violations(['بنكهة الورد'],applied).length,'saved corrections still apply');
+ assert.equal(B.findProfile([other,saved],'سو اعلان للعبور للاتصالات').name,'العبور للاتصالات');
+ assert.equal(B.findProfile([other,saved],'سو اعلان للمحل'),null,'two businesses: never guess');
+ assert.equal(B.findProfile([saved],'سو اعلان للمحل').name,'شاهي جمر');
+ assert.equal(B.findProfile([saved],'سو اعلان عن القهوة'),null);
+ assert.equal(B.findProfile([saved],'اعلان من https://share.google/gqr792aGPFX7jVCXY').name,'شاهي جمر','the same link identifies the shop');
+ applied=B.applyProfile(saved,B.parse('سو اعلان لشاهي جمر بدون عنوان والشعار بالاخير'));assert.ok(applied.logoLast&&!applied.logoFirst,'a stated logo position wins over the profile');assert.equal(applied.address,'','address only when the request asks for it');
+ assert.match(B.summary(B.applyProfile(saved,B.parse('سو اعلان لشاهي جمر واكتب زورونا في فرعنا وحط العنوان'))),/طبّقت تفضيلات «شاهي جمر» المحفوظة: العنوان/);
+ assert.deepEqual(B.profileCommand('احفظ باسم شاهي جمر'),{save:'شاهي جمر'});assert.deepEqual(B.profileCommand('امسح تفضيلات شاهي جمر'),{remove:'شاهي جمر'});assert.deepEqual(B.profileCommand('وش تفضيلات المحلات'),{list:true});assert.equal(B.profileCommand('احفظ الملف'),null);}
 console.log('motion brief contract: real request, dialect variants, answers, merge and report');

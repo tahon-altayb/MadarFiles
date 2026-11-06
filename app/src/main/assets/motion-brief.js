@@ -78,6 +78,8 @@
     m=/^(?:اكتب|أكتب|حط|ضع)\s+(.{2,100})$/.exec(plain);
     if(!m)continue;
     const verb=/^(?:اكتب|أكتب)/.test(plain),body=m[1];
+    // «حط/اكتب العنوان|الرقم|اسم المحل» asks for that field to be shown, whichever verb is used.
+    const field=key(body.replace(/^(?:لهم|فيه|فيها)\s+/,''));if(META_ADDRESS.test(field)){result.requireAddress=true;continue;}if(META_PHONE.test(field)){result.requirePhone=true;continue;}if(META_NAME.test(field)){result.requireName=true;continue;}
     let value=quoted(body);
     const labelled=/^(?:لهم\s+|فيه\s+|فيها\s+)?(?:بالنهايه|بالنهاية|في\s+النهايه|في\s+النهاية|بالاخير|بالأخير|في\s+الاخير|في\s+الأخير)?\s*(?:عباره|عبارة|جمله|جملة|كلمه|كلمة|نص)\s+(.{2,90})$/.exec(body);
     if(!value&&labelled)value=clean(labelled[1]);
@@ -118,7 +120,8 @@
   for(const raw of sentences(text))for(const part of soft(raw).split(CLAUSE)){const c=key(part);if(!new RegExp(LOGO).test(c))continue;
    const f=new RegExp(`(?:${LOGO})([^.\\n]{0,30}?)${FIRST}|${FIRST}\\s+(?:\\S+\\s+)?(?:ب|و)?(?:${LOGO})`).exec(c);
    const l=new RegExp(`(?:${LOGO})([^.\\n]{0,30}?)${LAST}|${LAST}\\s+(?:\\S+\\s+)?(?:ب|و)?(?:${LOGO})`).exec(c);
-   const negated=x=>x&&(neg.test(' '+(x[1]||'')+' ')||neg.test(' '+c.slice(Math.max(0,x.index-12),x.index)+' '));
+   // A negation counts only when it governs the logo phrase itself: «لا تحط الشعار اول»، «الشعار مو لازم اول».
+   const negated=x=>x&&(neg.test(' '+(x[1]||'')+' ')||/(?:^|\s)(?:لا|ما|مو|مب|مش)\s+(?:تحط|تخلي|تبدا|تبدأ|تجعل|لازم|يكون|ابي|ابغي)?\s*(?:و)?$/.test(c.slice(0,x.index)));
    if(l&&!negated(l))last=true;else if(f&&!negated(f))first=true;
   }
   return {first,last};
@@ -187,6 +190,7 @@
   if(c.noWebsite)lines.push('ما أذكر أي موقع إلكتروني؛ الدعوة لزيارة الفرع');
   for(const x of c.corrections)lines.push(`ملاحظتك: «${x.text}» — ما أوصفه كذا في الإعلان`);
   if(c.musicRequested)lines.push('الموشن بدون موسيقى؛ تقدر تضيفها بعدين من محرر الفيديو');
+  if(c.profileApplied)lines.push(`طبّقت تفضيلات «${c.profileApplied}» المحفوظة`+(c.profileUsed?.length?': '+c.profileUsed.join('، '):''));
   return 'فهمت طلبك كذا:\n• '+lines.join('\n• ');
  }
  // Compact rules for the director prompt (English for the planner, Arabic values kept verbatim).
@@ -221,5 +225,41 @@
   const lines=[...bad.map(c=>'✗ '+c.label+(c.detail?' — '+c.detail:'')),...good.map(c=>'✓ '+c.label)];
   return '\n\nتحققت من الناتج:\n'+lines.join('\n')+(bad.length?'\n\nقل لي وش أعدّل، أو اكتب «أعد المحاولة».':'');
  }
- return {VERSION,parse,declines,report,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
+ // Shop profiles: standing preferences per business (address, logo position, no website,
+ // forbidden phrases, corrections), saved by name and applied when that shop is named again.
+ // The owner may run several businesses, so nothing is applied without a name or link match,
+ // except when exactly one profile exists and the request says «المحل/محلي».
+ const PROFILE_KEYS=['address','phone','logoFirst','logoLast','noWebsite','forbidden','corrections','aspect'];
+ function profileFrom(c,name){const p={name:clean(name).slice(0,40),key:key(name),urls:[...(c.urls||[])].slice(0,2),updated:Date.now()};for(const k of PROFILE_KEYS)p[k]=Array.isArray(c[k])?[...c[k]]:c[k];p.address=c.address&&!/^https?:/.test(c.address)?c.address:'';return p;}
+ function hasProfileFacts(c){return !!(c.address||c.phone||c.logoFirst||c.logoLast||c.noWebsite||(c.corrections||[]).length);}
+ function findProfile(profiles,text){
+  if(!Array.isArray(profiles)||!profiles.length)return null;const t=key(text);
+  // Attached prepositions merge with the article: «لـ+العبور» → «للعبور», «بـ+الطيب» → «بالطيب».
+  const esc=w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const word=w=>w.startsWith('ال')&&w.length>3?`(?:ال|لل|بال|وال|فال|كال|وبال|ولل)${esc(w.slice(2))}`:`(?:[وبلفك]|ول|وب)?${esc(w)}`;
+  const mentions=p=>p.key&&p.key.length>=2&&p.key.split(' ').filter(Boolean).every(w=>new RegExp(`(?:^|\\s)${word(w)}(?=\\s|$|[.،,!؟])`).test(t));
+  const named=profiles.filter(p=>mentions(p)||(p.urls||[]).some(u=>soft(text).includes(u)));
+  if(named.length===1)return named[0];if(named.length>1)return named.sort((a,b)=>b.key.length-a.key.length)[0];
+  return profiles.length===1&&/(?:^|\s)(?:(?:ال|لل|بال|وال|فال)محل|(?:[وبلف])?(?:محلي|محلنا|متجري|متجرنا|نشاطي|مطعمي|مقهاي)|(?:ال|لل)كوفي حقي)(?:\s|$|[.،])/.test(t)?profiles[0]:null;
+ }
+ function applyProfile(p,c){
+  if(!p)return c;const out={...c,profileApplied:p.name};const used=[];
+  if(!out.address&&p.address&&(out.requireAddress||out.visitBranch)){out.address=p.address;used.push('العنوان');}
+  if(!out.phone&&p.phone&&out.requirePhone){out.phone=p.phone;used.push('رقم التواصل');}
+  if(!out.logoFirst&&!out.logoLast&&!out.dropLogo&&(p.logoFirst||p.logoLast)){out.logoFirst=!!p.logoFirst;out.logoLast=!!p.logoLast;used.push(p.logoFirst?'الشعار أولاً':'الشعار في الختام');}
+  if(p.noWebsite&&!out.noWebsite){out.noWebsite=true;out.forbidden=unique([...(out.forbidden||[]),...WEBSITE]);used.push('بدون موقع إلكتروني');}
+  if((p.forbidden||[]).length)out.forbidden=unique([...(out.forbidden||[]),...p.forbidden]);
+  if((p.corrections||[]).length){out.corrections=[...(out.corrections||[]),...p.corrections].filter((x,i,a)=>a.findIndex(z=>z.text===x.text)===i);used.push('ملاحظاتك السابقة');}
+  if(!out.aspect&&p.aspect)out.aspect=p.aspect;
+  out.missing=(out.missing||[]).filter(m=>!(m.field==='address'&&out.address)&&!(m.field==='phone'&&out.phone));
+  out.profileUsed=used;return out;
+ }
+ function profileCommand(text){
+  const t=soft(text).trim();let m=/^(?:احفظ|احفظها|احفظه|خزن)\s+(?:التفضيلات\s+|تفضيلات\s+(?:المحل\s+|هذا\s+المحل\s+)?)?(?:ب|باسم|بإسم|تحت\s+اسم)\s+(.{2,40})$/.exec(t);if(m)return {save:clean(m[1])};
+  m=/^(?:امسح|احذف|الغ|الغي)\s+(?:تفضيلات|ملف)\s+(.{2,40})$/.exec(t);if(m)return {remove:clean(m[1])};
+  if(/^(?:وش|ايش|إيش|اعرض|عرض|ورني)\s+(?:تفضيلات|ملفات)\s+(?:المحلات|المحل|محلاتي|محلي)[.!؟\s]*$/.test(t))return {list:true};
+  return null;
+ }
+ function describeProfile(p){const parts=[];if(p.address)parts.push('العنوان: '+p.address);if(p.phone)parts.push('الرقم: '+p.phone);if(p.logoFirst)parts.push('الشعار أولاً');if(p.logoLast)parts.push('الشعار في الختام');if(p.noWebsite)parts.push('بدون موقع إلكتروني');if((p.corrections||[]).length)parts.push(p.corrections.length+' ملاحظة تصحيح');if(p.aspect)parts.push('المقاس '+p.aspect);return '«'+p.name+'»: '+(parts.join('، ')||'بدون تفضيلات');}
+ return {VERSION,parse,declines,report,profileFrom,hasProfileFacts,findProfile,applyProfile,profileCommand,describeProfile,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
 });

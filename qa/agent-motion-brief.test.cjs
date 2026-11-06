@@ -60,5 +60,17 @@ await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,p
 await page.evaluate(()=>receive({type:'agentChats',data:{version:1,active:'onePhoto',threads:[{id:'onePhoto',title:'صورة',messages:[],attachments:[{attachmentId:'77777777-7777-7777-7777-777777777777',kind:'image',name:'product.jpg'}]}]}}));
 await send('سوي اعلان موشن للمنتج');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
 const onePhoto=(await starts()).at(-1);assert.equal(onePhoto.thread,'onePhoto');assert.equal(onePhoto.contract.logoAttachment,'');
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'3'.repeat(32),status:'done',concept:'',result:{name:'madar_result_6.mp4',mime:'video/mp4',size:1000}}),onePhoto);
+// 10. Shop profile: saved by name from the first request, applied to a later request in a new chat without asking again.
+await page.evaluate(contract=>{const data=JSON.parse(JSON.stringify(requests.filter(r=>r.action==='agentChatsSave').at(-1).data));data.threads.push({id:'shop2',title:'إعلان المحل',messages:[],attachments:[],motionContract:contract});data.active='shop2';receive({type:'agentChats',data});},request.contract);
+await send('احفظ باسم شاهي جمر');assert.match(await page.locator('#agentLog').textContent(),/حفظت تفضيلات «شاهي جمر»/);
+let savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.profiles[0].name,'شاهي جمر');assert.equal(savedData.profiles[0].address,'الرياض – حي النرجس – طريق أبي بكر');
+await page.evaluate(data=>{data=JSON.parse(JSON.stringify(data));data.threads.push({id:'later',title:'إعلان جديد',messages:[],attachments:[{attachmentId:'88888888-8888-8888-8888-888888888888',kind:'image',name:'logo.png'}]});data.active='later';receive({type:'agentChats',data});},savedData);
+await send('سو اعلان موشن لشاهي جمر واكتب زورونا في فرعنا وحط العنوان');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
+const later2=(await starts()).at(-1);assert.equal(later2.thread,'later');assert.equal(later2.contract.address,'الرياض – حي النرجس – طريق أبي بكر');assert.ok(later2.contract.logoFirst&&later2.contract.noWebsite);
+assert.match(await page.locator('#agentLog').textContent(),/طبّقت تفضيلات «شاهي جمر» المحفوظة/);assert.doesNotMatch(await page.locator('#agentLog').textContent(),/وش عنوان الفرع/);
+await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'4'.repeat(32),status:'done',concept:'',result:{name:'madar_result_7.mp4',mime:'video/mp4',size:1000}}),later2);
+await send('وش تفضيلات المحلات');assert.match(await page.locator('#agentLog').textContent(),/«شاهي جمر»: العنوان: الرياض/);
+await send('امسح تفضيلات شاهي جمر');savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.profiles.length,0);
 assert.deepEqual(errors,[]);await browser.close();console.log('agent motion brief: asks missing address, chooses logo, summarises, passes contract, reports checks, keeps constraints');
 })().catch(e=>{console.error(e);process.exit(1);});
