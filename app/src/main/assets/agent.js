@@ -92,7 +92,7 @@
   const setup=thread.motionSetup||{};if(setup.references==='upload'&&!refs.some(a=>a.kind==='image')){thread.motionPending={kind:'referencesUpload',text,previous,voice:$('agentMotionVoice').value,setup:{...setup}};save(true);return line('أرفق الصور من زر +، واخترها معًا أو على دفعات. عندما تنتهي اكتب «كمل»؛ لن أبدأ قبل اكتمال مراجعك.');}
   delete thread.motionPending;
   const chosenLogo=contract.logoFirst||contract.logoLast?answers.logo||(thread.motionSetup||{}).logo||logoGuess?.attachmentId||'':'';if(chosenLogo&&chosenLogo!=='auto'&&imageRefs.some(a=>a.attachmentId===chosenLogo))contract.logoAttachment=chosenLogo;
-  thread.motionContract=contract;line(MadarMotionBrief.summary(contract,{revision:!!previous}));
+  thread.motionContract=contract;const logoName=contract.logoAttachment?imageRefs.find(a=>a.attachmentId===contract.logoAttachment)?.name:'';line(MadarMotionBrief.summary(contract,{revision:!!previous,logoName}));
   const answered=[['address','عنوان الفرع','بدون عنوان في الإعلان'],['phone','رقم التواصل','بدون رقم تواصل في الإعلان'],['name','اسم المحل','']].map(([k,label,none])=>answers[k]==='skip'?none:answers[k]?label+': '+answers[k]:'').filter(Boolean);
   const launchText=answered.length&&!answered.every(a=>text.includes(a))?text+'\n'+answered.join('\n'):text;
   launchMotion({contract,answers,prompt:launchText,attachments:refs.filter(a=>a.kind==='image'||$('agentMotionVoice').value==='recording'&&a===(selectedAudio||refs.find(r=>r.kind==='audio'))).map(a=>a.attachmentId),voice:$('agentMotionVoice').value,previous,revisionKind:options.revisionKind||'',selectedAttachment:state.source?.attachmentId||'',assetRole:options.assetRole||'',setup:{...(thread.motionSetup||{})}});

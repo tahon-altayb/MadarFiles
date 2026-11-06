@@ -175,12 +175,13 @@
   if(next.durationSource==='user')out.durationSource='user';
   const seconds=out.durationSec||30;out.sceneCount=sceneCount(seconds,out.explicitScenes);out.sceneSeconds=Math.round(seconds/out.sceneCount*10)/10;out.missing=next.missing||[];out.urls=next.urls?.length?next.urls:(previous.urls||[]);out.musicRequested=!!next.musicRequested;out.removed=[];out.dropLogo=false;return out;
  }
- function summary(c,{revision=false}={}){
+ function summary(c,{revision=false,logoName=''}={}){
   const lines=[];const shape={'9:16':'عمودي للجوال','16:9':'أفقي','1:1':'مربع'}[c.aspect||'9:16'];
   const secs=n=>n+(n>2&&n<=10?' ثواني':' ثانية');
   if(revision&&c.durationSource!=='user')lines.push(`نفس مدة ومشاهد النسخة السابقة · ${shape} · بدون موسيقى`);
   else lines.push(`المدة ${secs(c.durationSec||30)}${c.durationSource==='user'?'':' (افتراضي)'} · ${shape} · ${c.sceneCount} مشاهد تقريبًا، كل مشهد ${secs(c.sceneSeconds)} · بدون موسيقى`);
-  if(c.logoFirst)lines.push('أبدأ بالشعار في أول مشهد');if(c.logoLast)lines.push('الشعار في آخر مشهد');
+  const logoFrom=logoName?` (صورة الشعار: ${logoName})`:(c.logoFirst||c.logoLast?' (أحدد صورة الشعار من الصور المرفقة)':'');
+  if(c.logoFirst)lines.push('أبدأ بالشعار في أول مشهد'+logoFrom);if(c.logoLast)lines.push('الشعار في آخر مشهد'+(c.logoFirst?'':logoFrom));
   if(c.required.length)lines.push('أكتب في الإعلان: '+c.required.map(x=>'«'+x+'»').join('، '));
   if(c.address)lines.push('العنوان: '+c.address);if(c.phone)lines.push('رقم التواصل: '+c.phone);
   if(c.noWebsite)lines.push('ما أذكر أي موقع إلكتروني؛ الدعوة لزيارة الفرع');

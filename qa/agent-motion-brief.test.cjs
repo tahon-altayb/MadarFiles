@@ -22,7 +22,7 @@ const logo=page.locator('.agentChoiceCard select').first();assert.ok(await logo.
 assert.match(await page.locator('.agentChoiceCard').first().textContent(),/أي صورة هي الشعار/);
 await logo.selectOption(ids[1]);await page.locator('.agentChoiceActions .primary').click();
 // 3. The summary states what was understood, and the contract reaches the native request.
-const log=await page.locator('#agentLog').textContent();for(const part of ['فهمت طلبك','50 ثانية','بالشعار','زورونا في فرعنا','حي النرجس','موقع إلكتروني'])assert.ok(log.includes(part),part);
+const log=await page.locator('#agentLog').textContent();for(const part of ['فهمت طلبك','50 ثانية','بالشعار','صورة الشعار: IMG_2041.jpg','زورونا في فرعنا','حي النرجس','موقع إلكتروني'])assert.ok(log.includes(part),part);
 const request=(await starts()).at(-1);assert.ok(request,'motion started');
 const c=request.contract;assert.equal(c.durationSec,50);assert.equal(c.aspect,'9:16');assert.ok(c.logoFirst&&c.noWebsite);assert.equal(c.logoAttachment,ids[1]);
 assert.equal(c.address,'الرياض – حي النرجس – طريق أبي بكر');assert.deepEqual(c.required,['زورونا في فرعنا']);assert.equal(c.sceneCount,10);assert.equal(c.missing.length,0);
