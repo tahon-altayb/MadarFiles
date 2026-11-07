@@ -44,7 +44,7 @@ jobs:
 
         node qa/agent-motion-brief.test.cjs
 
-        node qa/motion-facts-flow.test.cjs
+        node qa/motion-questions-flow.test.cjs
 
         node qa/upgrade.test.cjs
 

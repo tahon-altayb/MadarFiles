@@ -52,7 +52,7 @@
   if(/9\s*[:x×]\s*16|عمودي|طولي|بالطول|للجوال|للجول|(?:^|\s)(?:ستوري|ستوريز|ريلز|ريل|سناب|شورتس|reels|story|tiktok)(?=\s|$|[.،,])|تيك\s*توك|تيكتوك/.test(t))return '9:16';
   return null;
  }
- function sceneCount(seconds,explicit,images,facts){
+ function sceneCount(seconds,explicit,images){
   // At least two seconds a scene; an explicit count wins within that bound.
   const limit=Math.max(3,Math.floor((seconds||30)/2));
   if(Number.isInteger(explicit))return Math.max(3,Math.min(12,limit,explicit));
@@ -62,8 +62,7 @@
   if(!Number.isInteger(images)||images<0)return pace;
   // Scenes follow the material: each picture once plus a hook and the closing (six without
   // pictures), never longer than eight seconds a scene on average. Ten scenes from four photos meant repeats and filler.
-  // What the pictures were read to say (owner-confirmed) decides it when known: one idea a scene.
-  const material=Number.isInteger(facts)&&facts>=3?facts:images>0?images+2:6,longest=Math.ceil((seconds||30)/8);
+  const material=images>0?images+2:6,longest=Math.ceil((seconds||30)/8);
   return Math.min(10,Math.max(4,longest,Math.min(pace,material)));
  }
  function sentences(text){return soft(text).split(/\n+|(?<=[.!؟?])\s+|\s*[•·]\s*/).map(s=>s.trim()).filter(Boolean);}
@@ -166,7 +165,7 @@
   // "we have no website"): never audience copy. The request itself stays ordinary brief.
   for(const raw of sentences(text))for(const part of soft(raw).split(CLAUSE)){const s=key(part).replace(/^و\s*/,'');if(/^(?:خلي|خل|اكتب|حط|ضع|لا\s+(?:تكتب|تحط|تذكر)|اذا|لو|اسالني|شيل|احذف)\s|ماعندنا|ما\s*عندنا\s*(?:موقع|متجر)/.test(s)||result.corrections.some(c=>key(c.text)===key(raw)))result.notes.push(clean(part));}
   result.required=unique(result.required);result.forbidden=unique(result.forbidden.map(clean));result.notes=unique(result.notes).slice(0,12);
-  const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes,Number.isInteger(context.images)?context.images:undefined,context.factScenes);result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
+  const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes,Number.isInteger(context.images)?context.images:undefined);result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
   const images=context.images||0,hasUrl=result.urls.length>0;
   if(result.requireAddress&&!result.address)result.missing.push({field:'address',blocking:true,question:'وش عنوان الفرع اللي أكتبه في آخر الإعلان؟ اكتبه مثل: الرياض – حي النرجس – طريق أبي بكر. وإذا ما تبيه اكتب «بدون عنوان».'});
   if(result.requirePhone&&!result.phone)result.missing.push({field:'phone',blocking:true,question:'وش رقم التواصل اللي تبيه يظهر في الإعلان؟ وإذا ما تبيه اكتب «بدون رقم».'});
@@ -357,32 +356,6 @@
   for(const item of labels(get('never')))lines.push('لا تذكر '+item.replace(/^(?:ما|لا)\s*(?:نبيع|نقدم)\s+/,''));
   return lines.length?'معلومات من صاحب المحل (موثوقة، استخدمها):\n'+lines.join('\n'):'';
  }
- // What was read from the owner's pictures, shown before the film starts with how many scenes it
- // carries without filler. facts: {images:[{index,kind,summary,items:[{name,price}],facts:[]}]}.
- function factsSummary(facts,{seconds=30,names=[]}={}){
-  const images=Array.isArray(facts?.images)?facts.images:[];const lines=[],block=[];let ideas=0;const seen=new Set();
-  const label={logo:'الشعار',menu:'المنيو',product:'منتج',place:'المكان',storefront:'واجهة المحل',other:'صورة'};
-  let logo=false,menuItems=[],places=0,products=0;const extra=[];
-  for(const z of images){
-   const name=names[z.index]?' ('+names[z.index]+')':'';
-   if(z.kind==='logo')logo=true;if(['place','storefront'].includes(z.kind))places++;if(z.kind==='product')products++;
-   for(const it of z.items||[]){const k=key(it.name);if(!k||seen.has(k))continue;seen.add(k);menuItems.push(it.price?it.name+' '+it.price:it.name);}
-   for(const f of z.facts||[]){const k=key(f);if(!seen.has(k)){seen.add(k);extra.push(f);}}
-   if(z.summary)lines.push('• '+label[z.kind]+name+': '+z.summary);
-  }
-  if(menuItems.length)lines.push('• الأصناف'+(menuItems.some(m=>/\d/.test(m))?' والأسعار':'')+': '+menuItems.slice(0,14).join('، ')+(menuItems.length>14?' …':''));
-  if(extra.length)lines.push('• معلومات مكتوبة في الصور: '+extra.slice(0,6).join('، '));
-  // One idea a scene: the logo opening, two or three menu items a scene, each product or place, each written fact, and the closing.
-  ideas=(logo?1:0)+Math.min(3,Math.ceil(menuItems.length/3))+Math.min(3,products)+Math.min(2,places)+Math.min(2,extra.length)+1;
-  const scenes=Math.max(3,Math.min(10,ideas)),per=Math.round(seconds/scenes);
-  let advice='تكفي تقريبًا لـ '+scenes+' مشاهد بدون حشو ولا تكرار';
-  if(per>9)advice+='؛ ومدة '+seconds+' ثانية تخلي كل مشهد '+per+' ثواني تقريبًا (طويل شوي). أضف معلومات أكثر، أو خلّ المدة حوالي '+Math.max(15,scenes*8)+' ثانية';
-  else advice+='، يعني كل مشهد تقريبًا '+per+' ثواني';
-  if(menuItems.length)block.push('الأصناف والأسعار كما في صور المنيو: '+menuItems.slice(0,25).join('، '));
-  for(const z of images)if(z.summary)block.push(label[z.kind]+': '+z.summary);
-  if(extra.length)block.push('معلومات مكتوبة في الصور: '+extra.slice(0,8).join('، '));
-  return {lines,advice:advice+'.',scenes,ideas,items:menuItems,block:block.length?'معلومات قرأتها من صور صاحب المحل وأكدها (موثوقة؛ لا تضف منتجات أو أسعارًا غيرها):\n'+block.join('\n'):''};
- }
  // How the owner wants his pictures used, when he says it: 'photosOnly' (his pictures, no drawings),
  // 'inspired' (understand them, show drawn motion graphics instead), 'attached' (both), or ''.
  function pictureMode(text){const t=key(text);
@@ -390,5 +363,5 @@
   if(/(?:صوري|الصور|صورنا)\s+(?:فقط|بس|نفسها)|بدون\s+(?:رسوم|رسومات|رسمات)|لا\s+(?:تضيف|تحط)\s+رسوم/.test(t))return 'photosOnly';
   if(/(?:صوري|الصور)\s+(?:مع|و)\s*(?:ال)?رسوم|رسوم(?:ات)?\s+(?:مع|و)\s*(?:ال)?صور/.test(t))return 'attached';
   return '';}
- return {VERSION,parse,pictureMode,questions,answersText,factsSummary,declines,report,skillFrom,findSkills,applySkills,skillCommand,describeSkill,profileFrom,hasProfileFacts,findProfile,applyProfile,profileCommand,describeProfile,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
+ return {VERSION,parse,pictureMode,questions,answersText,declines,report,skillFrom,findSkills,applySkills,skillCommand,describeSkill,profileFrom,hasProfileFacts,findProfile,applyProfile,profileCommand,describeProfile,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
 });

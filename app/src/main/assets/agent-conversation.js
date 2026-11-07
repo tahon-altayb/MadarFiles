@@ -85,7 +85,7 @@
  // The assistant report in plain words: each recent step with its result and time, what was done
  // instead when Gemini did not answer, and which backup is ready.
  function diagnostics(e){
-  const names={motion_facts:'تحليل صورك قبل الموشن',motion_interpret:'فهم طلب الموشن والصور',motion_brief_review:'مراجعة فهم الموشن',motion_result_review:'مراجعة الناتج',motion_validate:'التحقق من الطلب',plan_interpret:'فهم طلب الشات',plan_review:'مراجعة خطة الشات',connection_probe:'اختبار الاتصال'};
+  const names={motion_interpret:'فهم طلب الموشن والصور',motion_brief_review:'مراجعة فهم الموشن',motion_result_review:'مراجعة الناتج',motion_validate:'التحقق من الطلب',plan_interpret:'فهم طلب الشات',plan_review:'مراجعة خطة الشات',connection_probe:'اختبار الاتصال'};
   const why={GEMINI_TIMEOUT:'انتهت المهلة بدون رد',GEMINI_NETWORK:'ما وصل الطلب لخادم Google',GEMINI_REQUEST_FAILED:'رفض الخادم الطلب أو فشل',GEMINI_APP_CHECK:'تعذر توثيق التطبيق مع Firebase',GEMINI_QUOTA:'انتهت الحصة',GEMINI_PERMISSION:'رفضت الخدمة التفويض',GEMINI_UNAVAILABLE:'تخطيته لأنه ما رد قبل دقائق',CANCELLED:'أوقفته'};
   const done=(e.timeline||[]).filter(x=>x&&x.status!=='running').slice(-6);
   if(!done.length)return 'ما فيه طلبات مسجلة للحين.';

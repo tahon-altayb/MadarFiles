@@ -114,7 +114,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  if args.mode=='inspired':
   check(used<={logo},'«inspired» shows only the logo: '+str(used))
   drawn=[e.get('icon') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('kind')=='icon' and e.get('icon') in ['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu']];check(len(set(drawn))>=min(3,len(scenes)-2),'too few drawings: '+str(drawn))
- else:check(len(used)>=len(ORDER)-1,f'only {len(used)} of {len(ORDER)} owned images used')
+ else:check(len(used)>=math.ceil(len(ORDER)/2),f'only {len(used)} of {len(ORDER)} owned images used')
  shown=[e.get('asset') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('asset') and e.get('asset')!=logo];check(len(shown)==len(set(shown)),'a picture is repeated: '+str(shown))
  for i,s in enumerate(scenes[:-1]):check(not any(rules.is_cta(t,{'address':ADDRESS}) for t in [s.get('title',''),s.get('caption','')]),f'call to action before the closing in scene {i+1}: '+s.get('title',''))
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')

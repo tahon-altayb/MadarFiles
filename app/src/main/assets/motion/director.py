@@ -470,10 +470,19 @@ for i,z in enumerate(story['scenes']):
  if ref!=-1:seen.add(ref)
 # The client's pictures come first: any still unused take picture-less middle scenes (drawn
 # illustrations are for when the pictures run out).
+# Only where the picture shows what the scene says: a crowd watching a match never illustrates
+# «فطائر مميزة» (the owner's 1.9.50 film); otherwise the scene keeps its drawing.
+def picture_fits(z,index):
+ fact=next((f for f in reference_facts if f.get('index')==index),None)
+ if not fact:return False
+ def stems(text):return {w[:4] for w in re.findall(r'[\u0621-\u064a]{3,}',re.sub(r'(?:^|\s)(?:[وبفل])?ال',' ',local_rules.key(text))) if len(w)>=3}
+ return bool(stems(' '.join(str(z.get(k,'')) for k in ['title','caption','narration','visual']))&stems(fact.get('description','')))
 unused=[n for n in photos if n not in seen] if PICTURE_MODE!='inspired' else []
 for i,z in enumerate(story['scenes']):
  if not unused:break
- if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1:z['reference']=unused.pop(0);seen.add(z['reference'])
+ if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1:
+  fit=next((n for n in unused if picture_fits(z,n)),None)
+  if fit is not None:unused.remove(fit);z['reference']=fit;seen.add(fit)
 # The closing card signs off with the brand when it has no picture (also after repeats were removed).
 if logo_index is not None and logo_name and len(story['scenes'])>1 and story['scenes'][-1].get('reference',-1)==-1:story['scenes'][-1]['reference']=logo_index
 # «افهم صوري وسوّها رسومات»: the pictures were read for the facts, but only the logo is shown; every
