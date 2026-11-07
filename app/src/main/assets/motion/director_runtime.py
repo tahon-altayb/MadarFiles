@@ -1,5 +1,5 @@
 """Pinned llama runtimes. Cloud planning requires verified CUDA inference."""
-import hashlib,json,math,os,platform,re,shutil,subprocess,tarfile,time,urllib.request
+import hashlib,http.client,json,math,os,platform,re,shutil,subprocess,tarfile,time,urllib.error,urllib.request
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 TAG='b12089'
@@ -56,7 +56,30 @@ def threads():
  except (OSError,ValueError):pass
  return max(1,min(8,n))
 
+def setup_code(error):
+ """A short, privacy-free reason for a failed runtime setup, shown in the app's Colab report."""
+ if isinstance(error,urllib.error.HTTPError):return 'SETUP_HTTP_'+str(error.code)
+ if isinstance(error,(TimeoutError,)) or 'timed out' in str(error).lower():return 'SETUP_TIMEOUT'
+ if 'ssl' in type(error).__name__.lower() or 'certificate' in str(error).lower():return 'SETUP_TLS'
+ if isinstance(error,OSError) and getattr(error,'errno',None)==28:return 'SETUP_DISK_FULL'
+ if isinstance(error,urllib.error.URLError):return 'SETUP_NETWORK'
+ if isinstance(error,http.client.HTTPException):return 'SETUP_INCOMPLETE_DOWNLOAD'
+ if isinstance(error,tarfile.TarError):return 'SETUP_ARCHIVE'
+ if isinstance(error,StopIteration):return 'SETUP_NO_SERVER_BINARY'
+ if isinstance(error,ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{2,40}',str(error)):return 'SETUP_'+str(error)
+ return 'SETUP_'+re.sub(r'[^A-Z0-9_]','',type(error).__name__.upper())[:30]
+
 def install(kind):
+ # A dropped or throttled download is retried with a fresh file before the job gives up.
+ for attempt in range(3):
+  try:return install_once(kind)
+  except (OSError,http.client.HTTPException,tarfile.TarError,ValueError) as error:
+   if isinstance(error,ValueError) and str(error) not in ('RUNTIME_HASH','RUNTIME_DOWNLOAD_TIMEOUT','RUNTIME_SIZE'):raise
+   runtime_info(setup_error=setup_code(error),setup_attempts=attempt+1)
+   if attempt==2:raise
+   shutil.rmtree(ROOT.parent/('madar-llama-'+TAG+'-'+kind),ignore_errors=True);time.sleep(3*(attempt+1))
+
+def install_once(kind):
  name,digest,maximum=ASSETS[kind];target=ROOT.parent/('madar-llama-'+TAG+'-'+kind);marker=target/'.verified'
  if not marker.is_file() or marker.read_text()!=digest:
   target.mkdir(parents=True,exist_ok=True);archive=target/'runtime.tar.gz';temporary=target/'runtime.part';end=time.monotonic()+180
@@ -97,8 +120,9 @@ def options():
    engine={'binary':binary,'env':env,'gpu':True}
    require_cuda(engine)
    return [engine]
-  except (OSError,ValueError,StopIteration,tarfile.TarError) as error:
+  except (OSError,ValueError,StopIteration,tarfile.TarError,http.client.HTTPException) as error:
    if isinstance(error,ValueError) and str(error).startswith('DIRECTOR_GPU_'):raise
+   runtime_info(setup_error=setup_code(error))
    raise ValueError('DIRECTOR_GPU_SETUP') from error
  raise ValueError('DIRECTOR_GPU_REQUIRED')
 

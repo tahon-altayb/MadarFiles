@@ -52,11 +52,14 @@ function keyNumber(shot){
 }
 function illustrationFor(shot,used=[]){
  const normalize=v=>String(v||'').normalize('NFKC').replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').toLowerCase();
- const text=normalize([shot.title,shot.caption,shot.narration].filter(Boolean).join(' '));
- const rules=[['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|اصدقاء|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف/],['seating',/جلس|جلسات|اجواء|مكان|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['tea',/شاي|شاهي|استكان|كرك|حليب/]];
+ const text=normalize([shot.title,shot.caption,shot.narration,shot.artHint].filter(Boolean).join(' '));
+ const rules=[['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|اصدقاء|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف/],['seating',/جلس|جلسات|اجواء|مكان|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/]];
  const hits=rules.filter(([,re])=>re.test(text)).map(([id])=>id);
  return hits.find(id=>!used.includes(id))||hits[0]||null;
 }
+// «Draw everything» films: when the words name nothing drawable, the hidden picture's kind decides, then
+// any drawing not used yet, so no scene is left as a bare poster.
+function anyIllustration(shot,used=[]){const pool=[shot.artKind,'storefront','stars','seating','menu','people','clock24','offer'].filter(id=>id&&ILLUSTRATIONS.includes(id));return pool.find(id=>!used.includes(id))||pool[0];}
 function semanticIcon(shot){
  const normalize=s=>String(s||'').normalize('NFKC').replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي').toLowerCase();
  const words=normalize([shot.title,shot.caption,shot.narration].filter(Boolean).join(' ')).match(/\p{L}+/gu)||[];
@@ -157,7 +160,7 @@ function text(ctx,value,x,y,w,h,size,color,weight=700,reveal=1){ctx.direction='r
   shown-=ws.length;});}
 // Vector illustrations for scenes without a client picture: drawn shapes (never photos or generated
 // images) in the film's palette with a few natural accents, gently animated. Unit square -1..1.
-const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich'];
+const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu'];
 function illustration(ctx,id,x,y,w,h,pal,t=0){
  const s=Math.min(w,h)/2;ctx.save();ctx.translate(x+w/2,y+h/2);ctx.scale(s,s);ctx.lineCap='round';ctx.lineJoin='round';
  const ink=pal.ink,accent=pal.accent,card=pal.card,muted=pal.muted,amber='#c8692a',green='#5aa364',flame='#f08a3c',glow='#ffd27a';
@@ -226,6 +229,23 @@ function illustration(ctx,id,x,y,w,h,pal,t=0){
   for(let i=0;i<3;i++)fill('#ffffffaa',()=>ctx.roundRect(-.18+i*.12,-.2+((t*.3+i*.3)%1)*.05+i*.18,.12,.12,.03));line(green,.05,()=>{ctx.moveTo(.08,-.2);ctx.lineTo(.28,-.95);});
  }else if(id==='sandwich'){
   fill('#d9893c',()=>{ctx.moveTo(-.8,-.05);ctx.quadraticCurveTo(0,-.7,.8,-.05);ctx.closePath();});line(green,.09,()=>{ctx.moveTo(-.78,.03);for(let i=0;i<8;i++)ctx.quadraticCurveTo(-.7+i*.2,.15,-.6+i*.2,.03);});fill('#c0392b',()=>ctx.roundRect(-.75,.08,1.5,.1,.04));fill(glow,()=>ctx.roundRect(-.76,.2,1.52,.08,.03));fill('#d9893c',()=>ctx.roundRect(-.8,.3,1.6,.22,.1));
+ }else if(id==='fries'){
+  // A carton of golden fries; the sticks rise a little in turn.
+  for(let i=0;i<7;i++){const lift=Math.sin(t*2+i)*.03,x0=-.42+i*.14;ctx.save();ctx.translate(x0,-.18+lift);ctx.rotate((i-3)*.06);fill(i%2?glow:'#f2b544',()=>ctx.roundRect(-.05,-.5,.1,.62,.03));ctx.restore();}
+  fill(accent,()=>{ctx.moveTo(-.6,-.12);ctx.lineTo(.6,-.12);ctx.lineTo(.46,.78);ctx.lineTo(-.46,.78);ctx.closePath();});
+  line(card,.05,()=>{ctx.moveTo(-.56,.08);ctx.quadraticCurveTo(0,.24,.56,.08);});fill(card,()=>ctx.arc(0,.42,.13,0,Math.PI*2));
+ }else if(id==='storefront'){
+  // A small shop front: awning stripes, a lit window and an open door.
+  fill(card,()=>ctx.roundRect(-.8,-.38,1.6,1.12,.06));
+  for(let i=0;i<8;i++)fill(i%2?'#f4ede1':accent,()=>{ctx.moveTo(-.86+i*.215,-.62);ctx.lineTo(-.86+(i+1)*.215,-.62);ctx.lineTo(-.86+(i+1)*.215,-.36);ctx.quadraticCurveTo(-.86+(i+.5)*.215,-.26,-.86+i*.215,-.36);ctx.closePath();});
+  fill(glow,()=>ctx.roundRect(-.66,-.16,.7,.5,.04));line(muted,.03,()=>{ctx.moveTo(-.31,-.16);ctx.lineTo(-.31,.34);ctx.moveTo(-.66,.09);ctx.lineTo(.04,.09);});
+  fill(amber,()=>ctx.roundRect(.18,-.16,.46,.9,.04));fill(glow,()=>ctx.arc(.56,.3,.035,0,Math.PI*2));
+  ctx.globalAlpha=.5+.5*Math.abs(Math.sin(t*1.5));fill(glow,()=>ctx.arc(-.31,-.5,.04,0,Math.PI*2));ctx.globalAlpha=1;
+ }else if(id==='menu'){
+  // A menu board: item lines with price dots, written in one after another.
+  fill(ink,()=>ctx.roundRect(-.62,-.82,1.24,1.6,.08));line(accent,.04,()=>ctx.roundRect(-.55,-.75,1.1,1.46,.06));
+  fill(accent,()=>ctx.roundRect(-.3,-.66,.6,.12,.05));
+  for(let i=0;i<5;i++){const shown=Math.max(0,Math.min(1,t*1.2-i*.25)),yy=-.36+i*.24;line(card,.05,()=>{ctx.moveTo(.42,yy);ctx.lineTo(.42-.5*shown,yy);});if(shown>=1)fill(glow,()=>ctx.arc(-.36,yy,.05,0,Math.PI*2));}
  }
  ctx.restore();
 }
@@ -274,4 +294,4 @@ function reviseImages(p,names,logo){
   for(const e of swap){if(!queue.length)break;e.asset=queue.shift();placed.push(e.asset);}}
  p.scenes.forEach(s=>validate(s.composition));return {placed,unused:queue};
 }
-return {ILLUSTRATIONS,illustration,illustrationFor,keyNumber,safeText,validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});
+return {ILLUSTRATIONS,illustration,illustrationFor,anyIllustration,keyNumber,safeText,validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});

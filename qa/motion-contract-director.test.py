@@ -73,7 +73,7 @@ def runtime_info(**values):pass
 ''')
 FAKE_HUB="def hf_hub_download(repo,name,revision=None):\n open(name,'wb').close();return name\n"
 
-IMAGES=3
+IMAGES=3;EXTRA={}
 def run(contract,text,tmp):
  job=Path(tmp)/'job';job.mkdir()
  for f in source.iterdir():
@@ -83,7 +83,7 @@ def run(contract,text,tmp):
  # The fake planner never decodes pixels, so placeholder bytes keep CI free of imaging packages.
  images=['asset_'+c*32+'.jpg' for c in 'abcdef1'[:IMAGES]]
  for i,name in enumerate(images):(job/name).write_bytes(b'\xff\xd8\xff\xe0'+bytes([i])*64+b'\xff\xd9')
- brief={'text':text,'images':images,'referenceMap':{},'contract':contract}
+ brief={'text':text,'images':images,'referenceMap':{},'contract':contract,**EXTRA}
  project={'id':'d'*32,'version':1,'title':'مسودة','theme':'night','aspect':'9:16','voiceMode':'none','voice':'Charon','scenes':[],'creativeRequest':brief}
  (job/'request.json').write_text(json.dumps({'protocol':1,'mode':'compose','project':project},ensure_ascii=False))
  env=os.environ.copy();env['MADAR_NODE']=shutil.which('node');env['PYTHONPATH']=str(job)
@@ -258,3 +258,27 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-legacy-') as tmp:
  total,count=briefing.timing('سوي موشن عن المحل')
  assert len(p['scenes'])==count and abs(sum(z['seconds'] for z in p['scenes'])-total)<.01,(len(p['scenes']),[z['seconds'] for z in p['scenes']])
 print('brief without a chat contract keeps the existing online/legacy timing')
+
+# A product nobody mentioned (the real film wrote «اللحوم المشوية» for a tea shop «على الجمر») is
+# removed from every round's copy, keeping the rest of the sentence.
+with tempfile.TemporaryDirectory(prefix='madar-contract-invented-') as tmp:
+ saved=FAKE_SERVER;FAKE_SERVER=saved.replace("  if bad and i==1:caption='استمتع بنكهة الورد في كل منتج.'","  if i==2:caption='تشكيلة الموسم مع اللحوم المشوية على الجمر.'\n  if bad and i==1:caption='استمتع بنكهة الورد في كل منتج.'")
+ assert FAKE_SERVER!=saved
+ r,job=run(brief,text,tmp);FAKE_SERVER=saved
+ assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
+ scenes=json.loads((job/'project.json').read_text())['scenes']
+ words=C.key(' '.join(z['title']+' '+z['narration']+' '+' '.join(e.get('text','') for e in z['composition']['elements']) for z in scenes))
+ assert 'لحوم' not in words and 'مشوي' not in words,words
+print('invented products removed from the copy')
+# Picture modes: «inspired» shows only the logo and draws the rest; «photosOnly» never draws illustrations.
+for mode in ['inspired','photosOnly']:
+ with tempfile.TemporaryDirectory(prefix='madar-contract-'+mode+'-') as tmp:
+  EXTRA={'referenceMode':mode};r,job=run(brief,text,tmp);EXTRA={}
+  assert r.returncode==0,(mode,r.stdout[-1500:],r.stderr[-3000:])
+  scenes=json.loads((job/'project.json').read_text())['scenes'];logo='asset_'+'b'*32+'.jpg'
+  shown={e['asset'] for z in scenes for e in z['composition']['elements'] if e['kind'] in ['image','device']}
+  art={e['icon'] for z in scenes for e in z['composition']['elements'] if e['kind']=='icon'}
+  drawn=art&{'tea','teapot','pastry','coffee','seating','clock24','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu'}
+  if mode=='inspired':assert shown<= {logo},shown;assert len(drawn)>=3,art
+  else:assert not drawn,art;assert shown-{logo},shown
+  print(mode,'pictures:',sorted(shown),'drawings:',sorted(drawn))
