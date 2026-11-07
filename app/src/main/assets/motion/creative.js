@@ -231,6 +231,10 @@ function draw(ctx,p,s,time,images){
  if(c.backdrop==='orbit'||c.backdrop==='radial'){for(let i=0;i<4;i++){ctx.beginPath();ctx.ellipse(W*.5,H*.5,W*(.25+i*.12),H*(.17+i*.13),c.backdrop==='orbit'?-.45+local*.018:0,0,Math.PI*2);ctx.stroke();}}
  if(c.backdrop==='split'){ctx.fillStyle=accent;ctx.fillRect(W*.64,0,W*.36,H);}
  ctx.restore();
+ // Scene transition: each scene arrives with a short push and slight zoom from alternating sides
+ // and leaves the same way, so cuts feel like one continuous motion (the first and last scenes hold).
+ const order=Array.isArray(p.scenes)?p.scenes.indexOf(s):-1,side=order%2?1:-1;ctx.save();
+ if(p.motionEnabled!==false&&order>=0){const enter=order>0?1-(1-clamp(local/.45))**3:1,leave=order<p.scenes.length-1?clamp((local-(span-.32))/.32)**3:0,dx=((1-enter)-leave)*W*.09*side,zoom=1+.035*(1-enter)+.02*leave;ctx.translate(W/2+dx,H/2);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);}
  for(const e of c.elements){const t=local-e.delay*Math.min(span,2);if(t<0)continue;const q=clamp(t/.65),ease=1-(1-q)**3;let x=e.x*W,y=e.y*H,w=e.w*W,h=e.h*H;ctx.save();ctx.globalAlpha=p.motionEnabled===false?1:ease*Math.min(1,(s.end-time)/.2);if(e.motion==='rise')y+=H*.035*(1-ease);if(e.motion==='left')x+=W*.08*(1-ease);if(e.motion==='right')x-=W*.08*(1-ease);if(p.motionEnabled!==false&&['image','device'].includes(e.kind)){ctx.translate(x+w/2,y+h/2);const push=1+progress*.035;ctx.scale(push,push);ctx.translate(-x-w/2,-y-h/2);}
  if(e.motion==='scale'){ctx.translate(x+w/2,y+h/2);ctx.scale(.82+.18*ease,.82+.18*ease);ctx.translate(-x-w/2,-y-h/2);}const color=palette[e.color];if(p.motionEnabled!==false&&['image','device','icon'].includes(e.kind))y+=Math.sin(local*1.1+e.x*4)*H*.004;
  if(e.kind==='text'||e.kind==='metric'){const words=String(e.text).split(/\s+/).length,reveal=p.motionEnabled===false||e.kind!=='text'||e.size<90?1:clamp(t/(.18+.11*words));text(ctx,e.text,x,y,w,h,e.size*W/1080,color,e.kind==='metric'?900:700,reveal);}
@@ -239,6 +243,7 @@ function draw(ctx,p,s,time,images){
  if(e.kind==='icon'){if(ILLUSTRATIONS.includes(e.icon))illustration(ctx,e.icon,x,y,w,h,palette,local);else icon(ctx,e.icon,x,y,w,h,color);}
  if(['image','device'].includes(e.kind)){const img=images[e.asset];if(img){const device=e.kind==='device',pad=device?Math.max(7,W*.009):0,bleed=e.w>=.99,radius=bleed?0:24*W/1080,contain=device||e.fit==='contain';if(!contain||device)rounded(ctx,x,y,w,h,device?w*.10:radius,device?ink:card);ctx.save();rounded(ctx,x+pad,y+pad,w-pad*2,h-pad*2,device?w*.075:Math.max(0,radius-4));ctx.clip();const bw=w-pad*2,bh=h-pad*2,crop=Math.max((bw/bh)/(img.width/img.height),(img.width/img.height)/(bw/bh)),fit=contain||crop>1.1;if(fit&&!contain){/* Cover would cut away too much (a menu or a wide shot): soft backdrop, whole picture on top. */const back=Math.max(bw/img.width,bh/img.height);ctx.filter='blur('+Math.round(W*.02)+'px) brightness(.55)';ctx.drawImage(img,x+(w-img.width*back)/2,y+(h-img.height*back)/2,img.width*back,img.height*back);ctx.filter='none';}const scale=(fit?Math.min:Math.max)(bw/img.width,bh/img.height);ctx.drawImage(img,x+(w-img.width*scale)/2,y+(h-img.height*scale)/2,img.width*scale,img.height*scale);ctx.restore();if(device){ctx.fillStyle=ink;rounded(ctx,x+w*.36,y+pad,w*.28,pad*.75,pad,ink);}}}
  ctx.restore();}
+ ctx.restore();
  ctx.fillStyle=accent;ctx.fillRect(W*.06,H*.955,W*.88*progress,Math.max(2,H*.002));
  ctx.restore();
 }

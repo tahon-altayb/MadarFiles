@@ -68,9 +68,14 @@ def local_request(route,data=None,timeout=600):
   message=e.read(2000).decode(errors='replace').lower()
   if 'context' in message:raise ValueError('DIRECTOR_CONTEXT') from e
   raise ValueError('DIRECTOR_FAILED') from e
-for engine in engines:
+# A T4 (16 GB) holds the 9B model, its vision encoder and a 16K context: room for eight pictures,
+# the brief and a ten-scene answer. If the larger context does not load, the same GPU retries at 8K
+# before any slower engine is considered.
+attempts=[]
+for engine in engines:attempts+=[dict(engine,context=16384),dict(engine,context=8192)] if engine['gpu'] else [dict(engine,context=context_size)]
+for engine in attempts:
  stage('director_load')
- selected_context=min(context_size,8192) if engine['gpu'] else context_size
+ selected_context=min(context_size,engine['context'])
  # QA on CPU can reproduce the Colab T4 context so prompt budgets are tested as they run in production.
  if os.environ.get('MADAR_MOTION_QA')=='1' and os.environ.get('MADAR_MOTION_QA_CONTEXT','').isdigit():selected_context=min(selected_context,int(os.environ['MADAR_MOTION_QA_CONTEXT']))
  try:
