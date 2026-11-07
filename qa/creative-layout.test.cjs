@@ -52,3 +52,9 @@ console.log('PASS newly planned layouts reject unreadable text boxes and empty d
  assert.equal(C.keyNumber({title:'مفتوحين 24 ساعة'}),'24 ساعة');assert.equal(C.keyNumber({caption:'أسعار تبدأ من 5 ريال'}),'5 ريال');assert.equal(C.keyNumber({title:'خصم ٣٠٪'}),'30%');assert.equal(C.keyNumber({title:'فطاير طازجة'}),'');
  const c=C.compose({title:'مفتوحين 24 ساعة',caption:'نستقبلكم ليل نهار.',narration:'x',reference:-1},{aspect:'9:16',index:0});assert.ok(c.elements.some(e=>e.kind==='metric'&&e.text==='24 ساعة'));for(const e of c.elements)if(['text','metric'].includes(e.kind))assert.ok(C.safeText(e));
  console.log('PASS key numbers become a counting hero');}
+// Hamza spellings name the same drawing («فطائر» is pastry, never fries), and a scene's allowed
+// drawings are only those its words name.
+{const C=require('../app/src/main/assets/motion/creative.js');const assert=require('assert/strict');
+ assert.deepEqual(C.illustrationHits({title:'فطائر طيبة',caption:'تشكيلة متنوعة من الفطائر تحضر يوميا'}),['pastry']);
+ assert.ok(!C.illustrationHits({title:'شاي على الجمر',caption:'يغلي على الفحم'}).includes('stars'));
+ console.log('drawings follow the scene words, hamza spellings included');}
