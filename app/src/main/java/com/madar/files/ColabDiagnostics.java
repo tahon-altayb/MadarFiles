@@ -35,6 +35,7 @@ final class ColabDiagnostics {
   for(String key:new String[]{"driver","glibc"}){String value=data.optString(key);if(value.matches("[0-9]{1,3}(\\.[0-9]{1,3}){1,3}"))summary.append(key).append(": ").append(value).append('\n');}
   if(Arrays.asList("t4_native","t4_compat","cuda").contains(variant))summary.append("Motion runtime: ").append(variant).append('\n');
   if(data.opt("model_cached") instanceof Boolean)summary.append("Model verification: ").append(data.optBoolean("model_cached")?"cached":"checked").append('\n');
+  String setup=data.optString("setup_error");if(setup.matches("SETUP_[A-Z0-9_]{2,44}"))summary.append("Runtime setup: ").append(setup).append(data.optInt("setup_attempts",0)>0?" (attempt "+Math.min(9,data.optInt("setup_attempts"))+")":"").append('\n');
   Object probe=data.opt("probe_seconds");if(probe instanceof Number){double seconds=((Number)probe).doubleValue();if(Double.isFinite(seconds)&&seconds>=0&&seconds<=180)summary.append("GPU probe: ").append(String.format(Locale.ROOT,"%.3fs",seconds)).append('\n');}
   String next=summary.toString();if(!next.equals(motionEnvironment)){motionEnvironment=next;save();}
  }
