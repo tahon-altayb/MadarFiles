@@ -281,11 +281,32 @@ if local_contract.get('aspect') in ['9:16','16:9','1:1']:aspect=local_contract['
 if aspect not in ['9:16','16:9','1:1']:aspect='9:16'
 scene_seconds=total_seconds/scene_count
 STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
+def story_problems(story,count):
+ if not isinstance(story,dict) or not isinstance(story.get('scenes'),list):return ['not a story object']
+ scenes=story['scenes']
+ if len(scenes)>count:del scenes[count:]
+ if len(scenes)!=count:return [f'{len(scenes)} scenes instead of {count}']
+ for z in scenes:
+  for k in ['title','narration','caption']:z[k]=z.get(k) if isinstance(z.get(k),str) else ''
+  if not re.search('[ء-ي]',z['narration']) or len(z['narration'])<=3:z['narration']=z['caption'] or z['title']
+  if not re.search('[ء-ي]',z['title']):z['title']=local_rules.headline_from(z) or z['title']
+  if len(z['title'])>60:z['title']=local_rules.short_headline(z['title'])[:60]
+  if len(z['narration'])>400:z['narration']=z['narration'][:400].rsplit(' ',1)[0]
+ seen=set()
+ for z in scenes:
+  # Two identical narrations: the later one speaks its own headline and caption instead.
+  if z['narration'] in seen:z['narration']=(z['title'].strip(' .،,')+'. '+z['caption']).strip()
+  seen.add(z['narration'])
+ problems=[]
+ if len(seen)!=len(scenes):problems.append('repeated narration')
+ if brief.get('appFacts') and 'مدار' not in json.dumps(story,ensure_ascii=False):problems.append('the app name مدار is missing')
+ if not all(re.search('[ء-ي]',z['title']) and re.search('[ء-ي]',z['narration']) and 0<len(z['title'])<=60 and 3<len(z['narration'])<=400 for z in scenes):problems.append('a scene lacks an Arabic headline or narration')
+ return problems
 feedback=''
 for attempt in range(4):
  stage('director_plan')
  try:
-  story=generate(SYSTEM,f"Create {scene_count} distinct Arabic scenes about the client's specific topic. Return title (film title) and scenes. Each scene has title (short meaningful audience headline), narration (one natural Arabic sentence, {narration_range} words, so it fits a {round(total_seconds/scene_count,1)}-second scene), caption (a short complete Arabic sentence adding information beyond the headline), visual (layout and movement of existing images, vector shapes and typography), reference (appropriate image index or -1). Build a coherent progression with a useful ending. "+MOTION_CRAFT+" Marketing calls to action belong only in requested advertisements. For stories follow the event sequence. Never name a scene Hook, Benefit, Usage, Explanation or Closing. Never describe invented controls inside a screenshot. If app_facts exists, this is SOFTWARE used by the viewer, not an agency, shop, human team or delivery service. Use only those actual capabilities; no service or timing promises. If exact_scene_narrations exists preserve each verbatim in order. "+feedback+"\nCLIENT DATA:\n"+json.dumps(context,ensure_ascii=False),visual=not bool(reference_facts),max_tokens=max(1800,min(scene_count*450,4200)))
+  story=generate(SYSTEM,f"Create {scene_count} distinct Arabic scenes about the client's specific topic. Return title (film title) and scenes. Each scene has title (short meaningful audience headline), narration (one natural Arabic sentence, {narration_range} words, so it fits a {round(total_seconds/scene_count,1)}-second scene), caption (a short complete Arabic sentence adding information beyond the headline), visual (layout and movement of existing images, vector shapes and typography), reference (appropriate image index or -1). Build a coherent progression with a useful ending. "+MOTION_CRAFT+" Marketing calls to action belong only in requested advertisements. For stories follow the event sequence. Never name a scene Hook, Benefit, Usage, Explanation or Closing. Never describe invented controls inside a screenshot. If app_facts exists, this is SOFTWARE used by the viewer, not an agency, shop, human team or delivery service. Use only those actual capabilities; no service or timing promises. If exact_scene_narrations exists preserve each verbatim in order. "+feedback+"\nCLIENT DATA:\n"+json.dumps(context,ensure_ascii=False),visual=not bool(reference_facts),max_tokens=max(1800,min(scene_count*450,4200)),seed=17+attempt*101)
  except ValueError as failed:
   feedback='The previous response was invalid JSON. Return a complete object.'
   # A story that cannot fit the model context is planned with fewer, longer scenes instead of failing.
@@ -295,8 +316,10 @@ for attempt in range(4):
    narration_range=f'{narration_low}-{narration_high}';scene_seconds=total_seconds/scene_count;STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
   continue
  Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False))
- if isinstance(story,dict) and isinstance(story.get('scenes'),list) and (len(story['scenes'])==4 if chunks else len(story['scenes'])==scene_count) and len(set(s.get('narration','') for s in story['scenes']))==len(story['scenes']) and (not brief.get('appFacts') or 'مدار' in json.dumps(story,ensure_ascii=False)) and all(re.search('[ء-ي]',s.get('title','')) and re.search('[ء-ي]',s.get('narration','')) and isinstance(s.get('narration'),str) and 3<len(s['narration'])<=400 and isinstance(s.get('title'),str) and 0<len(s['title'])<=60 for s in story['scenes']):break
- feedback='أعد الالتزام بموضوع طلب العميل نفسه وبالمزايا المذكورة فقط. اذكر اسم التطبيق أو المنتج المطلوب في الإعلان، واكتب رسالة مختلفة ومفيدة في كل مشهد.'
+ # Repair what can be repaired without inventing words; retry (with another seed) only for the rest.
+ problems=story_problems(story,4 if chunks else scene_count)
+ if not problems:break
+ feedback='The previous plan was rejected: '+'; '.join(problems)+'. أعد الالتزام بموضوع طلب العميل نفسه وبالمزايا المذكورة فقط، واكتب رسالة مختلفة ومفيدة في كل مشهد.'
 else:raise ValueError('STORY_INVALID')
 lock_references(story,contract)
 if chunks:

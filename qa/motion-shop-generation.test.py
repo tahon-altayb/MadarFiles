@@ -67,6 +67,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   if (job/name).exists():print('EVIDENCE',name,(job/name).read_text()[:3000],flush=True)
  if (job/'copy-review.json').exists():
   review=json.loads((job/'copy-review.json').read_text());print('EVIDENCE copy review attempt',review.get('attempt'),json.dumps(review.get('issues',[]),ensure_ascii=False)[:4000],flush=True)
+ if execution.returncode and (job/'story-candidate.json').exists():print('EVIDENCE story candidate',(job/'story-candidate.json').read_text()[:5000],flush=True)
  if (job/'director-calls.log').exists():
   for line in (job/'director-calls.log').read_text().splitlines():print('EVIDENCE call',line,flush=True)
  print('EVIDENCE director log tail',log[-3000:],flush=True)
