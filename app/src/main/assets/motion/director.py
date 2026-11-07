@@ -379,6 +379,12 @@ for i,z in enumerate(story['scenes']):
   free=[n for n in photos if n not in seen and all(x.get('reference')!=n for x in story['scenes'][i+1:])]
   z['reference']=free[0] if free else -1;ref=z['reference']
  if ref!=-1:seen.add(ref)
+# The client's pictures come first: any still unused take picture-less middle scenes (drawn
+# illustrations are for when the pictures run out).
+unused=[n for n in photos if n not in seen]
+for i,z in enumerate(story['scenes']):
+ if not unused:break
+ if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1:z['reference']=unused.pop(0);seen.add(z['reference'])
 # The closing card signs off with the brand when it has no picture (also after repeats were removed).
 if logo_index is not None and logo_name and len(story['scenes'])>1 and story['scenes'][-1].get('reference',-1)==-1:story['scenes'][-1]['reference']=logo_index
 story['title']=copy['title']
