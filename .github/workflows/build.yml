@@ -82,6 +82,7 @@ jobs:
           python3 qa/motion-sources.test.py
           node qa/motion-brief.test.cjs
           node qa/motion-image-revision.test.cjs
+          node qa/motion-parity.test.cjs
           python3 qa/motion-contract-director.test.py
       - name: Compile and lint before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:lintDebug :app:testDebugUnitTest
