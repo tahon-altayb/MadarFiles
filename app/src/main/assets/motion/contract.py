@@ -125,7 +125,54 @@ def craft_issues(copy):
   if hits:issues.append({'scene':i+1,'quality':'cliche','fix':'Replace the empty cliché '+repr(hits[0])+' with a concrete fact from the brief, page or images (a menu item, price, place detail).'})
  return issues
 
-def quality_issues(copy):
+# Calls to action belong to the closing scene only («زورونا», «اطلبه الآن عبر موقعنا», «حمّل التطبيق»…).
+CTA=re.compile(r'(?:^|\s)(?:[وف])?(?:زورونا|زوروا|زوروه|تفضلوا بزيار|بانتظاركم|ننتظركم|نستقبلكم|اطلب(?:ه|ها|وا|ي)?\s+(?:الان|الحين|من|عبر|اون)|اطلب(?:وا)?\s+اونلاين|عبر\s+موقعنا|من\s+موقعنا|حمل(?:وا)?\s+التطبيق|نزل(?:وا)?\s+التطبيق|حملوه|تواصل(?:وا)?\s+معنا|اتصل(?:وا)?\s+(?:بنا|الان|علي)|راسلونا|احجز(?:وا)?\s+(?:الان|الحين|طاولت|موعد)|سارع(?:وا)?|لا\s+تفوت(?:وا)?|اشتر(?:ي|وا)?\s+الان|تسوق(?:وا)?\s+الان|لا\s+تنس(?:وا|ي)?\s+زيار|بزيارتنا|زيارتنا|زياره\s+فرع|فرعنا\s+في|عنواننا|موقعنا\s+في)')
+def is_cta(text,c=None):
+ k=key(text);c=c or {}
+ return bool(CTA.search(k)) or any(len(key(x))>=6 and key(x) in k for x in [c.get('address',''),c.get('phone','')] if x)
+
+STOP=set(key(w) for w in 'في من على الى إلى عن مع و او أو ثم كل لكل لكم لك لنا لدينا عندنا نقدم يقدم تقدم هنا هذا هذه ذلك التي الذي مع بين أن ان لا ما قد كما مثل أكثر اكثر جدا دائما دائماً اليوم الآن الان كل يوم وقت تجربه مكان'.split())
+def _words(text):
+ # A light skeleton (no article, conjunction, plural ات or long vowels) so «فطيرة» and «الفطائر»,
+ # «الطرية» and «طرية» count as the same word.
+ out={}
+ for original in re.findall(r'[\u0621-\u064a]+',key(text)):
+  w=original
+  if w in STOP:continue
+  if len(w)>3:w=re.sub(r'^(?:و|ف)(?=..)','',w)
+  if w in STOP:continue
+  if len(w)>4:w=re.sub(r'^(?:ب|ل|ك)?(?:ال|لل)','',w)
+  if len(w)>4 and w.endswith('ات'):w=w[:-2]
+  w=w.rstrip('ه');w=w[:1]+re.sub('[اوي]','',w[1:])
+  if len(w)>=2:out.setdefault(w,original)
+ return out
+def redundancy_issues(copy,c=None):
+ """A scene that says again what an earlier scene said, in other words («لدينا شاهي وفطيرة طرية» then
+ «الفطائر الطرية والشاهي اللذيذ»): each scene must bring a new fact."""
+ issues=[];scenes=copy.get('scenes',[]);seen=[]
+ for i,shot in enumerate(scenes):
+  words=_words(' '.join([shot.get('title',''),shot.get('caption','')]))
+  if i<len(scenes)-1:
+   for j,earlier in seen:
+    common=set(words)&set(earlier)
+    if len(common)>=2 and len(common)/max(1,min(len(words),len(earlier)))>=.5:
+     issues.append({'scene':i+1,'quality':'redundant','fix':'Repeats the idea of scene '+str(j+1)+' ('+'، '.join(sorted(words[x] for x in common))+'). Give this scene a different fact from the brief, page, menu or images; never paraphrase an earlier scene.'});break
+  seen.append((i,words))
+ return issues
+def cta_issues(copy,c=None):
+ scenes=copy.get('scenes',[])
+ return [{'scene':i+1,'quality':'cta','fix':'Calls to action (visit us, order now, our website, download the app, call us, the address) belong only to the final scene. Replace them here with a new fact about the business.'} for i,shot in enumerate(scenes[:-1]) if any(is_cta(t,c) for t in scene_texts(shot))]
+def strip_cta(shot,c=None):
+ """Remove call-to-action clauses from a scene that is not the closing (deterministic fallback)."""
+ changed=False
+ for field in ['caption','narration','title']:
+  parts=[x for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get(field,''))) if x.strip()]
+  kept=[x for x in parts if not is_cta(x,c)]
+  if len(kept)!=len(parts):shot[field]=' '.join(kept).strip(' ،,');changed=True
+ if changed:_fill(shot,c)
+ return changed
+
+def quality_issues(copy,c=None):
  """Production language, glitched letters and repeated headlines: audience copy problems
  the model must rewrite, found deterministically (the real run repeated scenes 1-4 as 5-8)."""
  issues=[];seen={}
@@ -137,12 +184,14 @@ def quality_issues(copy):
   t=key(shot.get('title',''))
   if t and t in seen:issues.append({'scene':i+1,'quality':'repeat','fix':'This headline repeats scene '+str(seen[t]+1)+'. Every scene needs its own headline and a different idea from the facts.'})
   else:seen.setdefault(t,i)
- return issues+craft_issues(copy)
+ return issues+craft_issues(copy)+cta_issues(copy,c)+redundancy_issues(copy,c)
 
 def repair_quality(scenes,c=None):
  """Deterministic last resort for quality issues: drop meta or glitched clauses, and give a
  repeated headline the scene's own first caption clause."""
  changed=[]
+ for i,shot in enumerate(scenes[:-1]):
+  if strip_cta(shot,c):changed.append((i+1,'cta'))
  for i,shot in enumerate(scenes):
   for field in ['caption','narration','title']:
    text=str(shot.get(field,''))
@@ -169,7 +218,7 @@ def repair_quality(scenes,c=None):
    pool=[x.strip(' .،,') for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get('narration',''))) if x.strip() and key(x.strip(' .،,'))!=key(shot.get('title','').strip(' .،,'))]
    if pool:shot['caption']=pool[0][:95];changed.append((i+1,'caption'))
   if len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('narration','')))<4:
-   extra=shot.get('caption','') if key(shot.get('caption',''))!=key(shot.get('narration','')) else ''
+   extra=shot.get('caption','') if key(shot.get('caption','').strip(' .،,'))!=key(shot.get('title','').strip(' .،,')) else ''
    shot['narration']=' '.join(x for x in [shot.get('title','').strip(' .،,')+'.',extra] if x.strip()).strip()[:220];changed.append((i+1,'narration'))
  return changed
 

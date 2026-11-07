@@ -97,6 +97,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in scenes};check(len(geometry)>=4,f'only {len(geometry)} distinct layouts in 6 scenes')
  used={e.get('asset') for s in scenes for e in s['composition']['elements'] if e.get('asset')};check(len(used)>=3,f'only {len(used)} of 4 owned images used')
  shown=[e.get('asset') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('asset') and e.get('asset')!=logo];check(len(shown)==len(set(shown)),'a picture is repeated: '+str(shown))
+ for i,s in enumerate(scenes[:-1]):check(not any(rules.is_cta(t,{'address':ADDRESS}) for t in [s.get('title',''),s.get('caption','')]),f'call to action before the closing in scene {i+1}: '+s.get('title',''))
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')
  failed=[c for c in p.get('verification',[]) if not c['ok'] and c['id']!='source'];check(not failed,'verification failures: '+json.dumps(failed,ensure_ascii=False))
  (evidence/'findings.json').write_text(json.dumps({'findings':findings,'verification':p.get('verification',[]),'duration':duration,'scenes':[{k:s.get(k) for k in ['title','caption','narration','seconds']} for s in scenes]},ensure_ascii=False,indent=1))

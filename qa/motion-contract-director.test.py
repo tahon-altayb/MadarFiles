@@ -131,6 +131,14 @@ if Image:
 # Motion craft (soft review): weak hook, long headline, long caption, clichés.
 craft=C.craft_issues({'scenes':[{'title':'أهلاً بكم في شاي جمر','caption':'تجربة فريدة لا تُنسى.','narration':'x'},{'title':'شاي على الجمر','caption':'نحضّر الشاي على الجمر كل يوم.','narration':'x'},{'title':'قائمة منيو غنية ومتنوعة تناسب جميع أفراد العائلة','caption':'تصفح قائمة شاي جمر وفطيرة الطيب المتنوعة والمميزة التي تضم الشاي والقهوة والفطائر الطازجة كل يوم.','narration':'x'}]})
 kinds=sorted((z['scene'],z['quality']) for z in craft);assert kinds==[(1,'cliche'),(1,'hook'),(3,'caption'),(3,'headline')],kinds
+# Closing-only phrases and paraphrased repeats (the owner's notes on the real film).
+for phrase in ['زورونا في فرعنا','اطلبه الآن عبر موقعنا','حمّل التطبيق الآن','تواصلوا معنا','احجز طاولتك الآن','تفضلوا بزيارتنا في شارع الجال','لا تنسوا زيارة فرعنا']:assert C.is_cta(phrase),phrase
+for phrase in ['شاي حليب ومخبوزات دافئة','جلسات عائلية واسعة','قائمة متنوعة من المشروبات']:assert not C.is_cta(phrase),phrase
+film={'scenes':[{'title':'شاي جمر','caption':'شاي حليب ومخبوزات دافئة.','narration':'شاي حليب ومخبوزات دافئة كل يوم.'},{'title':'لدينا شاهي وفطيرة طرية','caption':'شاهي على الجمر وفطيرة طرية.','narration':'نحضر الشاهي على الجمر.'},{'title':'الفطائر الطرية والشاهي اللذيذ','caption':'فطاير طرية وشاهي لذيذ.','narration':'فطاير طرية مع شاهي لذيذ.'},{'title':'جلسات عائلية','caption':'حمّل التطبيق الآن واطلب.','narration':'جلسات واسعة. حمّلوا التطبيق الآن.'},{'title':'زورونا في فرعنا','caption':'شارع الجال','narration':'نسعد بزيارتكم.'}]}
+found=sorted((z['scene'],z['quality']) for z in C.quality_issues(film,{'address':'شارع الجال'}) if z['quality'] in ['cta','redundant'])
+assert found==[(3,'redundant'),(4,'cta')],found
+C.repair_quality(film['scenes'],{'businessName':'شاي جمر'});assert not any(C.is_cta(t) for z in film['scenes'][:-1] for t in C.scene_texts(z)),film['scenes'][3]
+assert film['scenes'][3]['title']=='جلسات عائلية' and 'جلسات واسعة' in film['scenes'][3]['narration']
 print('motion contract director: logo first, 6 scenes from the pictures, forbidden removed, closing enforced, verification reported')
 
 # No identifiable logo: the job still finishes, the opening is typography (never the storefront), and the report says so.
