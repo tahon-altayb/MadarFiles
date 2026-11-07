@@ -72,8 +72,15 @@ final class AgentExecutive {
   JSONObject input=new JSONObject().put("client_brief",brief.getString("text")).put("page_reads",sources).put("image_count",images.length()).put("previous_contract",brief.optJSONObject("previous")==null?JSONObject.NULL:brief.getJSONObject("previous").optJSONObject("clientContract")).put("saved_preferences",LocalAgent.memory(c)).put("teacher_examples",AgentExamples.relevant(c,brief.getString("text")));
   JSONObject interpreted=cached?brief.getJSONObject("executiveDraft"):measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));
   brief.put("sourceReads",sources).put("executiveDraft",interpreted).put("executiveDraftKey",key).put("executiveDraftAt",System.currentTimeMillis());MotionProject.save(c,project);ColabProbe.check(cancel);
-  progress.stage("Gemini يراجع التفسير المحفوظ قبل تشغيل GPU");input.put("untrusted_interpretation",interpreted).put("review_task","Independently re-read the actual client request and images. Correct omissions, negation reversals, invented facts and false claims of reading a URL. Return the complete repaired interpretation. No execution has started.");
-  JSONObject reviewed=measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));JSONObject contract=reviewed.getJSONObject("contract");JSONArray catalog=reviewed.getJSONArray("image_catalog");trustChosenLogo(brief,contract,catalog);String question=validateBrief(contract,brief.getString("text"),sources,catalog,images.length());
+  if(brief.optJSONObject("contract")==null)progress.stage("Gemini يراجع التفسير المحفوظ قبل تشغيل GPU");input.put("untrusted_interpretation",interpreted).put("review_task","Independently re-read the actual client request and images. Correct omissions, negation reversals, invented facts and false claims of reading a URL. Return the complete repaired interpretation. No execution has started.");
+  // The chat's own contract already fixes omissions and negations deterministically, so the second
+  // Gemini pass is skipped then; without it, a review that times out keeps the validated first reading.
+  JSONObject reviewed;
+  if(brief.optJSONObject("contract")!=null)reviewed=interpreted;
+  else try{reviewed=measured(c,input,()->invoke(prompt,input,visual,schema,4096,cancel,transport));}
+  catch(CancellationException stopped){throw stopped;}
+  catch(Exception slow){if(!AgentDiagnostics.code(slow).matches("GEMINI_(TIMEOUT|NETWORK|REQUEST_FAILED|UNAVAILABLE)"))throw slow;reviewed=interpreted;brief.put("executiveReviewSkipped",AgentDiagnostics.code(slow));}
+  JSONObject contract=reviewed.getJSONObject("contract");JSONArray catalog=reviewed.getJSONArray("image_catalog");trustChosenLogo(brief,contract,catalog);String question=validateBrief(contract,brief.getString("text"),sources,catalog,images.length());
   brief.put("clientContract",contract).put("referenceFacts",catalog).put("executiveVerified",true);project.remove("preflightPending");MotionProject.save(c,project);
   if(contract.optBoolean("needs_information")){String needed=contract.optString("question");if(needed.isEmpty()||needed.length()>250||needed.matches("(?is).*(password|api.?key|token|كلمة مرور|مفتاح API).*"))throw new IOException("المعلومة الناقصة لم تتحدد بشكل صالح");throw new MotionCloud.Clarification(needed);}
   if(!question.isEmpty())throw new MotionCloud.Clarification(MotionCloud.briefQuestion(question));

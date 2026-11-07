@@ -52,13 +52,18 @@
   if(/9\s*[:x×]\s*16|عمودي|طولي|بالطول|للجوال|للجول|(?:^|\s)(?:ستوري|ستوريز|ريلز|ريل|سناب|شورتس|reels|story|tiktok)(?=\s|$|[.،,])|تيك\s*توك|تيكتوك/.test(t))return '9:16';
   return null;
  }
- function sceneCount(seconds,explicit){
+ function sceneCount(seconds,explicit,images){
   // At least two seconds a scene; an explicit count wins within that bound.
   const limit=Math.max(3,Math.floor((seconds||30)/2));
   if(Number.isInteger(explicit))return Math.max(3,Math.min(12,limit,explicit));
   // About five seconds per scene keeps the film moving; ten scenes is the
   // ceiling that the planner context on a T4 can safely hold.
-  return Math.max(4,Math.min(10,Math.round((seconds||30)/5)));
+  const pace=Math.max(4,Math.min(10,Math.round((seconds||30)/5)));
+  if(!Number.isInteger(images)||images<0)return pace;
+  // Scenes follow the material: each picture once plus a hook and the closing (six without
+  // pictures), never longer than nine seconds a scene. Ten scenes from four photos meant repeats and filler.
+  const material=images>0?images+2:6,longest=Math.ceil((seconds||30)/9);
+  return Math.max(4,longest,Math.min(pace,material));
  }
  function sentences(text){return soft(text).split(/\n+|(?<=[.!؟?])\s+|\s*[•·]\s*/).map(s=>s.trim()).filter(Boolean);}
  // A clause boundary inside run-on dialect: "...فرعنا واكتب ..." / "... وخلي ...".
@@ -157,7 +162,7 @@
   // "we have no website"): never audience copy. The request itself stays ordinary brief.
   for(const raw of sentences(text))for(const part of soft(raw).split(CLAUSE)){const s=key(part).replace(/^و\s*/,'');if(/^(?:خلي|خل|اكتب|حط|ضع|لا\s+(?:تكتب|تحط|تذكر)|اذا|لو|اسالني|شيل|احذف)\s|ماعندنا|ما\s*عندنا\s*(?:موقع|متجر)/.test(s)||result.corrections.some(c=>key(c.text)===key(raw)))result.notes.push(clean(part));}
   result.required=unique(result.required);result.forbidden=unique(result.forbidden.map(clean));result.notes=unique(result.notes).slice(0,12);
-  const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes);result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
+  const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes,Number.isInteger(context.images)?context.images:undefined);result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
   const images=context.images||0,hasUrl=result.urls.length>0;
   if(result.requireAddress&&!result.address)result.missing.push({field:'address',blocking:true,question:'وش عنوان الفرع اللي أكتبه في آخر الإعلان؟ اكتبه مثل: الرياض – حي النرجس – طريق أبي بكر. وإذا ما تبيه اكتب «بدون عنوان».'});
   if(result.requirePhone&&!result.phone)result.missing.push({field:'phone',blocking:true,question:'وش رقم التواصل اللي تبيه يظهر في الإعلان؟ وإذا ما تبيه اكتب «بدون رقم».'});

@@ -163,6 +163,14 @@ def repair_quality(scenes,c=None):
     shot['caption']=' '.join(rest).strip(' ،,') or (shot.get('narration','') if key(shot.get('narration','').strip(' .،,'))!=key(pool[0]) else '')
   _fill(shot,c)
   titles.add(key(shot.get('title','')))
+ for i,shot in enumerate(scenes):
+  # A caption that only repeats its headline, or narration that is only a label.
+  if key(shot.get('caption','').strip(' .،,'))==key(shot.get('title','').strip(' .،,')):
+   pool=[x.strip(' .،,') for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get('narration',''))) if x.strip() and key(x.strip(' .،,'))!=key(shot.get('title','').strip(' .،,'))]
+   if pool:shot['caption']=pool[0][:95];changed.append((i+1,'caption'))
+  if len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('narration','')))<4:
+   extra=shot.get('caption','') if key(shot.get('caption',''))!=key(shot.get('narration','')) else ''
+   shot['narration']=' '.join(x for x in [shot.get('title','').strip(' .،,')+'.',extra] if x.strip()).strip()[:220];changed.append((i+1,'narration'))
  return changed
 
 def copy_issues(copy,c):

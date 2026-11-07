@@ -43,5 +43,21 @@
   let matched=false;for(const f of pending.fields){if(!f.options)continue;for(const [value,label]of f.options){const n=normalize(label);if(t===normalize(value)||t===n||t.length>=4&&n.includes(t)){f.value=value;matched=true;break;}}}
   return matched?'changed':null;
  }
- return {normalize,question,facts,motionFeedback,options,render,reply};
+ // The assistant report in plain words: each recent step with its result and time, what was done
+ // instead when Gemini did not answer, and which backup is ready.
+ function diagnostics(e){
+  const names={motion_interpret:'فهم طلب الموشن والصور',motion_brief_review:'مراجعة فهم الموشن',motion_result_review:'مراجعة الناتج',motion_validate:'التحقق من الطلب',plan_interpret:'فهم طلب الشات',plan_review:'مراجعة خطة الشات',connection_probe:'اختبار الاتصال'};
+  const why={GEMINI_TIMEOUT:'انتهت المهلة بدون رد',GEMINI_NETWORK:'ما وصل الطلب لخادم Google',GEMINI_REQUEST_FAILED:'رفض الخادم الطلب أو فشل',GEMINI_APP_CHECK:'تعذر توثيق التطبيق مع Firebase',GEMINI_QUOTA:'انتهت الحصة',GEMINI_PERMISSION:'رفضت الخدمة التفويض',GEMINI_UNAVAILABLE:'تخطيته لأنه ما رد قبل دقائق',CANCELLED:'أوقفته'};
+  const done=(e.timeline||[]).filter(x=>x&&x.status!=='running').slice(-6);
+  if(!done.length)return 'ما فيه طلبات مسجلة للحين.';
+  const seconds=ms=>Math.round(Math.max(0,ms||0)/1000);
+  const rows=done.map(x=>(x.status==='done'?'✓ ':x.status==='cancelled'?'■ ':'✗ ')+(names[x.stage]||x.stage)+' — '+(x.status==='done'?'تم':(why[x.code]||x.code||'لم يكتمل'))+' ('+seconds(x.milliseconds)+' ث)');
+  const failed=done.filter(x=>x.status==='failed'),motionFailed=failed.some(x=>/^motion_/.test(x.stage)),planFailed=failed.some(x=>/^plan_/.test(x.stage));
+  const notes=[];
+  if(motionFailed)notes.push('لما ما يرد Gemini في الموشن أكمل بفهمي المحلي لطلبك، وColab يصنع الفيديو عادي.');
+  if(planFailed)notes.push(e.groq?'لطلبات الشات: Groq مربوط ويرد بدل Gemini.':'لطلبات الشات: اربط Groq المجاني من الإعدادات «مفتاح Groq المجاني» عشان يرد بدل Gemini.');
+  if(e.geminiResting)notes.push('Gemini ما رد قبل دقائق، فأتخطاه ١٠ دقايق عشان ما تنتظر.');
+  return 'آخر خطوات الفهم:\n'+rows.join('\n')+(notes.length?'\n\n'+notes.join('\n'):'')+'\n\nالبديل: '+(e.groq?'Groq مربوط ✓':'Groq غير مربوط');
+ }
+ return {normalize,question,facts,motionFeedback,options,render,reply,diagnostics};
 });

@@ -103,6 +103,8 @@ base={'x':{'type':'number'},'y':{'type':'number'},'w':{'type':'number'},'h':{'ty
 variants=[obj(dict(kind={'enum':['text','metric']},**base,text=string(65),size={'type':'number'})),obj(dict(kind={'enum':['shape','line']},**base)),obj(dict(kind={'enum':['icon']},**base,icon={'enum':['play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat']}))]
 if images:variants.append(obj(dict(kind={'enum':['image','device']},**base,asset={'enum':images})))
 COMPOSITION=obj({'backdrop':{'enum':['plain','orbit','grid','radial','split']},'elements':{'type':'array','minItems':4,'maxItems':8,'items':{'anyOf':variants}}})
+def hard_issue(z):
+ return z.get('contract')=='forbidden' or any(k in z for k in ['required_name','required_topic','unsupported_phrase']) or z.get('kind')=='unsupported_claim'
 def actionable_copy_issue(issue,copy):
  # Ordinary Arabic may omit optional vowel marks. Adding them is not a reason
  # to reject a complete movie, unlike a changed word, meaning or factual claim.
@@ -230,7 +232,8 @@ total_seconds,scene_count=timing(brief['text'],bool(chunks))
 narration_low,narration_high=8,16
 if local_contract and not chunks:
  scene_count,per_scene,_,(narration_low,narration_high)=local_rules.plan(local_contract,brief['text'],chunks,None,len(previous.get('scenes',[])))
- total_seconds=per_scene*scene_count
+ # The client's own length is exact; per-scene rounding must not shave it (8.33×6 = 49.98).
+ total_seconds=float(local_contract['durationSec']) if isinstance(local_contract.get('durationSec'),(int,float)) and local_contract.get('durationSource')=='user' and 1<=local_contract['durationSec']<=720 else per_scene*scene_count
 narration_range=f'{narration_low}-{narration_high}'
 previous_direction=brief.get('previous',{}).get('direction',{})
 aspect=previous_direction.get('aspect',p.get('aspect','9:16'))
@@ -314,26 +317,27 @@ for review in range(3):
  Path('copy-review.json').write_text(json.dumps({'attempt':review+1,'candidate':copy,'issues':issues,'audit':audit,'verification':verification},ensure_ascii=False))
  # Missing closing text and the logo reference are placed deterministically after review, so they never
  # cost another model round; only forbidden copy and real editing issues are sent back.
- if not [z for z in issues if z.get('contract')!='missing']:break
+ # Only hard problems (forbidden client copy, unsupported promises, app facts) may cost more than
+ # one extra round; style, craft and proofreading notes get one repair round and are then fixed
+ # deterministically below. Each round is three model calls, so this halves a typical film's time.
  issues=[z for z in issues if z.get('contract')!='missing']
+ hard=[z for z in issues if hard_issue(z)]
+ if not issues or (review>=1 and not hard):break
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
-
-else:
- # Review rounds are spent. A finished film is not thrown away over wording that can be fixed
- # without inventing anything: apply the confirmed proofreading corrections, drop clauses with
- # forbidden or production wording, and re-title repeated headlines. App facts stay blocking.
- blocking=[z for z in issues if not z.get('contract') and not z.get('quality') and not (z.get('original') and z.get('corrected') is not None)]
- if blocking:raise ValueError('STORY_INVALID')
- for z in issues:
-  if z.get('original') and z.get('corrected') is not None and isinstance(z.get('scene'),int) and 1<=z['scene']<=len(copy['scenes']):
-   shot=copy['scenes'][z['scene']-1]
-   for field in ['title','caption','narration']:
-    if z['original'] in str(shot.get(field,'')):shot[field]=str(shot[field]).replace(z['original'],z['corrected'])
- local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
- local_rules.repair_quality(copy['scenes'],local_contract)
- left=[z for z in violations(copy,contract) if not ('required_copy' in z or 'reference' in z)]+[z for z in local_rules.copy_issues(copy,local_contract) if z.get('contract')!='missing']
- if left:raise ValueError('CONTRACT_COPY')
+# Finish without inventing anything: confirmed proofreading corrections, removal of forbidden or
+# production clauses, re-titled repeats and filled label-only narration. Only app facts and
+# client-forbidden copy that survive this stop the film.
+for z in issues:
+ if z.get('original') and z.get('corrected') is not None and isinstance(z.get('scene'),int) and 1<=z['scene']<=len(copy['scenes']):
+  shot=copy['scenes'][z['scene']-1]
+  for field in ['title','caption','narration']:
+   if z['original'] in str(shot.get(field,'')):shot[field]=str(shot[field]).replace(z['original'],z['corrected'])
+local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
+local_rules.repair_quality(copy['scenes'],local_contract)
+if [z for z in violations(copy,contract) if not ('required_copy' in z or 'reference' in z)]+[z for z in local_rules.copy_issues(copy,local_contract) if z.get('contract')!='missing']:raise ValueError('CONTRACT_COPY')
+if [z for z in issues if 'required_name' in z or 'required_topic' in z or 'unsupported_phrase' in z]:
+ if brief.get('appFacts'):raise ValueError('STORY_INVALID')
 for shot,edited in zip(story['scenes'],copy['scenes']):shot.update(edited)
 # One closing requirement set from both contracts: chat rules plus the online interpretation's
 # must-include phrases, branch call to action and verified address.
@@ -345,12 +349,17 @@ logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} i
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
 for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
 # The logo belongs to its scenes and the closing sign-off; other scenes that picked it get the least-used client photo.
+# Each client picture appears once: a repeat (or a stray logo) takes an unused picture, and when
+# none is left the scene becomes a typographic poster instead of showing the same photo again.
 photos=[n for n in range(len(images)) if n!=logo_index]
-if logo_index is not None and photos:
- used={n:sum(1 for z in story['scenes'] if z.get('reference')==n) for n in photos}
- for i,z in enumerate(story['scenes']):
-  if i not in logo_targets and i!=len(story['scenes'])-1 and z.get('reference')==logo_index:
-   pick=min(photos,key=lambda n:(used[n],n));z['reference']=pick;used[pick]+=1
+seen=set()
+for i,z in enumerate(story['scenes']):
+ ref=z.get('reference',-1)
+ if i in logo_targets or ref==-1 or (ref==logo_index and i==len(story['scenes'])-1):continue
+ if ref==logo_index or ref in seen:
+  free=[n for n in photos if n not in seen and all(x.get('reference')!=n for x in story['scenes'][i+1:])]
+  z['reference']=free[0] if free else -1;ref=z['reference']
+ if ref!=-1:seen.add(ref)
 story['title']=copy['title']
 if brief.get('appFacts') and 'مدار' not in json.dumps(story,ensure_ascii=False):raise ValueError('STORY_INVALID')
 story.update(theme=theme,aspect=aspect,concept=story['title'])

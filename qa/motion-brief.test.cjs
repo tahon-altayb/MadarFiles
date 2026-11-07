@@ -14,7 +14,7 @@ assert.equal(c.durationSec,50);assert.equal(c.durationSource,'user');assert.equa
 assert.ok(c.logoFirst,'خلي الشعار يكون اولا');assert.ok(!c.logoLast);
 assert.ok(c.noWebsite);assert.ok(c.visitBranch);assert.ok(c.requireAddress);assert.ok(c.askWhenMissing);
 assert.deepEqual(c.required,['زورونا في فرعنا'],'«مكان الموقع» is a field to fill, not literal text');
-assert.equal(c.sceneCount,10);assert.equal(c.sceneSeconds,5);
+assert.equal(c.sceneCount,6,'four pictures: each once plus hook and closing');assert.equal(c.sceneSeconds,8.3);
 assert.deepEqual(c.urls,['https://share.google/gqr792aGPFX7jVCXY']);
 assert.equal(c.missing.length,1);assert.equal(c.missing[0].field,'address');assert.ok(c.missing[0].blocking);
 assert.equal(c.corrections.length,1);assert.equal(c.corrections[0].subject,'الورد');
@@ -117,3 +117,14 @@ for(const [,src] of html.matchAll(/<script src="([^"]+)"/g)){assert.ok(main.incl
  assert.equal(B.skillCommand('سو لي اعلان موشن عن مهارات الطبخ'),null);assert.deepEqual(B.parse('اكتب اطلب الحين في آخر مشهد').required,['اطلب الحين']);
 }
 console.log('motion brief contract: real request, dialect variants, answers, merge and report');
+// Scene count follows the material so a long advert never repeats pictures to fill time.
+assert.deepEqual([0,1,4,5,8].map(n=>B.parse('سو اعلان مدته 50 ثانية',{images:n}).sceneCount),[6,6,6,7,10]);
+assert.equal(B.parse('سو اعلان مدته 90 ثانية',{images:2}).sceneCount,10,'never longer than nine seconds a scene');
+assert.equal(B.parse('سو اعلان 10 مشاهد مدته 50 ثانية',{images:2}).sceneCount,10,'an explicit count wins');
+console.log('PASS scene count follows the pictures');
+// The assistant report reads as steps with results, not a raw code.
+{const M=require('../app/src/main/assets/agent-conversation.js');
+ const text=M.diagnostics({groq:false,timeline:[{stage:'motion_interpret',status:'running'},{stage:'motion_interpret',status:'done',milliseconds:55952},{stage:'motion_brief_review',status:'failed',milliseconds:120012,code:'GEMINI_TIMEOUT'},{stage:'plan_interpret',status:'failed',milliseconds:120044,code:'GEMINI_TIMEOUT'}]});
+ assert.match(text,/✓ فهم طلب الموشن والصور — تم \(56 ث\)/);assert.match(text,/✗ مراجعة فهم الموشن — انتهت المهلة بدون رد \(120 ث\)/);assert.match(text,/اربط Groq المجاني/);
+ assert.match(M.diagnostics({groq:true,timeline:[{stage:'plan_interpret',status:'failed',code:'GEMINI_NETWORK'}]}),/Groq مربوط ويرد بدل Gemini/);
+ console.log('PASS assistant report explains each step in plain words');}
