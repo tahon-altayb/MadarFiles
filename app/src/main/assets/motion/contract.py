@@ -149,7 +149,10 @@ def is_cta(text,c=None):
  if CTA.search(k):return True
  # The address or phone in any punctuation («شارع الجال - خلف…» or «شارع الجال خلف…»).
  bare=lambda v:re.sub(r'[^\u0621-\u064aA-Za-z0-9]+',' ',key(v)).strip()
- return any(len(bare(x))>=6 and bare(x) in bare(text) for x in [c.get('address',''),c.get('phone','')] if x)
+ if any(len(bare(x))>=6 and bare(x) in bare(text) for x in [c.get('address',''),c.get('phone','')] if x):return True
+ # The address reworded («يقع خلف مربع الزينة في شارع الجال»): most of its words present.
+ words=[w for w in bare(c.get('address','')).split() if len(w)>=3]
+ return len(words)>=2 and sum(w in bare(text).split() for w in words)>=min(3,len(words))
 
 STOP=set(key(w) for w in 'في من على الى إلى عن مع و او أو ثم كل لكل لكم لك لنا لدينا عندنا نقدم يقدم تقدم هنا هذا هذه ذلك التي الذي مع بين أن ان لا ما قد كما مثل أكثر اكثر جدا دائما دائماً اليوم الآن الان كل يوم وقت تجربه مكان'.split())
 def _words(text):
@@ -169,18 +172,24 @@ def _words(text):
 def redundancy_issues(copy,c=None):
  """A scene that says again what an earlier scene said, in other words («لدينا شاهي وفطيرة طرية» then
  «الفطائر الطرية والشاهي اللذيذ»): each scene must bring a new fact."""
- issues=[];scenes=copy.get('scenes',[]);seen=[];c=c or {}
+ issues=[];scenes=copy.get('scenes',[]);seen=[];heads={};c=c or {}
  # The business name recurs on purpose; it is not a repeated idea.
  brand=_words(' '.join([str(c.get('businessName') or ''),str(copy.get('title') or '')]))
  for i,shot in enumerate(scenes):
   words=_words(' '.join([shot.get('title',''),shot.get('caption','')]))
   for w in list(brand):words.pop(w,None)
   if i<len(scenes)-1:
+   headline=_words(shot.get('title',''))
+   for w in list(brand):headline.pop(w,None)
    for j,earlier in seen:
     common=set(words)&set(earlier)
+    # Two headlines that share two content words («أشهى المشروبات الساخنة» / «مشروبات ساخنة بلمسة خاصة»).
+    same=set(headline)&set(heads[j])
+    if len(same)>=2 and len(same)/max(1,min(len(headline),len(heads[j])))>=.5:
+     issues.append({'scene':i+1,'quality':'redundant','fix':'Headline repeats the idea of scene '+str(j+1)+' ('+'، '.join(sorted(headline[x] for x in same))+'). Give this scene a different fact and a different headline.'});break
     if len(common)>=3 or (len(common)>=2 and len(common)/max(1,min(len(words),len(earlier)))>=.5):
      issues.append({'scene':i+1,'quality':'redundant','fix':'Repeats the idea of scene '+str(j+1)+' ('+'، '.join(sorted(words[x] for x in common))+'). Give this scene a different fact from the brief, page, menu or images; never paraphrase an earlier scene.'});break
-  seen.append((i,words))
+  seen.append((i,words));heads[i]={w:v for w,v in _words(shot.get('title','')).items() if w not in brand}
  return issues
 def cta_issues(copy,c=None):
  scenes=copy.get('scenes',[])

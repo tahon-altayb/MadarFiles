@@ -34,12 +34,20 @@ class H(BaseHTTPRequestHandler):
   body=json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(value,ensure_ascii=False)}}],'usage':{'completion_tokens':1}}).encode()
   self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(body)
  def do_GET(self):self.reply({'ok':True})
+ def reply_raw(self,value):
+  body=json.dumps(value).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(body)
  def do_POST(self):
   data=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+  if self.path=='/tokenize':return self.reply_raw({'tokens':[0]*int(len(data.get('content',''))/2.6)})
+  # The T4 context: prompt + pictures (≈384 tokens each) + answer must fit 8192, as llama.cpp enforces.
+  images=sum(1 for part in data['messages'][1]['content'] if part.get('type')=='image_url');text=data['messages'][0]['content']+json.dumps(data['messages'][1]['content'][-1],ensure_ascii=False)
+  if int(len(text)/2.6)+images*384+data.get('max_tokens',0)>8192:
+   self.send_response(400);self.end_headers();self.wfile.write(b'{"error":{"message":"the request exceeds the available context size"}}');return
   schema=data['response_format']['json_schema']['schema'];prompt=data['messages'][1]['content'][-1]['text']
   props=schema.get('properties',{})
   if 'images' in props:
-   self.reply({'images':[{'index':0,'kind':'place_photo','description':'واجهة المحل من الخارج'},{'index':1,'kind':'brand_logo','description':'شعار المحل'},{'index':2,'kind':'product_photo','description':'علبة منتج'}]});return
+   shown=[int(p['text'].split()[1].rstrip(':')) for p in data['messages'][1]['content'] if p.get('type')=='text' and p['text'].startswith('Reference ')];total=max(shown+[2])+1 if shown else 3
+   self.reply({'images':[{'index':0,'kind':'place_photo','description':'واجهة المحل من الخارج'},{'index':1,'kind':'brand_logo','description':'شعار المحل'},{'index':2,'kind':'product_photo','description':'علبة منتج'}]+[{'index':k,'kind':'product_photo','description':'منتج رقم %d'%k} for k in range(3,total)]});return
   if 'must_fix' in props:self.reply({'must_fix':[False]*schema['properties']['must_fix']['minItems']});return
   if 'issues' in props:self.reply({'issues':[]});return
   if 'backdrop' in props:self.reply({'backdrop':'plain','elements':[]});return
@@ -65,6 +73,7 @@ def runtime_info(**values):pass
 ''')
 FAKE_HUB="def hf_hub_download(repo,name,revision=None):\n open(name,'wb').close();return name\n"
 
+IMAGES=3
 def run(contract,text,tmp):
  job=Path(tmp)/'job';job.mkdir()
  for f in source.iterdir():
@@ -72,7 +81,7 @@ def run(contract,text,tmp):
  (job/'fake_server.py').write_text(FAKE_SERVER);(job/'director_runtime.py').write_text(FAKE_RUNTIME)
  (job/'huggingface_hub').mkdir();(job/'huggingface_hub/__init__.py').write_text(FAKE_HUB)
  # The fake planner never decodes pixels, so placeholder bytes keep CI free of imaging packages.
- images=['asset_'+c*32+'.jpg' for c in 'abc']
+ images=['asset_'+c*32+'.jpg' for c in 'abcdef1'[:IMAGES]]
  for i,name in enumerate(images):(job/name).write_bytes(b'\xff\xd8\xff\xe0'+bytes([i])*64+b'\xff\xd9')
  brief={'text':text,'images':images,'referenceMap':{},'contract':contract}
  project={'id':'d'*32,'version':1,'title':'مسودة','theme':'night','aspect':'9:16','voiceMode':'none','voice':'Charon','scenes':[],'creativeRequest':brief}
@@ -182,6 +191,14 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-early-cta-') as tmp:
  ctas=[i for i,z in enumerate(scenes) if 'زورونا' in z['title']];assert ctas==[len(scenes)-1],[z['title'] for z in scenes]
  assert C.has_asset(scenes[-1]['composition'],'asset_'+'b'*32+'.jpg'),'closing signs off with the logo'
 print('early call to action moved to the end; closing signs off with the logo')
+# The owner's case on 1.9.41: seven pictures, no online catalog, nine scenes. Every picture went to the
+# vision encoder with a 4050-token answer and overflowed the T4 context (STORY_INVALID).
+with tempfile.TemporaryDirectory(prefix='madar-contract-context-') as tmp:
+ IMAGES=7;seven=dict(brief,sceneCount=9,sceneSeconds=5.6)
+ r,job=run(seven,text,tmp);IMAGES=3
+ assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
+ assert len(json.loads((job/'project.json').read_text())['scenes']) in (7,9)
+print('seven pictures without the online catalog fit the model context')
 print('stubborn model: forbidden clauses removed, logo kept to opening and closing, film delivered')
 
 # Online interpretation and chat contract together (Gemini answered): the director must apply

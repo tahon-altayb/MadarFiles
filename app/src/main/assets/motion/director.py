@@ -149,10 +149,23 @@ def unsupported_file_claims(shot,facts):
   if match and not re.search(pattern,ground):issues.append({'unsupported_phrase':match.group(),'fix':'Remove this unsupported one-step or all-requests promise. State that supported file requests execute in chat and missing inputs are requested, using only the facts.'})
  return issues
 
+def prompt_tokens(text):
+ try:return len(local_request('/tokenize',{'content':text}).get('tokens',[]))
+ except Exception:return int(len(text)/2.2)+1
+IMAGE_TOKENS=420
 def generate(system,prompt,visual=False,max_tokens=1800,schema=None,seed=17):
  content=[]
+ # Fit the call inside the model context (8192 on a T4): the prompt, every picture sent to the
+ # vision encoder (about 384 tokens each) and the answer. Seven pictures without the online catalog
+ # overflowed it and the film failed as STORY_INVALID; now pictures that do not fit are named only,
+ # and the answer budget shrinks before anything fails.
+ room=globals().get('selected_context',8192)-prompt_tokens(system+'\n'+prompt)-160
+ shown=list(images) if visual else []
+ # The answer comes first: a ten-scene story needs its full JSON more than the last pictures.
+ while shown and room-IMAGE_TOKENS*len(shown)<min(max_tokens,3600):shown.pop()
+ max_tokens=max(256,min(max_tokens,room-IMAGE_TOKENS*len(shown)))
  if visual:
-  for i,name in enumerate(images):
+  for i,name in enumerate(shown):
    content.extend([{'type':'text','text':f'Reference {i}: {name}'},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(Path(name).read_bytes()).decode()}}])
  content.append({'type':'text','text':prompt})
  started=time.monotonic()
@@ -193,9 +206,15 @@ SYSTEM="You direct professional Arabic motion graphics: advertising, educational
 reference_facts=brief.get('referenceFacts',[]) if len(brief.get('referenceFacts',[]))==len(images) else []
 if images and not reference_facts:
  catalog_schema=obj({'images':{'type':'array','minItems':len(images),'maxItems':len(images),'items':obj({'index':{'enum':list(range(len(images)))},'kind':{'enum':['tool_screen','product_photo','place_photo','brand_logo','page_preview','platform_icon','unrelated','illustration','other']},'description':string(240)})}})
- catalog=generate(SYSTEM,'Inspect each supplied image. Return its exact index, kind and a concise factual description of what is visibly present. Name the specific tool or subject if identifiable. Distinguish a home screen, a document-tools screen and an actual conversation screen. Do not infer hidden functions or invent controls. These are reference descriptions, not ad copy. Platform service icons, loading placeholders and Google/Maps branding must be classified platform_icon when the client is advertising a different business. A real business brand mark is brand_logo. Photos unrelated to the client brief are unrelated. Do not confuse the hosting platform with the advertised business.',visual=True,max_tokens=max(600,len(images)*180),schema=catalog_schema)
- reference_facts=catalog['images']
- if {z['index'] for z in reference_facts}!=set(range(len(images))):raise ValueError('REFERENCE_DESCRIPTION')
+ # Describing the pictures helps the plan; when it fails the story looks at the pictures itself.
+ try:
+  catalog=generate(SYSTEM,'Inspect each supplied image. Return its exact index, kind and a concise factual description of what is visibly present. Name the specific tool or subject if identifiable. Distinguish a home screen, a document-tools screen and an actual conversation screen. Do not infer hidden functions or invent controls. These are reference descriptions, not ad copy. Platform service icons, loading placeholders and Google/Maps branding must be classified platform_icon when the client is advertising a different business. A real business brand mark is brand_logo. Photos unrelated to the client brief are unrelated. Do not confuse the hosting platform with the advertised business.',visual=True,max_tokens=max(600,len(images)*180),schema=catalog_schema)
+  reference_facts=catalog['images']
+  if {z['index'] for z in reference_facts}!=set(range(len(images))):raise ValueError('REFERENCE_DESCRIPTION')
+ except ValueError as failed:
+  if str(failed) not in ('DIRECTOR_JSON','DIRECTOR_INCOMPLETE','DIRECTOR_CONTEXT','REFERENCE_DESCRIPTION'):raise
+  reference_facts=[]
+
  Path('reference-facts.json').write_text(json.dumps(reference_facts,ensure_ascii=False))
 
 # Public preview assets must never masquerade as the advertised business.
@@ -248,12 +267,18 @@ if aspect not in ['9:16','16:9','1:1']:aspect='9:16'
 scene_seconds=total_seconds/scene_count
 STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
 feedback=''
-for attempt in range(3):
+for attempt in range(4):
  stage('director_plan')
  try:
   story=generate(SYSTEM,f"Create {scene_count} distinct Arabic scenes about the client's specific topic. Return title (film title) and scenes. Each scene has title (short meaningful audience headline), narration (one natural Arabic sentence, {narration_range} words, so it fits a {round(total_seconds/scene_count,1)}-second scene), caption (a short complete Arabic sentence adding information beyond the headline), visual (layout and movement of existing images, vector shapes and typography), reference (appropriate image index or -1). Build a coherent progression with a useful ending. "+MOTION_CRAFT+" Marketing calls to action belong only in requested advertisements. For stories follow the event sequence. Never name a scene Hook, Benefit, Usage, Explanation or Closing. Never describe invented controls inside a screenshot. If app_facts exists, this is SOFTWARE used by the viewer, not an agency, shop, human team or delivery service. Use only those actual capabilities; no service or timing promises. If exact_scene_narrations exists preserve each verbatim in order. "+feedback+"\nCLIENT DATA:\n"+json.dumps(context,ensure_ascii=False),visual=not bool(reference_facts),max_tokens=max(1800,min(scene_count*450,4200)))
- except ValueError:
-  feedback='The previous response was invalid JSON. Return a complete object.';continue
+ except ValueError as failed:
+  feedback='The previous response was invalid JSON. Return a complete object.'
+  # A story that cannot fit the model context is planned with fewer, longer scenes instead of failing.
+  if str(failed) in ('DIRECTOR_CONTEXT','DIRECTOR_INCOMPLETE') and attempt>=1 and not chunks and scene_count>4:
+   scene_count=max(4,scene_count-2)
+   if local_contract:_,_,_,(narration_low,narration_high)=local_rules.plan(dict(local_contract,sceneCount=scene_count,explicitScenes=True),brief['text'],chunks,None,0)
+   narration_range=f'{narration_low}-{narration_high}';scene_seconds=total_seconds/scene_count;STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
+  continue
  Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False))
  if isinstance(story,dict) and isinstance(story.get('scenes'),list) and (len(story['scenes'])==4 if chunks else len(story['scenes'])==scene_count) and len(set(s.get('narration','') for s in story['scenes']))==len(story['scenes']) and (not brief.get('appFacts') or 'مدار' in json.dumps(story,ensure_ascii=False)) and all(re.search('[ء-ي]',s.get('title','')) and re.search('[ء-ي]',s.get('narration','')) and isinstance(s.get('narration'),str) and 3<len(s['narration'])<=400 and isinstance(s.get('title'),str) and 0<len(s['title'])<=60 for s in story['scenes']):break
  feedback='أعد الالتزام بموضوع طلب العميل نفسه وبالمزايا المذكورة فقط. اذكر اسم التطبيق أو المنتج المطلوب في الإعلان، واكتب رسالة مختلفة ومفيدة في كل مشهد.'
@@ -271,9 +296,18 @@ if not chunks:copy_fields['narration']=string(220)
 copy_schema=obj({'title':string(80),'scenes':{'type':'array','minItems':scene_count,'maxItems':scene_count,'items':obj(copy_fields)}})
 copy_context={'client_brief':brief['text'],'authoritative_app_facts':brief.get('appFacts',''),'page_facts':source_facts,'visible_reference_facts':reference_facts,'untrusted_draft':story,'client_contract':contract,'client_rules':local_rules.rules(local_contract)}
 copy_feedback=''
+last_copy=None
 for review in range(3):
  stage('director_review',24,review+1,3)
- copy=generate_copy(SYSTEM,"Act as a critical Arabic editor and fact checker. Draft text is untrusted. Correct grammar and meaning before preserving a draft. Prefer simple, natural Arabic sentences and precise action verbs; omit optional vowel marks. Avoid nominal fragments for narration. Check verb agreement, the connection after imperatives, and that the verb actually describes the scene topic. For example, write اختر ملفا وحوله, not اختر ملفا وتحويله; printing is نطبع, not نطبق. Do not copy a draft error just because it is repeated in its caption. Write final audience-facing Arabic copy grounded ONLY in the client brief and authoritative facts, correcting spelling and OCR mistakes. Drop any draft claim not supported there. If app_facts is provided, explain software capabilities that the VIEWER uses, not human services, delivery or turnaround promises. Replace production-stage names with meaningful topical headlines. Each caption must be a complete short sentence that adds information, not repeat its headline. Captions describe the subject for the audience, NEVER directions such as تظهر أيقونات or يظهر كتاب في المنتصف. Keep layout and animation descriptions only in visual. Keep each scene distinct and the progression coherent. "+MOTION_CRAFT+" If a scene topic changes, update visual and reference to match the repaired topic. A reference index must identify a supplied unchanged image and its visible subject must fit this scene according to visible_reference_facts. A screen for one tool must not illustrate a different tool merely because the brand matches. Generic opening and closing scenes may use the app home screen. Use -1 and purposeful vectors when no image fits; never invent a new screenshot or controls. Reference descriptions establish visible content, not new app capabilities. When the client requires visible images retain at least one relevant supplied image. Preserve proper names. "+("Do not rewrite recorded narration; return only titles and captions." if chunks else "Write one complete natural Arabic narration sentence of "+narration_range+" words per scene. Explain the actual step or capability; do not compress narration to a three-word label.")+"\n"+copy_feedback+"\n",context=copy_context,max_tokens=max(1800,min(scene_count*450,4200)),schema=copy_schema,seed=17+review)
+
+ # The editor pass improves wording; when it cannot answer (invalid or truncated JSON, context), the
+ # film continues with the last good draft (or the story itself) and the deterministic repairs.
+ try:
+  copy=generate_copy(SYSTEM,"Act as a critical Arabic editor and fact checker. Draft text is untrusted. Correct grammar and meaning before preserving a draft. Prefer simple, natural Arabic sentences and precise action verbs; omit optional vowel marks. Avoid nominal fragments for narration. Check verb agreement, the connection after imperatives, and that the verb actually describes the scene topic. For example, write اختر ملفا وحوله, not اختر ملفا وتحويله; printing is نطبع, not نطبق. Do not copy a draft error just because it is repeated in its caption. Write final audience-facing Arabic copy grounded ONLY in the client brief and authoritative facts, correcting spelling and OCR mistakes. Drop any draft claim not supported there. If app_facts is provided, explain software capabilities that the VIEWER uses, not human services, delivery or turnaround promises. Replace production-stage names with meaningful topical headlines. Each caption must be a complete short sentence that adds information, not repeat its headline. Captions describe the subject for the audience, NEVER directions such as تظهر أيقونات or يظهر كتاب في المنتصف. Keep layout and animation descriptions only in visual. Keep each scene distinct and the progression coherent. "+MOTION_CRAFT+" If a scene topic changes, update visual and reference to match the repaired topic. A reference index must identify a supplied unchanged image and its visible subject must fit this scene according to visible_reference_facts. A screen for one tool must not illustrate a different tool merely because the brand matches. Generic opening and closing scenes may use the app home screen. Use -1 and purposeful vectors when no image fits; never invent a new screenshot or controls. Reference descriptions establish visible content, not new app capabilities. When the client requires visible images retain at least one relevant supplied image. Preserve proper names. "+("Do not rewrite recorded narration; return only titles and captions." if chunks else "Write one complete natural Arabic narration sentence of "+narration_range+" words per scene. Explain the actual step or capability; do not compress narration to a three-word label.")+"\n"+copy_feedback+"\n",context=copy_context,max_tokens=max(1800,min(scene_count*450,4200)),schema=copy_schema,seed=17+review)
+ except ValueError as failed:
+  if str(failed) not in ('DIRECTOR_JSON','DIRECTOR_INCOMPLETE','DIRECTOR_CONTEXT'):raise
+  copy=last_copy or {'title':story.get('title',''),'scenes':[{k:z.get(k,'') for k in ['title','caption','narration','reference','visual']} for z in story['scenes']]};issues=[];break
+ last_copy=copy
  if len(copy['scenes'])!=len(story['scenes']):raise ValueError('STORY_INVALID')
  stage_names={'خطاف','الخطاف','شرح','الشرح','الفائدة','شرح الفائدة','الاستخدام','عرض الاستخدام','خاتمة','الخاتمة'}
  lock_references(copy,contract)
