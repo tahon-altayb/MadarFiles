@@ -139,4 +139,22 @@ function draw(ctx,p,s,time,images){
  ctx.fillStyle=accent;ctx.fillRect(W*.06,H*.955,W*.88*progress,Math.max(2,H*.002));
  ctx.restore();
 }
-return {validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions};});
+// New client pictures for a finished film, without touching its words, clock or voice:
+// first they replace repeated pictures, then fill scenes that had none, then the most reused.
+// Scenes showing the logo, and the closing card, keep their design.
+function reviseImages(p,names,logo){
+ const queue=[...names],placed=[],media=s=>s.composition.elements.filter(e=>['image','device'].includes(e.kind));
+ const protectedScene=(s,i)=>media(s).some(e=>logo&&e.asset===logo)||(i===p.scenes.length-1&&p.scenes.length>1);
+ const seen=new Set(),repeats=[];
+ p.scenes.forEach((s,i)=>{for(const e of media(s)){if(logo&&e.asset===logo)continue;if(seen.has(e.asset)&&!protectedScene(s,i))repeats.push(e);seen.add(e.asset);}});
+ for(const e of repeats){if(!queue.length)break;e.asset=queue.shift();placed.push(e.asset);}
+ p.scenes.forEach((s,i)=>{
+  if(!queue.length||protectedScene(s,i)||media(s).length)return;const b=textBindings(s);if(!b.heading||b.supporting.length!==1)return;
+  const name=queue.shift();s.composition=compose({title:b.heading.text,caption:b.supporting[0].text,narration:s.narration,reference:0},{aspect:p.aspect,images:[name],index:i});placed.push(name);
+ });
+ if(queue.length){const count={};p.scenes.forEach(s=>media(s).forEach(e=>{count[e.asset]=(count[e.asset]||0)+1;}));
+  const swap=p.scenes.flatMap((s,i)=>protectedScene(s,i)?[]:media(s).filter(e=>!placed.includes(e.asset))).sort((a,b)=>(count[b.asset]||0)-(count[a.asset]||0));
+  for(const e of swap){if(!queue.length)break;e.asset=queue.shift();placed.push(e.asset);}}
+ p.scenes.forEach(s=>validate(s.composition));return {placed,unused:queue};
+}
+return {validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});

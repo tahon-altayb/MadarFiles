@@ -51,7 +51,8 @@ final class LocalAgent {
   if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");
   ColabProbe.check(cancel);JSONObject direct=AgentIntents.resolve(user,source,previous);
   if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");
-  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)){
+  // Gemini just timed out and the on-device model is ready: answer locally instead of waiting again.
+  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)&&!(AgentDiagnostics.recentlyDown(c)&&ready(c))){
    status.update(-1,"Gemini · فهم الطلب والمرفقات ومراجعة الخطة");return provider(AgentCloud.plan(c,user,source,previous,cancel),"gemini");
   }
   if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");source=new JSONObject(source.toString());source.remove("_visual");
