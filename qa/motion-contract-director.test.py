@@ -93,8 +93,8 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  r,job=run(brief,text,tmp)
  assert r.returncode==0,(r.stdout[-2000:],r.stderr[-3000:])
  p=json.loads((job/'project.json').read_text());scenes=p['scenes']
- assert len(scenes)==10,len(scenes)
- assert all(abs(s['seconds']-5)<.01 for s in scenes),[s['seconds'] for s in scenes]
+ assert len(scenes)==brief['sceneCount']==6,len(scenes)
+ assert all(abs(s['seconds']-50/6)<.01 for s in scenes),[s['seconds'] for s in scenes]
  assert abs(sum(s['seconds'] for s in scenes)-50)<.01
  assert p['aspect']=='9:16'
  logo='asset_'+'b'*32+'.jpg'
@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  else:assert link['status']=='partial' and link.get('name') and checks['source']['ok'],link;print('link name from Google:',link['name'])
  story_prompt=(job/'story-prompt.txt').read_text()
  assert 'client_rules' in story_prompt and 'Scene 1 must show the client logo' in story_prompt
- assert '9-11 words' in story_prompt or '7-11 words' in story_prompt,'narration must be sized to a five-second scene'
+ assert '12-16 words' in story_prompt,'narration must be sized to an 8-second scene'
  # Copy review runs in batches of up to four scenes; more than one round means the forbidden copy was sent back.
  assert int((job/'fake-copy-count.txt').read_text())>math.ceil(10/4),'forbidden copy must be repaired by review, not silently shipped'
 # Brand colours come from a readable logo and always keep text legible.
@@ -131,7 +131,7 @@ if Image:
 # Motion craft (soft review): weak hook, long headline, long caption, clichés.
 craft=C.craft_issues({'scenes':[{'title':'أهلاً بكم في شاي جمر','caption':'تجربة فريدة لا تُنسى.','narration':'x'},{'title':'شاي على الجمر','caption':'نحضّر الشاي على الجمر كل يوم.','narration':'x'},{'title':'قائمة منيو غنية ومتنوعة تناسب جميع أفراد العائلة','caption':'تصفح قائمة شاي جمر وفطيرة الطيب المتنوعة والمميزة التي تضم الشاي والقهوة والفطائر الطازجة كل يوم.','narration':'x'}]})
 kinds=sorted((z['scene'],z['quality']) for z in craft);assert kinds==[(1,'cliche'),(1,'hook'),(3,'caption'),(3,'headline')],kinds
-print('motion contract director: logo first, 10x5s, forbidden removed, closing enforced, verification reported')
+print('motion contract director: logo first, 6 scenes from the pictures, forbidden removed, closing enforced, verification reported')
 
 # No identifiable logo: the job still finishes, the opening is typography (never the storefront), and the report says so.
 nologo=dict(brief);nologo.pop('logoAsset',None)
@@ -191,7 +191,7 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-exec-') as tmp:
  r,job=run_executive(tmp)
  assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
  p=json.loads((job/'project.json').read_text());scenes=p['scenes']
- assert len(scenes)==10 and abs(sum(z['seconds'] for z in scenes)-50)<.01,[z['seconds'] for z in scenes]
+ assert len(scenes)==6 and abs(sum(z['seconds'] for z in scenes)-50)<.01,[z['seconds'] for z in scenes]
  assert C.has_asset(scenes[0]['composition'],'asset_'+'b'*32+'.jpg'),'logo first with both contracts'
  texts=[]
  for z in scenes:texts+=[z['title'],z['narration']]+[e['text'] for e in z['composition']['elements'] if e['kind'] in ['text','metric']]

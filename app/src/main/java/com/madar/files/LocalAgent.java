@@ -27,6 +27,15 @@ final class LocalAgent {
  }
  void close(){closed=true;cancel();Thread release=new Thread(()->{synchronized(inferenceLock){synchronized(this){if(warmEngine!=null){warmEngine.close();warmEngine=null;}}}},"madar-agent-release");release.setDaemon(true);release.start();}
  JSONObject provider(JSONObject plan,String name)throws Exception{return plan.put("provider",name);}
+ /** Text-only plan from Groq with the compact local prompt (fits the free per-minute token limit). */
+ JSONObject groq(Context c,String user,JSONObject source,JSONArray previous,AtomicBoolean cancel)throws Exception{
+  status.update(-1,"Groq · فهم طلبك (بديل Gemini المجاني)");
+  JSONObject plain=new JSONObject(source.toString());plain.remove("_visual");String kind=plain.optString("kind");
+  String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
+  JSONArray all=history(previous),recent=new JSONArray();for(int i=Math.max(0,all.length()-8);i<all.length();i++)recent.put(all.get(i));
+  JSONObject data=new JSONObject().put("source",plain).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",recent).put("userRequest",user);
+  return provider(AgentTools.validate(GroqClient.json(c,prompt,data.toString(),AgentTools.schema(kind),2048,cancel),kind),"groq");
+ }
 
  interface Progress {void update(int percent,String message);}
  static File model(Context c){return new File(c.getFilesDir(),"agent-qwen3-1.7b.litertlm");}
@@ -52,8 +61,14 @@ final class LocalAgent {
   ColabProbe.check(cancel);JSONObject direct=AgentIntents.resolve(user,source,previous);
   if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");
   // Gemini just timed out and the on-device model is ready: answer locally instead of waiting again.
-  if(!c.getSharedPreferences("local_agent",0).getBoolean("offline",false)&&!(AgentDiagnostics.recentlyDown(c)&&ready(c))){
-   status.update(-1,"Gemini · فهم الطلب والمرفقات ومراجعة الخطة");return provider(AgentCloud.plan(c,user,source,previous,cancel),"gemini");
+  boolean online=!c.getSharedPreferences("local_agent",0).getBoolean("offline",false);
+  // Gemini just failed: the owner's free Groq key answers straight away instead of another long wait.
+  if(online&&GroqClient.configured(c)&&AgentDiagnostics.recentlyDown(c))return groq(c,user,source,previous,cancel);
+  if(online&&!(AgentDiagnostics.recentlyDown(c)&&ready(c))){
+   status.update(-1,"Gemini · فهم الطلب والمرفقات ومراجعة الخطة");
+   try{return provider(AgentCloud.plan(c,user,source,previous,cancel),"gemini");}
+   catch(java.util.concurrent.CancellationException stopped){throw stopped;}
+   catch(Exception failed){String code=AgentDiagnostics.code(failed);if(!GroqClient.configured(c)||!code.startsWith("GEMINI_")||code.equals("GEMINI_RESPONSE_BLOCKED"))throw failed;ColabProbe.check(cancel);return groq(c,user,source,previous,cancel);}
   }
   if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");source=new JSONObject(source.toString());source.remove("_visual");
   if(!ready(c))throw new IOException("هذا الطلب المركب يحتاج اتصال Gemini أو تنزيل النموذج المحلي؛ الأوامر المباشرة تعمل فورًا");

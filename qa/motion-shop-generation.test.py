@@ -22,7 +22,7 @@ ADDRESS='شارع الجال - خلف مربع الزينه'
 TEXT=REQUEST+'\nعنوان الفرع: '+ADDRESS
 ORDER=['menu.jpg','mint.jpg','logo.jpg','kettles.jpg']
 contract=json.loads(subprocess.check_output(['node','-e',"const B=require(process.argv[1]);process.stdout.write(JSON.stringify(B.parse(process.argv[2],{images:4,answers:{address:process.argv[3]}})))",str(repo/'app/src/main/assets/motion-brief.js'),REQUEST,ADDRESS]))
-assert not contract['missing'] and contract['logoFirst'] and contract['sceneCount']==10,contract
+assert not contract['missing'] and contract['logoFirst'] and contract['sceneCount']==6,contract
 
 with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  job=Path(tmp)/('madar_'+'d'*32);job.mkdir()
@@ -54,6 +54,9 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  for l in calls:print('EVIDENCE',l,flush=True)
  for name in ['progress.json','brief-contract.json']:
   if (job/name).exists():print('EVIDENCE',name,(job/name).read_text()[:3000],flush=True)
+ if (job/'copy-review.json').exists():
+  review=json.loads((job/'copy-review.json').read_text());print('EVIDENCE copy review attempt',review.get('attempt'),json.dumps(review.get('issues',[]),ensure_ascii=False)[:4000],flush=True)
+ print('EVIDENCE director log tail',log[-3000:],flush=True)
  if (job/'story.json').exists():
   for i,z in enumerate(json.loads((job/'story.json').read_text()).get('scenes',[])):print('EVIDENCE scene',i+1,json.dumps({k:z.get(k) for k in ['title','caption','narration','reference']},ensure_ascii=False),flush=True)
  if execution.returncode:raise RuntimeError((job/'progress.json').read_text())
@@ -79,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  def check(ok,message):
   if not ok:findings.append(message)
  scenes=p['scenes'];duration=float(info['format']['duration'])
- check(len(scenes)==10,f'scene count {len(scenes)} != 10')
+ check(len(scenes)==6,f'scene count {len(scenes)} != 6 (four pictures: each once, hook and closing)')
  check(abs(duration-50)<=(2 if args.voice=='none' else 5),f'duration {duration:.1f}s, requested 50s')
  video_stream=next(s for s in info['streams'] if s['codec_type']=='video');check(video_stream['height']>video_stream['width'],'not vertical')
  check(not any(s['codec_type']=='audio' for s in info['streams']) if args.voice=='none' else any(s['codec_type']=='audio' for s in info['streams']),'audio track does not match the voice choice')
@@ -91,10 +94,11 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  last=rules.key(' '.join([scenes[-1].get('title','')]+[e.get('text','') for e in scenes[-1]['composition']['elements'] if e.get('kind')=='text']))
  check(rules.key('زورونا في فرعنا') in last,'closing «زورونا في فرعنا» missing from the last scene')
  check(rules.key(ADDRESS) in last,'branch address missing from the last scene')
- geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in scenes};check(len(geometry)>=5,f'only {len(geometry)} distinct layouts in 10 scenes')
+ geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in scenes};check(len(geometry)>=4,f'only {len(geometry)} distinct layouts in 6 scenes')
  used={e.get('asset') for s in scenes for e in s['composition']['elements'] if e.get('asset')};check(len(used)>=3,f'only {len(used)} of 4 owned images used')
+ shown=[e.get('asset') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('asset') and e.get('asset')!=logo];check(len(shown)==len(set(shown)),'a picture is repeated: '+str(shown))
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')
  failed=[c for c in p.get('verification',[]) if not c['ok'] and c['id']!='source'];check(not failed,'verification failures: '+json.dumps(failed,ensure_ascii=False))
  (evidence/'findings.json').write_text(json.dumps({'findings':findings,'verification':p.get('verification',[]),'duration':duration,'scenes':[{k:s.get(k) for k in ['title','caption','narration','seconds']} for s in scenes]},ensure_ascii=False,indent=1))
  assert not findings,'\n'.join(findings)
- print('PASS shop request end to end: real model, logo first, 10 scenes, 50 s, vertical, forbidden text absent, closing and address present')
+ print('PASS shop request end to end: real model, logo first, 6 scenes without repeated pictures, 50 s, vertical, forbidden text absent, closing and address present')

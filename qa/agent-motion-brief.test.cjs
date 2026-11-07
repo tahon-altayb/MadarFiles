@@ -25,7 +25,7 @@ await logo.selectOption(ids[1]);await page.locator('.agentChoiceActions .primary
 const log=await page.locator('#agentLog').textContent();for(const part of ['فهمت طلبك','50 ثانية','بالشعار','صورة الشعار: IMG_2041.jpg','زورونا في فرعنا','حي النرجس','موقع إلكتروني'])assert.ok(log.includes(part),part);
 const request=(await starts()).at(-1);assert.ok(request,'motion started');
 const c=request.contract;assert.equal(c.durationSec,50);assert.equal(c.aspect,'9:16');assert.ok(c.logoFirst&&c.noWebsite);assert.equal(c.logoAttachment,ids[1]);
-assert.equal(c.address,'الرياض – حي النرجس – طريق أبي بكر');assert.deepEqual(c.required,['زورونا في فرعنا']);assert.equal(c.sceneCount,10);assert.equal(c.missing.length,0);
+assert.equal(c.address,'الرياض – حي النرجس – طريق أبي بكر');assert.deepEqual(c.required,['زورونا في فرعنا']);assert.equal(c.sceneCount,6);assert.equal(c.missing.length,0);
 assert.deepEqual([...request.attachments].sort(),[...ids].sort());
 // 4. The finished film carries its checks into the chat.
 await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'c'.repeat(32),status:'done',concept:'إعلان الموسم',result:{name:'madar_result_1.mp4',mime:'video/mp4',size:1000},verification:[{id:'logo_first',label:'الشعار في أول مشهد',ok:true},{id:'duration',label:'المدة 58 ثانية (المطلوب 50)',ok:false,detail:'التعليق الصوتي أطول من المدة المطلوبة'}]}),request);
@@ -99,6 +99,9 @@ await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,p
  assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan'||r.action==='agentRequest').length),before,'no online planner call');
  assert.doesNotMatch(await page.locator('#agentLog').textContent(),/اختر حتى ثماني صور/);
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'8'.repeat(32),status:'done',concept:'',result:{name:'madar_result_11.mp4',mime:'video/mp4',size:1000}}),revision);}
+// 13. Provider keys open their own settings from the chat; the key never enters the conversation.
+await send('اربط مفتاح جروك');assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='groqSettings').length),1);
+await send('اربط مفتاح جميناي');assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='translationSettings').length),1);
 await send('وش مهاراتك');assert.match(await page.locator('#agentLog').textContent(),/«إعلانات المطاعم» \(دائمة\)/);
 await send('احذف مهارة إعلانات المطاعم');savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.skills.length,0);
 assert.deepEqual(errors,[]);await browser.close();console.log('agent motion brief: asks missing address, chooses logo, summarises, passes contract, reports checks, keeps constraints');
