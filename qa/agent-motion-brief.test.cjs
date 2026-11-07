@@ -99,6 +99,9 @@ await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,p
  assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan'||r.action==='agentRequest').length),before,'no online planner call');
  assert.doesNotMatch(await page.locator('#agentLog').textContent(),/اختر حتى ثماني صور/);
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'8'.repeat(32),status:'done',concept:'',result:{name:'madar_result_11.mp4',mime:'video/mp4',size:1000}}),revision);}
+// 13. Provider keys open their own settings from the chat; the key never enters the conversation.
+await send('اربط مفتاح جروك');assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='groqSettings').length),1);
+await send('اربط مفتاح جميناي');assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='translationSettings').length),1);
 await send('وش مهاراتك');assert.match(await page.locator('#agentLog').textContent(),/«إعلانات المطاعم» \(دائمة\)/);
 await send('احذف مهارة إعلانات المطاعم');savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.skills.length,0);
 assert.deepEqual(errors,[]);await browser.close();console.log('agent motion brief: asks missing address, chooses logo, summarises, passes contract, reports checks, keeps constraints');

@@ -21,6 +21,8 @@ final class GeminiClient {
  static final long REQUEST_TIMEOUT_MILLIS=120000L;
  static final long REQUEST_DEADLINE_MILLIS=REQUEST_TIMEOUT_MILLIS+5000L;
  private static FirebaseApp managed;
+ /** With a Groq backup configured, a silent Gemini is abandoned sooner. */
+ static long timeout(Context c){return GroqClient.configured(c)?45000L:REQUEST_TIMEOUT_MILLIS;}
  private static void check(AtomicBoolean cancel){if(cancel.get()||Thread.currentThread().isInterrupted())throw new CancellationException();}
  static boolean configured(Context c){FirebaseOptions o=FirebaseOptions.fromResource(c);return o!=null&&o.getProjectId()!=null&&!o.getProjectId().isEmpty();}
  static synchronized FirebaseApp managed(Context c)throws IOException {
@@ -38,11 +40,11 @@ final class GeminiClient {
   GenerationConfig.Builder config=new GenerationConfig.Builder();JSONObject generation=body.getJSONObject("generationConfig");
   config.responseMimeType="application/json";config.responseSchema=schema(generation.getJSONObject("responseSchema"));config.maxOutputTokens=generation.getInt("maxOutputTokens");
   Content system=content(body.getJSONObject("systemInstruction"));
-  GenerativeModelFutures client=GenerativeModelFutures.from(FirebaseAI.getInstance(managed(c),GenerativeBackend.googleAI()).generativeModel(model,config.build(),null,null,null,system,new RequestOptions(REQUEST_TIMEOUT_MILLIS)));
+  GenerativeModelFutures client=GenerativeModelFutures.from(FirebaseAI.getInstance(managed(c),GenerativeBackend.googleAI()).generativeModel(model,config.build(),null,null,null,system,new RequestOptions(timeout(c))));
   JSONArray inputs=body.getJSONArray("contents");if(inputs.length()!=1)throw new IOException("عدد رسائل الترجمة غير صالح");
   ListenableFuture<GenerateContentResponse> future=client.generateContent(content(inputs.getJSONObject(0)));
   try{
-   long until=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(REQUEST_DEADLINE_MILLIS);
+   long until=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(timeout(c)+5000L);
    while(true){
     check(cancel);if(System.nanoTime()>until)throw AgentDiagnostics.failure(new TimeoutException());
     try{
