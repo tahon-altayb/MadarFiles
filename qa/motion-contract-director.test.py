@@ -163,6 +163,17 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-stubborn-') as tmp:
  logo='asset_'+'b'*32+'.jpg';shown=[i for i,z in enumerate(scenes) if C.has_asset(z['composition'],logo)]
  assert shown and shown[0]==0 and set(shown)<={0,len(scenes)-1},shown
  assert {c['id']:c for c in p['verification']}['forbidden']['ok']
+# The call to action written one scene early moves to the end instead of appearing twice,
+# and the closing card signs off with the logo.
+with tempfile.TemporaryDirectory(prefix='madar-contract-early-cta-') as tmp:
+ saved=FAKE_SERVER;FAKE_SERVER=saved.replace("  if bad and i==n-1:title='زوروا موقعنا';caption='اطلب أونلاين من موقعنا الإلكتروني.'","  if i==n-2:title='زورونا في فرعنا';caption='الرياض – حي النرجس – طريق أبي بكر'\n  if bad and i==n-1:title='زوروا موقعنا';caption='اطلب أونلاين من موقعنا الإلكتروني.'")
+ assert FAKE_SERVER!=saved
+ r,job=run(brief,text,tmp);FAKE_SERVER=saved
+ assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
+ scenes=json.loads((job/'project.json').read_text())['scenes']
+ ctas=[i for i,z in enumerate(scenes) if 'زورونا' in z['title']];assert ctas==[len(scenes)-1],[z['title'] for z in scenes]
+ assert C.has_asset(scenes[-1]['composition'],'asset_'+'b'*32+'.jpg'),'closing signs off with the logo'
+print('early call to action moved to the end; closing signs off with the logo')
 print('stubborn model: forbidden clauses removed, logo kept to opening and closing, film delivered')
 
 # Online interpretation and chat contract together (Gemini answered): the director must apply

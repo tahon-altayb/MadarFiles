@@ -345,6 +345,20 @@ for shot,edited in zip(story['scenes'],copy['scenes']):shot.update(edited)
 closing=dict(local_contract)
 closing['required']=list(dict.fromkeys([*local_contract.get('required',[]),*[r.get('text','') for r in contract.get('must_include',[]) if r.get('text')],*([contract['visit_text']] if contract.get('physical_visit') and contract.get('visit_text') else [])]))
 if not closing.get('address') and contract.get('address_required') and contract.get('address'):closing['address']=contract['address']
+# The model sometimes writes the call to action one scene early and then a filler scene: the
+# call to action moves to the end instead of appearing twice.
+cta=[local_rules.key(x) for x in closing.get('required',[])+[closing.get('address','')] if x and len(local_rules.key(x))>=4]
+def has_cta(z):
+ t=local_rules.key(' '.join(str(z.get(k,'')) for k in ['title','caption']))
+ return any(r in t for r in cta)
+if cta and len(story['scenes'])>2 and not has_cta(story['scenes'][-1]):
+ early=[i for i,z in enumerate(story['scenes'][:-1]) if i>0 and has_cta(z)]
+ if early:story['scenes'].append(story['scenes'].pop(early[-1]))
+# Any other early copy of the call to action becomes an ordinary scene from its own narration.
+for z in story['scenes'][1:-1]:
+ if cta and has_cta(z):
+  clauses=[x.strip(' .،,') for x in re.split(r'(?<=[.!؟،,])\s*',str(z.get('narration',''))) if x.strip()]
+  z['title']=(clauses[0] if clauses else z.get('title',''))[:45];z['caption']=(' '.join(clauses[1:]) or z.get('narration',''))[:95]
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
@@ -361,6 +375,8 @@ for i,z in enumerate(story['scenes']):
   free=[n for n in photos if n not in seen and all(x.get('reference')!=n for x in story['scenes'][i+1:])]
   z['reference']=free[0] if free else -1;ref=z['reference']
  if ref!=-1:seen.add(ref)
+# The closing card signs off with the brand when it has no picture (also after repeats were removed).
+if logo_index is not None and logo_name and len(story['scenes'])>1 and story['scenes'][-1].get('reference',-1)==-1:story['scenes'][-1]['reference']=logo_index
 story['title']=copy['title']
 if brief.get('appFacts') and 'مدار' not in json.dumps(story,ensure_ascii=False):raise ValueError('STORY_INVALID')
 story.update(theme=theme,aspect=aspect,concept=story['title'])
