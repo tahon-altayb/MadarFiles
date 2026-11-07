@@ -318,44 +318,6 @@
  }
  function describeSkill(z){return '«'+z.name+'»'+(z.always?' (دائمة)':'')+': '+(z.text.length>90?z.text.slice(0,90)+'…':z.text);}
  function describeProfile(p){const parts=[];if(p.address)parts.push('العنوان: '+p.address);if(p.phone)parts.push('الرقم: '+p.phone);if(p.logoFirst)parts.push('الشعار أولاً');if(p.logoLast)parts.push('الشعار في الختام');if(p.noWebsite)parts.push('بدون موقع إلكتروني');if((p.corrections||[]).length)parts.push(p.corrections.length+' ملاحظة تصحيح');if(p.aspect)parts.push('المقاس '+p.aspect);return '«'+p.name+'»: '+(parts.join('، ')||'بدون تفضيلات');}
- // Optional questions before a new advert: suggestions to tap (several where it makes sense) and a
- // free «أخرى» line under each. What the brief already says is pre-selected; empty answers add nothing.
- const FOOD=/شاي|شاهي|قهوه|كافيه|كوفي|مقهي|مطعم|فطير|فطاير|معجن|مخبز|حلويات|حلا|عصير|برجر|برقر|بيتزا|وجبات|اكل|مشروبات|كرك|شاورما|مشويات|كيك|دونات|ايسكريم|بوفيه|كشك|عربه/;
- const RETAIL=/متجر|ملابس|عطور|عطر|ازياء|عبايات|ساعات|جوالات|الكترونيات|اكسسوار|مجوهرات|ذهب|نظارات|احذيه|هدايا|ورد|زهور/;
- const SERVICE=/صالون|حلاق|مغسله|غسيل|ورشه|عياده|مركز|تدريب|دورات|صيانه|نقل|تنظيف|تصوير|مكتب|استشار/;
- function questions(text,context={}){
-  const t=key(text),pick=(list)=>list.filter(([,,re])=>re&&re.test(t)).map(([v])=>v),strip=list=>list.map(([v,l])=>[v,l]);
-  const kind=FOOD.test(t)?'food':RETAIL.test(t)?'retail':SERVICE.test(t)?'service':/تطبيق|منصه/.test(t)?'app':'general';
-  const fields=[];const chips=(name,label,list,multi,placeholder)=>fields.push({name,label,type:'chips',multi,options:strip(list),selected:pick(list),other:'',value:'',placeholder});
-  if(kind==='food'){
-   chips('sells','وش تبيعون؟',[['tea','شاي',/شاي|شاهي/],['karak','كرك',/كرك/],['coffee','قهوة',/قهوه|كوفي/],['pastry','فطائر ومعجنات',/فطير|فطاير|معجن/],['sandwich','شطائر',/شطير|شطاير|ساندو/],['fries','بطاطس ووجبات خفيفة',/بطاطس|سناك/],['sweets','حلويات',/حلويات|حلا|كيك/],['cold','مشروبات باردة وعصيرات',/عصير|بارد/]],true,'أخرى: مثلًا شاي حليب، فطيرة زعتر');
-   chips('features','وش يميزكم؟',[['24h','مفتوح 24 ساعة',/24|٢٤|على مدار الساعه/],['seating','جلسات مريحة',/جلس/],['price','أسعار مناسبة',/اسعار|ريال/],['delivery','توصيل عبر التطبيقات',/توصيل|هنقرستيشن|هنقر|كيتا|جاهز|مرسول|تويو/],['fresh','تحضير طازج',/طازج/],['coals','على الجمر',/جمر/],['fast','خدمة سريعة',/سريع/],['family','مناسب للعوائل',/عوايل|عوائل|عائل/],['parking','مواقف سهلة',/مواقف/]],true,'أخرى: اكتب ميزة ما ذكرتها');
-  }else if(kind==='retail'){
-   chips('sells','وش تبيعون؟',[],true,'اكتب أبرز منتجاتكم');
-   chips('features','وش يميزكم؟',[['price','أسعار مناسبة',/اسعار|ريال/],['variety','تشكيلة واسعة',/تشكيل/],['original','منتجات أصلية',/اصلي/],['delivery','توصيل',/توصيل/],['warranty','ضمان واسترجاع',/ضمان|استرجاع/],['new','وصل جديد',/جديد/]],true,'أخرى: اكتب ميزة ما ذكرتها');
-  }else if(kind==='service'){
-   chips('sells','وش تقدمون من خدمات؟',[],true,'اكتب خدماتكم');
-   chips('features','وش يميزكم؟',[['experience','خبرة طويلة',/خبر/],['price','أسعار مناسبة',/اسعار|ريال/],['fast','إنجاز سريع',/سريع/],['booking','حجز سهل',/حجز|موعد/],['home','خدمة في الموقع أو المنزل',/منزل|موقعك/],['warranty','ضمان على الشغل',/ضمان/]],true,'أخرى: اكتب ميزة ما ذكرتها');
-  }else{
-   chips('sells',kind==='app'?'وش يسوي التطبيق؟':'وش تقدمون؟',[],true,kind==='app'?'اكتب أهم ميزاته':'اكتب منتجاتكم أو خدماتكم');
-   chips('features','وش يميزكم؟',[['price','سعر مناسب أو مجاني',/مجاني|اسعار|ريال/],['easy','سهل الاستخدام',/سهل/],['fast','سريع',/سريع/],['support','دعم وخدمة عملاء',/دعم/]],true,'أخرى: اكتب ميزة ما ذكرتها');
-  }
-  chips('audience','مين تبي يوصله الإعلان؟',[['youth','الشباب'],['families','العوائل'],['workers','الموظفين والطلاب'],['all','الكل']],false,'أخرى: مثلًا سواق المشاوير');
-  chips('offer','عندكم عرض حالي؟',[['none','ما فيه عرض حاليًا']],false,'اكتب العرض بالضبط: مثلًا الشاي بريالين');
-  chips('tone','وش روح الإعلان؟',[['energetic','حماسية وشبابية'],['warm','دافئة وقريبة'],['premium','فخمة وراقية'],['simple','بسيطة ومباشرة']],false,'أخرى: اكتب الأسلوب اللي تبيه');
-  chips('never','شي ما تبيعونه أو ما تبيه يُذكر؟',[['none','لا يوجد']],false,'مثلًا: ما نبيع لحوم');
-  return fields;
- }
- // The answers as brief lines the director reads; «لا تذكر X» lines also become forbidden copy.
- function answersText(fields){
-  const get=name=>(fields||[]).find(f=>f.name===name),labels=f=>{if(!f)return [];const map=new Map((f.options||[]).map(([v,l])=>[v,l]));return [...(f.selected||[]).filter(v=>v!=='none').map(v=>map.get(v)||v),...String(f.other||'').split(/[،,\n]+/).map(x=>x.trim()).filter(Boolean)];};
-  const lines=[];const add=(label,name)=>{const v=labels(get(name));if(v.length)lines.push(label+': '+v.join('، '));};
-  add('نبيع ونقدم','sells');add('مميزاتنا','features');add('جمهور الإعلان','audience');
-  const offer=labels(get('offer'));if(offer.length)lines.push('العرض الحالي (اكتبه كما هو): '+offer.join('، '));else if((get('offer')?.selected||[]).includes('none'))lines.push('لا يوجد عرض حالي؛ لا تخترع خصمًا');
-  add('روح الإعلان','tone');
-  for(const item of labels(get('never')))lines.push('لا تذكر '+item.replace(/^(?:ما|لا)\s*(?:نبيع|نقدم)\s+/,''));
-  return lines.length?'معلومات من صاحب المحل (موثوقة، استخدمها):\n'+lines.join('\n'):'';
- }
  // How the owner wants his pictures used, when he says it: 'photosOnly' (his pictures, no drawings),
  // 'inspired' (understand them, show drawn motion graphics instead), 'attached' (both), or ''.
  function pictureMode(text){const t=key(text);
@@ -363,5 +325,5 @@
   if(/(?:صوري|الصور|صورنا)\s+(?:فقط|بس|نفسها)|بدون\s+(?:رسوم|رسومات|رسمات)|لا\s+(?:تضيف|تحط)\s+رسوم/.test(t))return 'photosOnly';
   if(/(?:صوري|الصور)\s+(?:مع|و)\s*(?:ال)?رسوم|رسوم(?:ات)?\s+(?:مع|و)\s*(?:ال)?صور/.test(t))return 'attached';
   return '';}
- return {VERSION,parse,pictureMode,questions,answersText,declines,report,skillFrom,findSkills,applySkills,skillCommand,describeSkill,profileFrom,hasProfileFacts,findProfile,applyProfile,profileCommand,describeProfile,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
+ return {VERSION,parse,pictureMode,declines,report,skillFrom,findSkills,applySkills,skillCommand,describeSkill,profileFrom,hasProfileFacts,findProfile,applyProfile,profileCommand,describeProfile,merge,summary,directorRules,violations,sceneCount,key,duration:t=>duration(key(t)),aspect:t=>aspect(key(t)),WEBSITE};
 });

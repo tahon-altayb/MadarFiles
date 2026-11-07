@@ -12,6 +12,10 @@ assert.deepEqual(C.textEdit('شيل كلمة واللحوم المشوية'),{fr
 for(const t of ['احذف المشهد الثالث','غير الخلفية الى الأسود','غير الصور','خل الشعار في الأخير'])assert.equal(C.textEdit(t),null,t);
 assert.deepEqual(B.parse('لاننا ما نبيع لحوم نهائيا',{images:0}).forbidden,['لحوم']);
 assert.equal(B.pictureMode('لا تحط الصور نفسها خله رسومات موشن'),'inspired');assert.equal(B.pictureMode('بالصور فقط'),'photosOnly');assert.equal(B.pictureMode('سوي اعلان لمحلي'),'');
+// Every kind has its own questions with many suggestions, and the request never leaks into a field.
+const Q=require('../app/src/main/assets/motion-questions.js');
+for(const id of Q.ORDER){const f=Q.build(id,'نص الطلب');assert.ok(f.length>=17,id);assert.ok(f.every(x=>!String(x.placeholder).includes('نص الطلب')),id);assert.ok(f.reduce((n,x)=>n+x.options.length,0)>=70,id);}
+assert.equal(Q.detect('محل شاي جمر وفطيرة'),'cafe');assert.equal(Q.detect('عمودي للجوال، تطبيقات توصيل هنقرستيشن و كيتا'),'cafe');assert.equal(Q.detect('محل جوالات وساعات ذكية'),'electronics');assert.equal(Q.detect('تطبيق لتعليم الانجليزي'),'education');assert.equal(Q.detect('مشروع فلل في الرياض'),'realestate');
 (async()=>{const browser=await chromium.launch({...(process.env.MADAR_CHROME_PATH?{executablePath:process.env.MADAR_CHROME_PATH}:{channel:process.env.CI?'chrome':undefined}),headless:true});
  const page=await browser.newPage({viewport:{width:412,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{window.requests=[];window.Android={request:s=>requests.push(JSON.parse(s))};});
@@ -31,17 +35,24 @@ assert.equal(B.pictureMode('لا تحط الصور نفسها خله رسوما�
  fs.mkdirSync('qa/evidence/chat-review',{recursive:true});await page.screenshot({path:'qa/evidence/chat-review/motion-setup.png',fullPage:false});
  await page.locator('.agentChoiceActions .primary').click();
  assert.equal(await count('agentMotionStart'),0,'nothing starts before the questions');assert.equal(await count('agentMotionFacts'),0,'the pictures are never read into facts');
- // Quick questions: tap suggestions (pre-selected from the request) and type «أخرى».
- assert.ok(await page.locator('.agentChip').count()>=10);assert.equal(await page.locator('.agentChip[aria-pressed=true]',{hasText:'شاي'}).first().count(),1,'what the request says is pre-selected');
- await page.locator('.agentChip',{hasText:'جلسات مريحة'}).click();await page.locator('.agentChip',{hasText:'الشباب'}).click();await page.locator('.agentChip',{hasText:'حماسية وشبابية'}).click();
+ // Quick questions: the kind is recognised (a café), sections with several questions each, suggestions to tap.
+ assert.equal(await page.locator('.agentChip[data-value=cafe][aria-pressed=true]').count(),1,'a tea shop is a café');
+ assert.ok(await page.locator('.agentChoiceSection').count()>=7,'questions are grouped into story sections');assert.ok(await page.locator('.agentChipField').count()>=18,'many questions');assert.ok(await page.locator('.agentChip').count()>=90,'many suggestions');
+ await page.locator('.agentChip[data-value=nights]').click();await page.locator('.agentChip[data-value=screens]').click();await page.locator('.agentChip[data-value=cards]').click();
+ await page.locator('.agentChip[data-value=youth]').click();await page.locator('.agentChip',{hasText:'حماسية وشبابية'}).click();
  await page.locator('[data-choice=neverOther]').fill('ما نبيع لحوم');await page.locator('[data-choice=offerOther]').fill('الشاي بريالين');
  await page.screenshot({path:'qa/evidence/chat-review/motion-questions.png',fullPage:false});
  await page.locator('.agentChoiceActions .primary').click();
  const start=await last('agentMotionStart');assert.ok(start,'the film starts after the answers');
-assert.match(start.prompt,/مميزاتنا: .*جلسات مريحة/);assert.match(start.prompt,/جمهور الإعلان: الشباب/);assert.match(start.prompt,/العرض الحالي \(اكتبه كما هو\): الشاي بريالين/);assert.match(start.prompt,/روح الإعلان: حماسية وشبابية/);
+ assert.match(start.prompt,/خطة الإعلان من صاحب المحل/);assert.match(start.prompt,/الافتتاح \(أول مشهد بعد الشعار يكون عن هذا\): سهرات الشباب والمباريات/);assert.match(start.prompt,/المكان والتجربة: شاشات لعرض المباريات، بلوت وجكارو/);assert.match(start.prompt,/الجمهور: الشباب/);assert.match(start.prompt,/العرض الحالي \(اكتبه كما هو\): الشاي بريالين/);assert.match(start.prompt,/روح الإعلان: حماسية وشبابية/);assert.doesNotMatch(start.prompt,/بلايستيشن/);
  assert.ok(start.contract.forbidden.includes('لحوم'),JSON.stringify(start.contract.forbidden));assert.equal(start.setup.references,'inspired');
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),start);
 
+ // Another kind of business replaces the questions with its own.
+ await load('kind-switch',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
+ if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();
+ await page.locator('.agentChip[data-value=clinic]').click();assert.ok(await page.locator('.agentChip',{hasText:'أسنان'}).count()>=1,'clinic questions after choosing a clinic');assert.equal(await page.locator('.agentChip',{hasText:'شاي الجمر'}).count(),0);
+ await page.locator('.agentChoiceActions button:not(.primary)').click();
  // «بكتب من عندي»: the owner's own text is added before the film starts.
  await load('facts-add',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
  await page.locator('[data-choice=info]').selectOption('add');if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();

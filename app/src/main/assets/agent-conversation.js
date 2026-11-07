@@ -56,7 +56,9 @@
   host.querySelector('.agentChoiceCard')?.remove();const card=document.createElement('section');card.className='agentChoiceCard';card.setAttribute('aria-label','خيارات الطلب');
   const title=document.createElement('b');title.textContent=pending.title||'وش تفضّل لهذه العملية؟';card.append(title);
   if(pending.intro){const intro=document.createElement('p');intro.className='agentChoiceIntro';intro.textContent=pending.intro;card.append(intro);}
+  let section='';
   for(const field of pending.fields){
+   if(field.section&&field.section!==section){section=field.section;const head=document.createElement('h4');head.className='agentChoiceSection';head.textContent=section;card.append(head);}
    if(field.type==='chips'){card.append(chips(field,()=>change(pending)));continue;}
    const label=document.createElement('label');label.textContent=field.label;let control;
    if(field.type==='select'){control=document.createElement('select');for(const [value,text]of field.options){const option=document.createElement('option');option.value=value;option.textContent=text;control.append(option);}}

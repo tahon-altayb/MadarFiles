@@ -472,34 +472,43 @@ for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo
 # Only where the picture shows what the scene says: a crowd watching a match never illustrates
 # «فطائر مميزة» (the owner's 1.9.50 film); otherwise the scene keeps its drawing.
 PICTURE_CONCEPTS={'pastry':r'فطير|فطاي|معجن|مخبوز','tea':r'شاي|شاهي|كرك|استكان','coffee':r'قهوه|دله|فنجان','seating':r'جلس|طاول|كراسي|كرسي|ديكور|داخل','menu':r'منيو|قايمه|اسعار|اصناف','fries':r'بطاطس|بطاطا','grill':r'جمر|فحم|نار|مشوي','sweets':r'حلويات|حلا|كيك|حلي','cold':r'بارد|عصير|مثلج','storefront':r'واجهه|لافته|مدخل','night':r'ليل|مضاء|اضاء|زينه'}
-def picture_fits(z,index):
+PRODUCT_CONCEPTS={'pastry','tea','coffee','menu','fries','grill','sweets','cold'}
+def _concepts(text):
+ t=local_rules.key(text).replace('ئ','ي');return {k for k,rx in PICTURE_CONCEPTS.items() if re.search(rx,t)}
+def _stems(text):
+ t=local_rules.key(text).replace('ئ','ي')
+ return {w[:4] for w in re.findall(r'[\u0621-\u064a]{3,}',re.sub(r'(?:^|\s)(?:[وبفل])?ال',' ',t)) if len(w)>=3}|{'#'+k for k in _concepts(t)}
+def picture_fits(z,index,loose=False):
+ """2 levels: the picture shows what the scene says (shared words or concepts such as فطائر/فطيرة);
+ or, loosely, a scene that names no product (hours, the brand, the atmosphere) may show a place or a
+ picture that itself names no product. A crowd photo never goes under «نكهة الفحم»."""
  fact=next((f for f in reference_facts if f.get('index')==index),None)
  if not fact:return False
- def stems(text):
-  t=local_rules.key(text).replace('ئ','ي')
-  # Shared concepts count as a match even in different words (فطائر/فطيرة/معجنات, جلسات/طاولات).
-  concepts={'#'+k for k,rx in PICTURE_CONCEPTS.items() if re.search(rx,t)}
-  return {w[:4] for w in re.findall(r'[\u0621-\u064a]{3,}',re.sub(r'(?:^|\s)(?:[وبفل])?ال',' ',t)) if len(w)>=3}|concepts
- return bool(stems(' '.join(str(z.get(k,'')) for k in ['title','caption','narration']))&stems(fact.get('description','')))
+ words=' '.join(str(z.get(k,'')) for k in ['title','caption','narration']);description=str(fact.get('description',''))
+ if _stems(words)&_stems(description):return True
+ if not loose:return False
+ return not (_concepts(words)&PRODUCT_CONCEPTS) and (fact.get('kind') in ('place_photo','other') or not (_concepts(description)&PRODUCT_CONCEPTS))
 photos=[n for n in range(len(images)) if n!=logo_index]
 seen=set()
 for i,z in enumerate(story['scenes']):
  ref=z.get('reference',-1)
  if i in logo_targets or ref==-1 or (ref==logo_index and i==len(story['scenes'])-1):continue
  # The model's own pick must show what the scene says too (a crowd photo under «نكهة الفحم»).
- if ref!=logo_index and reference_facts and not picture_fits(z,ref):z['reference']=-1;continue
+ if ref!=logo_index and reference_facts and not picture_fits(z,ref,loose=True):z['reference']=-1;continue
  if ref==logo_index or ref in seen:
   free=[n for n in photos if n not in seen and all(x.get('reference')!=n for x in story['scenes'][i+1:])]
+  free=[n for n in free if not reference_facts or picture_fits(z,n,loose=True)]
   z['reference']=free[0] if free else -1;ref=z['reference']
  if ref!=-1:seen.add(ref)
-# The client's pictures come first: any still unused take picture-less middle scenes (drawn
-# illustrations are for when the pictures run out).
+# The client's pictures come first: still unused ones take picture-less middle scenes, the closest
+# match first, then (loosely) scenes about the place, the hours or the brand; the rest are drawn.
 unused=[n for n in photos if n not in seen] if PICTURE_MODE!='inspired' else []
-for i,z in enumerate(story['scenes']):
- if not unused:break
- if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1:
-  fit=next((n for n in unused if picture_fits(z,n)),None)
-  if fit is not None:unused.remove(fit);z['reference']=fit;seen.add(fit)
+for loose in (False,True):
+ for i,z in enumerate(story['scenes']):
+  if not unused:break
+  if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1:
+   fit=next((n for n in unused if (picture_fits(z,n,loose) if reference_facts else loose)),None)
+   if fit is not None:unused.remove(fit);z['reference']=fit;seen.add(fit)
 # The closing card signs off with the brand when it has no picture (also after repeats were removed).
 if logo_index is not None and logo_name and len(story['scenes'])>1 and story['scenes'][-1].get('reference',-1)==-1:story['scenes'][-1]['reference']=logo_index
 # «افهم صوري وسوّها رسومات»: the pictures were read for the facts, but only the logo is shown; every
