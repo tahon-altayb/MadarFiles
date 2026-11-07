@@ -73,6 +73,23 @@ def forbidden_hits(texts,c):
  joined=key(' \n '.join(texts))
  return [f for f in c.get('forbidden',[]) if len(key(f))>=2 and key(f) in joined]
 
+WEAK_END=re.compile(r'(?:^|\s)(?:في|من|على|الى|إلى|عن|مع|و|او|أو|ثم|حيث|التي|الذي|لكم|بين)$')
+def short_headline(text,limit=5):
+ """A readable headline of at most `limit` words that does not end on a dangling preposition."""
+ words=str(text).strip(' .،,!؟').split()
+ if len(words)<=limit+1:return ' '.join(words)
+ cut=words[:limit]
+ while len(cut)>2 and WEAK_END.search(key(' '.join(cut))):cut=cut[:-1]
+ return ' '.join(cut)
+def headline_from(shot,c=None,taken=()):
+ """A headline from the scene's own words: a clause that is not a greeting or a call to action."""
+ for field in ['caption','narration']:
+  for clause in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get(field,''))):
+   clause=clause.strip(' .،,')
+   if len(clause.split())<2 or GREETING.search(key(clause)) or is_cta(clause,c) or key(clause) in taken:continue
+   return short_headline(clause)
+ return ''
+
 def _fill(shot,c=None):
  """Never leave a scene without words after clauses were removed."""
  c=c or {}
@@ -106,7 +123,7 @@ def scrub(scenes,c,phrases=(),claims=()):
   _fill(shot,c)
  return changed
 
-META=re.compile(r'(?:^|\s)(?:[وبلف])?(?:ال)?(?:مشهد|مشاهد|فيديو|موشن|لقطه|كاميرا|مونتاج)(?=\s|$|[.،,!؟:])|هويه المحل|بدايه الاعلان|نهايه الاعلان|تفتتح المشهد')
+META=re.compile(r'(?:^|\s)(?:[وبلف])?(?:ال)?(?:مشهد|مشاهد|فيديو|موشن|لقطه|كاميرا|مونتاج|لوقو|لوجو)(?=\s|$|[.،,!؟:])|(?:^|\s)الشعار(?=\s|$|[.،,!؟:])|شعار\s+(?:المحل|المتجر|المطعم|الكوفي|المقهي|النشاط)|شعار(?:\s+\S+){1,5}\s+(?:يرحب|يظهر|يتوسط|يتصدر)|هويه المحل|بدايه الاعلان|نهايه الاعلان|تفتتح المشهد')
 FOREIGN=re.compile(r'[\u0370-\u03ff\u0400-\u04ff]|[\u0621-\u064a][A-Za-z]|[A-Za-z][\u0621-\u064a]')
 CLICHES=['تجربه فريده','تجربه لا تنسي','لا تنسي','جوده عاليه','باعلي المعايير','اعلي معايير','لا مثيل','الافضل في','نبدا ب','نبدا رحلتنا','في هذا الاعلان']
 GREETING=re.compile(r'^(?:اهلا|مرحبا|حياكم|هلا)(?:\s|$)')
@@ -199,6 +216,9 @@ def repair_quality(scenes,c=None):
    kept=[x for x in parts if not META.search(key(x)) and not FOREIGN.search(x)]
    if len(kept)!=len(parts):shot[field]=' '.join(kept).strip(' ،,');changed.append((i+1,field))
   _fill(shot,c)
+ for i,shot in enumerate(scenes):
+  # Headlines are read at a glance: a long one is shortened at a word boundary.
+  if len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('title','')))>6:shot['title']=short_headline(shot['title']);changed.append((i+1,'title'))
  titles=set()
  for i,shot in enumerate(scenes):
   t=key(shot.get('title',''))

@@ -360,8 +360,8 @@ if len(story['scenes'])>2 and not has_cta(story['scenes'][-1]):
 for z in story['scenes'][1:-1]:
  if has_cta(z) or any(local_rules.is_cta(t,closing) for t in local_rules.scene_texts(z)):
   local_rules.strip_cta(z,closing)
-  clauses=[x.strip(' .،,') for x in re.split(r'(?<=[.!؟،,])\s*',str(z.get('narration',''))) if x.strip()]
-  if not z.get('title','').strip() or local_rules.is_cta(z['title'],closing):z['title']=(clauses[0] if clauses else str(closing.get('businessName') or ''))[:45]
+  if not z.get('title','').strip() or local_rules.is_cta(z['title'],closing):z['title']=local_rules.headline_from(z,closing,{local_rules.key(x.get('title','')) for x in story['scenes']}) or str(closing.get('businessName') or '')[:45]
+  if len(z['title'].split())>6:z['title']=local_rules.short_headline(z['title'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
