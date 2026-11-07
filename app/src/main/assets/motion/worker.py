@@ -110,6 +110,15 @@ def align(request,node):
     status('audio',22)
     names=['recording.media'] if mode=='recording' else [f'speech_{i}.wav' for i in range(len(p['scenes']))]
     joined=[];master_rate=24000 if mode=='silma' else 16000
+    # Silence after each voiced scene lets a short narration fill the requested film length.
+    pads=[0.0]*len(names)
+    if mode=='silma' and p.get('targetSeconds'):
+        sys.path.insert(0,str(ROOT));import contract
+        spoken=[]
+        for name in names:
+            run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','90.1','-ac','1','-ar','16000','-c:a','pcm_s16le','measure.wav'],120)
+            with wave.open('measure.wav','rb') as w:spoken.append(w.getnframes()/16000)
+        pads=contract.pad_plan(spoken,float(p['targetSeconds']))
     for i,name in enumerate(names):
         out=f'normalized_{i}.wav';run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','900.1' if mode=='recording' else '90.1','-ac','1','-ar','16000','-c:a','pcm_s16le',out],120)
         with wave.open(out,'rb') as w:
@@ -118,7 +127,7 @@ def align(request,node):
         if not 3200<=len(data)<=(28_800_000 if mode=='recording' else 2_880_000):raise ValueError('AUDIO_DURATION')
         master=f'master_{i}.wav';run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','900.1' if mode=='recording' else '90.1','-ac','1','-ar',str(master_rate),'-c:a','pcm_s16le',master],120)
         with wave.open(master,'rb') as m:joined.append(m.readframes(m.getnframes()))
-        if mode!='recording':joined.append(bytes(master_rate//2))
+        if mode!='recording':joined.append(bytes(int(round(master_rate*(.25+pads[i])))*2))
         files.append(out)
     with wave.open('voice.wav','wb') as w:w.setparams((1,2,master_rate,0,'NONE',''));w.writeframes(b''.join(joined))
     status('install',26);binary=asr_python();Path('asr-inputs.json').write_text(json.dumps(files));Path('asr-run.py').write_text(ASR_CODE)
@@ -127,6 +136,10 @@ def align(request,node):
     else:run([binary,'-I','asr-run.py'],1500,env=isolated_env())
     if mode=='recording':
         segments=json.loads(Path('segments.json').read_text());segments[0]['whole']=True;Path('segments.json').write_text(json.dumps(segments))
+    elif any(pads):
+        segments=json.loads(Path('segments.json').read_text())
+        for segment,pad in zip(segments,pads):segment['pad']=pad
+        Path('segments.json').write_text(json.dumps(segments))
     run([node,'-e',"const fs=require('fs'),C=require('./core');const p=C.align(JSON.parse(fs.readFileSync('request.json')).project,JSON.parse(fs.readFileSync('segments.json')));fs.writeFileSync('project.json',JSON.stringify(p));"],60)
     return Path('voice.wav')
 def visual_revision(p,node):
@@ -137,11 +150,12 @@ def visual_revision(p,node):
     code="""const fs=require('fs'),C=require('./creative');const p=JSON.parse(fs.readFileSync('visual-revision.json')),names=p.visualRevisionAssets;
     for(let i=0;i<p.scenes.length;i++){const s=p.scenes[i];if(s.graphic!=='creative')throw Error('VISUAL_REVISION_GRAPH');
      if(p.visualRevisionRole==='logo'){const hit=(a,b)=>Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)>.008&&Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)>.008;const blocked=s.composition.elements.filter(e=>['text','metric','image','device'].includes(e.kind)||(e.kind==='icon'&&e.w*e.h>=.025));let slot;for(const y of [.80,.06,.66,.90])for(const x of [.80,.06,.45]){const box={x,y,w:.12,h:.08};if(!slot&&!blocked.some(e=>hit(e,box)))slot=box;}if(!slot)throw Error('VISUAL_REVISION_SPACE');s.composition.elements=s.composition.elements.filter(e=>!(e.kind==='icon'&&hit(e,slot)));s.composition.elements.push({kind:'image',...slot,color:'card',motion:'fade',delay:.1,asset:names[0]});C.validate(s.composition);
+     }else if(p.visualRevisionRole!=='logo'){if(i===0){const r=C.reviseImages(p,names,p.visualRevisionLogo||'');if(!r.placed.length)throw Error('VISUAL_REVISION_SPACE');}continue;
      }else{const b=C.textBindings(s);if(!b.heading||b.supporting.length!==1)throw Error('VISUAL_REVISION_COPY');const group=names.filter((_,n)=>n%p.scenes.length===i);if(!group.length)group.push(names[i%names.length]);let at=s.composition.elements.findIndex(e=>['image','device'].includes(e.kind));if(at<0){const icons=s.composition.elements.map((e,n)=>({e,n})).filter(v=>v.e.kind==='icon'&&v.e.w*v.e.h>=.025).sort((a,b)=>b.e.w*b.e.h-a.e.w*a.e.h);if(icons.length)at=icons[0].n;}
      if(at<0){s.composition=C.compose({title:b.heading.text,caption:b.supporting[0].text,narration:s.narration,reference:0},{aspect:p.aspect,images:group,index:i});at=s.composition.elements.findIndex(e=>['image','device'].includes(e.kind));}
      const box=s.composition.elements[at],cols=Math.ceil(Math.sqrt(group.length)),rows=Math.ceil(group.length/cols),gap=group.length>1?.008:0;const media=group.map((asset,n)=>{const item={...box,kind:box.kind==='device'?'device':'image',asset,x:box.x+(n%cols)*(box.w/cols),y:box.y+Math.floor(n/cols)*(box.h/rows),w:box.w/cols-gap,h:box.h/rows-gap,delay:Math.min(.65,box.delay+n*.04)};delete item.icon;return item;});s.composition.elements.splice(at,1,...media);C.validate(s.composition);}
 
-    }delete p.visualRevisionAssets;delete p.visualRevisionRole;fs.writeFileSync('visual-revision.json',JSON.stringify(p));"""
+    }delete p.visualRevisionAssets;delete p.visualRevisionRole;delete p.visualRevisionLogo;fs.writeFileSync('visual-revision.json',JSON.stringify(p));"""
     run([node,'-e',code],30)
     revised=json.loads(Path('visual-revision.json').read_text());p.clear();p.update(revised)
 
@@ -237,7 +251,9 @@ def compose(request,node):
         run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')));"],30)
     else:
         status('director',24);binary=director_python()
-        try:run([binary,'-I','director.py'],1800,env=env)
+        # CPU QA is several times slower than the T4; it may extend the director limit to measure the real work.
+        limit=int(os.environ['MADAR_MOTION_QA_DIRECTOR_SECONDS']) if os.environ.get('MADAR_MOTION_QA')=='1' and os.environ.get('MADAR_MOTION_QA_DIRECTOR_SECONDS','').isdigit() else 1800
+        try:run([binary,'-I','director.py'],limit,env=env)
         except subprocess.CalledProcessError:
             state=json.loads(Path('progress.json').read_text())
             raise ValueError(state.get('code','DIRECTOR_FAILED'))
@@ -250,6 +266,11 @@ def compose(request,node):
         if p.get('motionCheckpoint')!='voiced':status('speech',46);speech()
         checkpoint(p,generated+[f'speech_{i}.wav' for i in range(len(p['scenes']))],phase='voiced')
     align(request,node);p=json.loads(Path('project.json').read_text());request['project']=p
+    sys.path.insert(0,str(ROOT));import contract
+    check=contract.duration_check(sum(float(s.get('seconds',0)) for s in p['scenes']),p.get('targetSeconds'))
+    if check:
+        p['verification']=[z for z in p.get('verification',[]) if z.get('id')!='duration']+[check]
+        Path('project.json').write_text(json.dumps(p,ensure_ascii=False))
     # Do not report guessed alignment as complete. The editor can recover this project for review.
     checked=subprocess.run([str(node),'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
     result=render(request,node) if checked.returncode==0 else None
