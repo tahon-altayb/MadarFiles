@@ -241,9 +241,10 @@ def repair_quality(scenes,c=None):
    pool=[x.strip(' .،,') for f in ['caption','narration'] for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get(f,''))) if x.strip()]
    pool=[x for x in pool if key(x) not in titles and len(x)<=60]
    if pool:
-    shot['title']=pool[0];changed.append((i+1,'title'))
+    # The clause becomes a glanceable headline; what it loses stays in the caption.
+    shot['title']=short_headline(pool[0]);changed.append((i+1,'title'))
     # The headline now carries that clause; the caption keeps only what it adds.
-    rest=[x for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get('caption',''))) if x.strip() and key(x.strip(' .،,'))!=key(pool[0])]
+    rest=[x for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get('caption',''))) if x.strip() and (key(x.strip(' .،,'))!=key(pool[0]) or shot['title']!=pool[0])]
     shot['caption']=' '.join(rest).strip(' ،,') or (shot.get('narration','') if key(shot.get('narration','').strip(' .،,'))!=key(pool[0]) else '')
   _fill(shot,c)
   titles.add(key(shot.get('title','')))

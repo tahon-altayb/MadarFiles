@@ -199,7 +199,7 @@ def generate_copy(system,instructions,context,max_tokens,schema,seed):
  for begin in range(0,len(shots),4):
   batch=shots[begin:begin+4];local=json.loads(json.dumps(context));local['untrusted_draft']['scenes']=batch;local['scene_numbers']=list(range(begin+1,begin+len(batch)+1));local['film_outline']=[{'scene':i+1,'title':z['title']} for i,z in enumerate(shots)]
   bounded=json.loads(json.dumps(schema));bounded['properties']['scenes'].update(minItems=len(batch),maxItems=len(batch))
-  result=generate(system,instructions+' Edit only these numbered scenes in order. Opening/closing constraints apply only to the first/last scene of the WHOLE film. Do not repeat every requirement in every batch.\n'+json.dumps(local,ensure_ascii=False),max_tokens=len(batch)*450,schema=bounded,seed=seed+begin)
+  result=generate(system,instructions+' Edit only these numbered scenes in order. Opening/closing constraints apply only to the first/last scene of the WHOLE film. Do not repeat every requirement in every batch. film_outline shows the headlines of the other scenes only so you can avoid them: never reuse or paraphrase another scene\'s headline or idea.\n'+json.dumps(local,ensure_ascii=False),max_tokens=len(batch)*450,schema=bounded,seed=seed+begin)
   if not title:title=result['title']
   combined.extend(result['scenes'])
  return {'title':title,'scenes':combined}
