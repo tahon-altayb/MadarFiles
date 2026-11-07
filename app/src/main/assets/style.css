@@ -197,3 +197,5 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 .agentResult .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.agentResult .row button{width:100%;min-width:0;margin-top:0;white-space:normal;word-break:normal;overflow-wrap:normal;line-height:1.5}.agentResult .row .agentApprove{grid-column:1/-1}
 
 #modelHub{z-index:95}
+
+.agentChoiceIntro{margin:-6px 0 12px;font-size:12.5px;line-height:1.8;color:#5c6f61}.agentChipField{margin:14px 0}.agentChipLabel{display:block;font-size:12.5px;color:#3f594a;margin-bottom:8px;font-weight:bold}.agentChips{display:flex;flex-wrap:wrap;gap:7px}.agentChip{min-height:38px;border:1px solid #d3ddcc;border-radius:999px;background:#f7f8f1;color:#3f594a;padding:7px 13px;font:12.5px/1.5 Tahoma,sans-serif}.agentChip[aria-pressed=true]{background:#2f5b48;border-color:#2f5b48;color:#fffdf8}.agentChip[aria-pressed=true]::before{content:'✓ '}.agentChipField input{display:block;width:100%;min-height:42px;margin-top:8px;padding:9px 12px;border:1px dashed #cfd9c9;border-radius:12px;background:#fffefa;color:#263f35;font:13px/1.6 Tahoma,sans-serif}

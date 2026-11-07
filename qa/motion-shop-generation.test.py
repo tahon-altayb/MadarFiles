@@ -7,8 +7,8 @@ assertions so a failed run can be inspected.
 """
 from pathlib import Path
 import argparse,json,subprocess,tempfile,shutil,hashlib,math,os,re,sys
-args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven'],default='four');args=args.parse_args()
-repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case);evidence.mkdir(parents=True,exist_ok=True)
+args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args=args.parse_args()
+repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case+('' if args.mode=='attached' else '-'+args.mode));evidence.mkdir(parents=True,exist_ok=True)
 sys.path.insert(0,str(source));import contract as rules
 
 REQUEST='''سوّ لي إعلان موشن لهذا المحل من معلومات الرابط والصور المرفقه ، مدته 50 ثانية، عمودي للجوال، وبدون موسيقى. وإذا نقصتك معلومات اسألني.
@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  keep=['durationSec','durationSource','aspect','logoFirst','logoLast','visitBranch','noWebsite','askWhenMissing','musicRequested','address','phone','businessName','required','forbidden','notes','corrections','sceneCount','sceneSeconds']
  brief_contract={k:contract[k] for k in keep};brief_contract['version']=1;brief_contract['logoAsset']=logo
  project={'version':1,'id':'e'*32,'title':'إعلان المحل','theme':'night','aspect':'9:16','voiceMode':args.voice,'voice':'Charon','targetSeconds':50,
-  'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract},
+  'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract,**({'referenceMode':'inspired'} if args.mode=='inspired' else {})},
   'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
  request={'protocol':1,'mode':'compose','project':project,'files':files};(job/'request.json').write_text(json.dumps(request,ensure_ascii=False));(evidence/'input.json').write_text(json.dumps(request,ensure_ascii=False,indent=1))
  execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=8400,env={**os.environ,'MADAR_MOTION_QA':'1','MADAR_MOTION_QA_CPU':'1','MADAR_MOTION_QA_CONTEXT':'8192','MADAR_MOTION_QA_DIRECTOR_SECONDS':'7200'})
@@ -104,12 +104,17 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  texts=[]
  for s in scenes:texts+=[s.get('title',''),s.get('narration','')]+[e.get('text','') for e in s['composition']['elements'] if e.get('kind') in ['text','metric']]
  joined=rules.key(' '.join(texts))
+ for bad in ['لحوم','مشويات','اللحم']:check(rules.key(bad) not in joined,f'invented product on screen: {bad}')
  for bad in ['نكهة الورد','بنكهة الورد','طعم الورد','موقع إلكتروني','موقعنا','اطلب أونلاين','ماعندنا','www']:check(rules.key(bad) not in joined,f'forbidden text on screen: {bad}')
  last=rules.key(' '.join([scenes[-1].get('title','')]+[e.get('text','') for e in scenes[-1]['composition']['elements'] if e.get('kind')=='text']))
  check(rules.key('زورونا في فرعنا') in last,'closing «زورونا في فرعنا» missing from the last scene')
  check(rules.key(ADDRESS) in last,'branch address missing from the last scene')
  geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in scenes};check(len(geometry)>=4,f'only {len(geometry)} distinct layouts')
- used={e.get('asset') for s in scenes for e in s['composition']['elements'] if e.get('asset')};check(len(used)>=len(ORDER)-1,f'only {len(used)} of {len(ORDER)} owned images used')
+ used={e.get('asset') for s in scenes for e in s['composition']['elements'] if e.get('asset')}
+ if args.mode=='inspired':
+  check(used<={logo},'«inspired» shows only the logo: '+str(used))
+  drawn=[e.get('icon') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('kind')=='icon' and e.get('icon') in ['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu']];check(len(set(drawn))>=min(3,len(scenes)-2),'too few drawings: '+str(drawn))
+ else:check(len(used)>=len(ORDER)-1,f'only {len(used)} of {len(ORDER)} owned images used')
  shown=[e.get('asset') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('asset') and e.get('asset')!=logo];check(len(shown)==len(set(shown)),'a picture is repeated: '+str(shown))
  for i,s in enumerate(scenes[:-1]):check(not any(rules.is_cta(t,{'address':ADDRESS}) for t in [s.get('title',''),s.get('caption','')]),f'call to action before the closing in scene {i+1}: '+s.get('title',''))
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')

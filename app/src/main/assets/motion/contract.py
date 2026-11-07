@@ -204,6 +204,57 @@ def strip_cta(shot,c=None):
  if changed:_fill(shot,c)
  return changed
 
+# Products an advert must never add on its own: a tea shop «على الجمر» became «اللحوم المشوية»
+# in a real run although the shop sells no meat. A named product that the brief, the page or the
+# pictures never mention is removed. Stems are in key() form; prefixes و/ف/ب/ل/ك/ال are allowed.
+PRODUCTS={
+ 'meat':('لحم','لحوم','مشوي','مشويات','كباب','شاورما','ستيك','مندي','مظبي','مشاوي'),
+ 'chicken':('دجاج','فراخ','بروستد'),
+ 'fish':('سمك','اسماك','روبيان','جمبري'),
+ 'burger':('برجر','برقر','همبرغر','همبرجر'),
+ 'pizza':('بيتزا',),
+ 'coffee':('قهوه','كوفي','اسبريسو','لاتيه','كابتشينو','كابتشينو'),
+ 'sweets':('كيك','حلويات','كنافه','بسبوسه','دونات','شوكولا','كوكيز'),
+ 'juice':('عصير','عصاير','عصائر','موهيتو','سموذي'),
+ 'fries':('بطاطس','بطاطا'),
+ 'sandwich':('شطيره','شطاير','شطائر','ساندويتش','ساندوتش','سندويش'),
+ 'pastry':('فطيره','فطاير','فطائر','معجنات','مناقيش','سمبوسه','كرواسون'),
+ 'icecream':('ايسكريم','بوظه','جيلاتو'),
+}
+def _product_pattern(stem):return re.compile(r'(?:و|ف)?(?:ب|ل|ك)?(?:ال)?'+re.escape(stem)+r'[ء-ي]{0,3}')
+def invented_products(copy,grounding):
+ """Named products in the copy that no source mentions: [{'scene','group','word'}]."""
+ ground=key(grounding);found=[]
+ for i,shot in enumerate(copy.get('scenes',[])):
+  for token in re.findall(r'[ء-ي]+',key(' '.join(scene_texts(shot)))):
+   for group,stems in PRODUCTS.items():
+    if any(_product_pattern(s).fullmatch(token) for s in stems) and not any(s in ground for s in stems):
+     if not any(z['scene']==i+1 and z['word']==token for z in found):found.append({'scene':i+1,'group':group,'word':token})
+     break
+ return found
+def product_issues(copy,grounding):
+ return [{'scene':z['scene'],'invented_product':z['word'],'fix':'«'+z['word']+'» is a product the client never mentioned and the pictures do not show. Remove it; mention only products from the brief, the page or the pictures.'} for z in invented_products(copy,grounding)]
+def drop_products(scenes,grounding):
+ """Deterministic last resort: remove each invented product word with its joining «و» and the
+ adjective right after it («واللحوم المشوية»), keeping the rest of the sentence."""
+ changed=[]
+ for z in invented_products({'scenes':scenes},grounding):
+  shot=scenes[z['scene']-1]
+  for field in ['title','caption','narration']:
+   words=str(shot.get(field,'')).split();out=[];skip=False
+   for n,w in enumerate(words):
+    if skip:skip=False;continue
+    if key(re.sub(r'[^ء-ي]','',w))==z['word']:
+     if out and key(out[-1]) in ('و','او'):out.pop()
+     if n+1<len(words) and key(words[n+1]).startswith('ال') and not key(words[n+1]).startswith(('الى','التي','الذي','الان')):skip=True
+     changed.append((z['scene'],field));continue
+    out.append(w)
+   text=re.sub(r'^(?:و\s+)+|(?:\s+و)+$','',' '.join(out)).strip(' ،,')
+   text=re.sub(r'\s+([.،,!؟])',r'\1',text)
+   if text!=str(shot.get(field,'')).strip():shot[field]=text
+  _fill(shot)
+ return changed
+
 def quality_issues(copy,c=None):
  """Production language, glitched letters and repeated headlines: audience copy problems
  the model must rewrite, found deterministically (the real run repeated scenes 1-4 as 5-8)."""

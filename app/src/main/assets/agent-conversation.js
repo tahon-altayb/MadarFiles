@@ -19,6 +19,31 @@
   return edit&&target&&(points.length>=2||/(?:اول شي|اول لقطه|في البدايه|بالبدايه|في النهايه|بالنهايه)/.test(t));
  }
 
+ // «عدّل العبارة X إلى Y» / «بدل "X" بـ "Y"» / «شيل كلمة X» on a finished advert: the exact on-screen
+ // text to change, decided locally (no planner). Returns {from,to} (to is '' for a removal) or null.
+ function textEdit(text){
+  const raw=String(text||'').normalize('NFKC').replace(/[ً-ٰٟـ]/g,'').replace(/\r/g,'').trim();if(raw.length<6||raw.length>700)return null;
+  const strip=v=>String(v||'').replace(/^[\s«"“'":：]+|[\s»"”'".،,!؟:]+$/g,'').replace(/\s+/g,' ').trim();
+  const verb=/^(?:طيب[ ،]*)?(?:لو\s+سمحت[ ،]*)?(?:عدل|عدلي|غير|غيري|بدل|استبدل|صحح|حول)\s+(?:لي\s+)?/;
+  const target=/^(?:(?:هذي|هذه|هذا|هاذي|هالـ?)\s*)?(?:ال)?(?:عبار[ةه]|جمل[ةه]|نص|كلم[ةه]|كتاب[ةه]|سطر|عنوان|مكتوب)(?=\s|$|[:：])/;
+  const head=/^(?:طيب[ ،]*)?(?:لو\s+سمحت[ ،]*)?(?:شيل|احذف|امسح)\s+(?:لي\s+)?/;
+  const quotes=[...raw.matchAll(/[«"“]([^»"”\n]{2,120})[»"”]/g)].map(m=>strip(m[1]));
+  if(head.test(raw)){
+   const rest=raw.replace(head,'');const named=target.test(rest);let from=quotes[0]||strip(rest.replace(target,'').replace(/^\s*(?:فقط|بس)\s+/,'').split('\n')[0].replace(/\s+(?:من|في)\s+(?:ال)?(?:مشهد|الاعلان|الإعلان|الفيديو|النص|العباره|العبارة)(?:\s.*)?$/,''));
+   if(!(named||quotes.length)||/^(?:ال)?(?:مشهد|صور|صوره|صورة|شعار|خلفي|موسيق|صوت)/.test(from)||from.length<2||from.length>120)return null;return {from,to:''};
+  }
+  if(!verb.test(raw))return null;
+  let rest=raw.replace(verb,'');const named=target.test(rest);rest=rest.replace(target,'').replace(/^\s*(?:فقط|بس)(?=\s|$)\s*/,'').replace(/^\s*(?:في|ب)\s*(?:ال)?مشهد\s+\S+\s*/,'').replace(/^\s*[:：]\s*/,'');
+  if(quotes.length>=2)return {from:quotes[0],to:quotes[1]};
+  const split=/\s+(?:إلى|الى|الي|إلي|لـ?)\s+|\s+(?:و\s*)?(?:حط|اكتب|خلها|خليها)\s+(?:بدالها\s+|بدلها\s+|مكانها\s+)?/.exec(rest);if(!split)return null;
+  const from=strip(rest.slice(0,split.index));let to=rest.slice(split.index+split[0].length).split('\n')[0];
+  // «… لأننا ما نبيع لحوم» explains the change; it is not part of the new text.
+  to=strip(to.replace(/\s+(?:لان|لأن|لانا|لأنا|لاننا|لأننا|لانه|لأنه|عشان|علشان|كوننا|كون|حيث)\s.*$/,''));
+  if(!named&&!quotes.length&&from.split(' ').length<3)return null;
+  if(from.length<2||from.length>200||!to||to.length>100||from===to)return null;
+  return {from,to};
+ }
+
  const excluded=new Set(['onlineAudioConsent','onlineTextConsent','onlineDocumentConsent','geminiPlanApproved','documentPlanApproved','pdfPassword','pdfPasswordConfirm','seek']);
  function options(plan,form,kind){
   if(['ask','chat','history','deleteRecent','qr','player','preview','mute','audio','editor','generateImage','motionStudio','imageBatch','mergePdf','imagesPdf','protectPdf'].includes(plan.tool))return [];
@@ -30,23 +55,37 @@
  function render(host,pending,change,confirm,cancel){
   host.querySelector('.agentChoiceCard')?.remove();const card=document.createElement('section');card.className='agentChoiceCard';card.setAttribute('aria-label','خيارات الطلب');
   const title=document.createElement('b');title.textContent=pending.title||'وش تفضّل لهذه العملية؟';card.append(title);
-  for(const field of pending.fields){const label=document.createElement('label');label.textContent=field.label;let control;
+  if(pending.intro){const intro=document.createElement('p');intro.className='agentChoiceIntro';intro.textContent=pending.intro;card.append(intro);}
+  for(const field of pending.fields){
+   if(field.type==='chips'){card.append(chips(field,()=>change(pending)));continue;}
+   const label=document.createElement('label');label.textContent=field.label;let control;
    if(field.type==='select'){control=document.createElement('select');for(const [value,text]of field.options){const option=document.createElement('option');option.value=value;option.textContent=text;control.append(option);}}
    else{control=document.createElement('input');control.type=['checkbox','color','text','url','email','tel','search'].includes(field.type)?field.type:'number';if(field.min!=='')control.min=field.min||'';if(field.max!=='')control.max=field.max||'';control.step=field.step||'any';}
    control.dataset.choice=field.name;control.setAttribute('aria-label',field.label);control.value=field.value;if(control.type==='checkbox')control.checked=field.value==='true';control.onchange=()=>{field.value=control.type==='checkbox'?String(control.checked):control.value;change(pending);};label.append(control);card.append(label);
   }
   const actions=document.createElement('div');actions.className='agentChoiceActions';const go=document.createElement('button');go.type='button';go.textContent=pending.confirm||'نفّذ بهذه الخيارات';go.className='primary';go.onclick=()=>{if([...card.querySelectorAll('input')].some(el=>!el.checkValidity()))return;confirm(pending);};const stop=document.createElement('button');stop.type='button';stop.textContent='إلغاء الطلب';stop.onclick=cancel;actions.append(go,stop);card.append(actions);host.append(card);return card;
  }
+ // A question answered by tapping suggestions (one or several) with a free «أخرى» line under them.
+ function chips(field,changed){
+  const box=document.createElement('div');box.className='agentChipField';const title=document.createElement('span');title.className='agentChipLabel';title.textContent=field.label+(field.multi?' (اختر أكثر من خيار)':'');box.append(title);
+  const row=document.createElement('div');row.className='agentChips';row.setAttribute('role','group');row.setAttribute('aria-label',field.label);field.selected=Array.isArray(field.selected)?field.selected:[];
+  const other=document.createElement('input');other.type='text';other.maxLength=200;other.placeholder=field.placeholder||'أخرى: اكتب هنا';other.setAttribute('aria-label',field.label+' — أخرى');other.value=field.other||'';other.dataset.choice=field.name+'Other';
+  const sync=()=>{for(const b of row.children)b.setAttribute('aria-pressed',String(field.selected.includes(b.dataset.value)));field.value=chipValue(field);changed();};
+  for(const [value,text]of field.options||[]){const b=document.createElement('button');b.type='button';b.className='agentChip';b.dataset.value=value;b.textContent=text;b.onclick=()=>{field.selected=field.multi?(field.selected.includes(value)?field.selected.filter(v=>v!==value):[...field.selected,value]):(field.selected[0]===value?[]:[value]);sync();};row.append(b);}
+  other.oninput=()=>{field.other=other.value;field.value=chipValue(field);changed();};
+  box.append(row,other);for(const b of row.children)b.setAttribute('aria-pressed',String(field.selected.includes(b.dataset.value)));return box;
+ }
+ function chipValue(field){const labels=new Map((field.options||[]).map(([v,t])=>[v,t]));return [...(field.selected||[]).map(v=>labels.get(v)||v),String(field.other||'').trim()].filter(Boolean).join('، ');}
  function reply(text,pending){
   const t=normalize(text);if(/^(?:الغ|الغي|الغاء|وقف|توقف|خلاص لا)[.!؟\s]*$/.test(t))return 'cancel';
   if(/^(?:كمل|اكمل|تابع|ابدا|نفذ|تمام|موافق|نعم|ايه|هذه الخيارات|الاعدادات المناسبه)[.!؟\s]*$/.test(t))return 'confirm';
-  let matched=false;for(const f of pending.fields){if(!f.options)continue;for(const [value,label]of f.options){const n=normalize(label);if(t===normalize(value)||t===n||t.length>=4&&n.includes(t)){f.value=value;matched=true;break;}}}
+  let matched=false;for(const f of pending.fields){if(!f.options)continue;for(const [value,label]of f.options){const n=normalize(label);if(t===normalize(value)||t===n||t.length>=4&&n.includes(t)){if(f.type==='chips'){f.selected=Array.isArray(f.selected)?f.selected:[];if(!f.selected.includes(value))f.selected=f.multi?[...f.selected,value]:[value];f.value=chipValue(f);}else f.value=value;matched=true;break;}}}
   return matched?'changed':null;
  }
  // The assistant report in plain words: each recent step with its result and time, what was done
  // instead when Gemini did not answer, and which backup is ready.
  function diagnostics(e){
-  const names={motion_interpret:'فهم طلب الموشن والصور',motion_brief_review:'مراجعة فهم الموشن',motion_result_review:'مراجعة الناتج',motion_validate:'التحقق من الطلب',plan_interpret:'فهم طلب الشات',plan_review:'مراجعة خطة الشات',connection_probe:'اختبار الاتصال'};
+  const names={motion_facts:'تحليل صورك قبل الموشن',motion_interpret:'فهم طلب الموشن والصور',motion_brief_review:'مراجعة فهم الموشن',motion_result_review:'مراجعة الناتج',motion_validate:'التحقق من الطلب',plan_interpret:'فهم طلب الشات',plan_review:'مراجعة خطة الشات',connection_probe:'اختبار الاتصال'};
   const why={GEMINI_TIMEOUT:'انتهت المهلة بدون رد',GEMINI_NETWORK:'ما وصل الطلب لخادم Google',GEMINI_REQUEST_FAILED:'رفض الخادم الطلب أو فشل',GEMINI_APP_CHECK:'تعذر توثيق التطبيق مع Firebase',GEMINI_QUOTA:'انتهت الحصة',GEMINI_PERMISSION:'رفضت الخدمة التفويض',GEMINI_UNAVAILABLE:'تخطيته لأنه ما رد قبل دقائق',CANCELLED:'أوقفته'};
   const done=(e.timeline||[]).filter(x=>x&&x.status!=='running').slice(-6);
   if(!done.length)return 'ما فيه طلبات مسجلة للحين.';
@@ -59,5 +98,5 @@
   if(e.geminiResting)notes.push('Gemini ما رد قبل دقائق، فأتخطاه ١٠ دقايق عشان ما تنتظر.');
   return 'آخر خطوات الفهم:\n'+rows.join('\n')+(notes.length?'\n\n'+notes.join('\n'):'')+'\n\nالبديل: '+(e.groq?'Groq مربوط ✓':'Groq غير مربوط');
  }
- return {normalize,question,facts,motionFeedback,options,render,reply,diagnostics};
+ return {normalize,question,facts,motionFeedback,textEdit,chipValue,options,render,reply,diagnostics};
 });
