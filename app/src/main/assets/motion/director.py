@@ -180,6 +180,7 @@ def generate_copy(system,instructions,context,max_tokens,schema,seed):
 # ad structure studies, Material motion timing). Applied to every film; calls to action only in adverts.
 MOTION_CRAFT=("Professional motion-graphics craft, apply silently: "
  "1) Scene 1 is the hook seen in the first 3 seconds: the single strongest concrete reason to watch (signature product, offer, place or problem). Never a greeting like أهلاً بكم or a production phrase like نبدأ. When the logo opens, its headline is the brand promise. "
+ "0) Before writing, list the distinct facts you actually have (brief, page facts, menu items and prices, what each image shows) and give each scene a different one; if facts run out, use fewer words — never restate an earlier scene in other words. Calls to action (visit us, order now through our site, download the app, call us, the address or phone) appear ONLY in the final scene, as one clear action that fits the business. "
  "2) One idea per scene in a clear order: hook, what it is, two to four concrete proofs from the facts and images (named items, prices exactly as a visible menu shows them, the place, the atmosphere), then the call to action alone in the final scene. Never repeat an idea, headline or image. "
  "3) Headline: 2-5 strong words read at a glance. Caption: one sentence of at most 12 words adding a concrete detail. Narration: warm, spoken, specific. No empty clichés (تجربة فريدة، لا تُنسى، جودة عالية، الأفضل، بأعلى المعايير) unless the facts prove them. "
  "5) Never name a product, service, ingredient or category that the brief, page facts or images do not show; a café that shows tea and pastries is not selling grains or coffee beans unless they appear. "
@@ -280,7 +281,7 @@ for review in range(3):
  # forbidden or excluded copy stays blocking and must be rewritten by the model.
  for z in issues:z['contract']='missing' if ('required_copy' in z or 'reference' in z) else 'forbidden'
  issues.extend(local_rules.copy_issues(copy,local_contract))
- issues.extend(local_rules.quality_issues(copy))
+ issues.extend(local_rules.quality_issues(copy,local_contract))
  if brief.get('appFacts') and 'مدار' not in json.dumps(copy,ensure_ascii=False):issues.append({'required_name':'مدار','fix':'Preserve the exact product name مدار in the film title or a scene. Do not replace the brand with a generic title.'})
  for index,shot in enumerate(copy['scenes']):
   issues.extend(dict(scene=index+1,**z) for z in unsupported_file_claims(shot,brief.get('appFacts','')))
@@ -335,7 +336,7 @@ for z in issues:
   for field in ['title','caption','narration']:
    if z['original'] in str(shot.get(field,'')):shot[field]=str(shot[field]).replace(z['original'],z['corrected'])
 local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
-local_rules.repair_quality(copy['scenes'],local_contract)
+local_rules.repair_quality(copy['scenes'],dict(local_contract,businessName=local_contract.get('businessName') or copy.get('title','')))
 if [z for z in violations(copy,contract) if not ('required_copy' in z or 'reference' in z)]+[z for z in local_rules.copy_issues(copy,local_contract) if z.get('contract')!='missing']:raise ValueError('CONTRACT_COPY')
 if [z for z in issues if 'required_name' in z or 'required_topic' in z or 'unsupported_phrase' in z]:
  if brief.get('appFacts'):raise ValueError('STORY_INVALID')
@@ -350,15 +351,17 @@ if not closing.get('address') and contract.get('address_required') and contract.
 cta=[local_rules.key(x) for x in closing.get('required',[])+[closing.get('address','')] if x and len(local_rules.key(x))>=4]
 def has_cta(z):
  t=local_rules.key(' '.join(str(z.get(k,'')) for k in ['title','caption']))
- return any(r in t for r in cta)
-if cta and len(story['scenes'])>2 and not has_cta(story['scenes'][-1]):
+ return any(r in t for r in cta) or local_rules.is_cta(t,closing)
+closing['businessName']=closing.get('businessName') or story.get('title','')
+if len(story['scenes'])>2 and not has_cta(story['scenes'][-1]):
  early=[i for i,z in enumerate(story['scenes'][:-1]) if i>0 and has_cta(z)]
  if early:story['scenes'].append(story['scenes'].pop(early[-1]))
 # Any other early copy of the call to action becomes an ordinary scene from its own narration.
 for z in story['scenes'][1:-1]:
- if cta and has_cta(z):
+ if has_cta(z) or any(local_rules.is_cta(t,closing) for t in local_rules.scene_texts(z)):
+  local_rules.strip_cta(z,closing)
   clauses=[x.strip(' .،,') for x in re.split(r'(?<=[.!؟،,])\s*',str(z.get('narration',''))) if x.strip()]
-  z['title']=(clauses[0] if clauses else z.get('title',''))[:45];z['caption']=(' '.join(clauses[1:]) or z.get('narration',''))[:95]
+  if not z.get('title','').strip() or local_rules.is_cta(z['title'],closing):z['title']=(clauses[0] if clauses else str(closing.get('businessName') or ''))[:45]
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
