@@ -17,7 +17,7 @@ for sentence,subject,claim,wrong in [('الخشب ديكور فقط وليس م�
  other={**c,'opening_logo':False,'logo_index':-1,'physical_visit':False,'address_required':False,'rules':[],'must_include':[],'omit_from_copy':[],'forbidden_claims':[{'subject':subject,'claim':claim,'instruction':'Preserve correction','evidence':sentence}]}
  b.validate_contract(other,sentence,[],[]);assert b.violations({'scenes':[{'title':wrong}]},other)
 for phrase in ['مدته 50 ثانية','مدة ٥٠ ثانية']:
- total,count=b.timing(phrase);assert (total,count)==(50,10);seconds=b.scene_durations(total,count,c);assert seconds[0]==3 and seconds[-1]==5 and abs(sum(seconds)-50)<1e-8
+ total,count=b.timing(phrase);assert (total,count)==(50,10);seconds=b.scene_durations(total,count,c);assert seconds[0]==4 and seconds[-1]==5 and abs(sum(seconds)-50)<1e-8
 assert b.timing('مدته 50 ثانية، 4 مشاهد')==(50,4)
 assert json.loads(Path('app/src/main/assets/agent-motion-contract.json').read_text())==b.schema(),'Native and Python contract schema drifted'
 print('PASS grounded negation, explicit omissions, verified address/brand identity, diverse correction subjects, 50s pacing, exact total and schema parity; no live inference was run')

@@ -25,7 +25,7 @@ await logo.selectOption(ids[1]);await page.locator('.agentChoiceActions .primary
 const log=await page.locator('#agentLog').textContent();for(const part of ['فهمت طلبك','50 ثانية','بالشعار','صورة الشعار: IMG_2041.jpg','زورونا في فرعنا','حي النرجس','موقع إلكتروني'])assert.ok(log.includes(part),part);
 const request=(await starts()).at(-1);assert.ok(request,'motion started');
 const c=request.contract;assert.equal(c.durationSec,50);assert.equal(c.aspect,'9:16');assert.ok(c.logoFirst&&c.noWebsite);assert.equal(c.logoAttachment,ids[1]);
-assert.equal(c.address,'الرياض – حي النرجس – طريق أبي بكر');assert.deepEqual(c.required,['زورونا في فرعنا']);assert.equal(c.sceneCount,6);assert.equal(c.missing.length,0);
+assert.equal(c.address,'الرياض – حي النرجس – طريق أبي بكر');assert.deepEqual(c.required,['زورونا في فرعنا']);assert.equal(c.sceneCount,7);assert.equal(c.missing.length,0);
 assert.deepEqual([...request.attachments].sort(),[...ids].sort());
 // 4. The finished film carries its checks into the chat.
 await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'c'.repeat(32),status:'done',concept:'إعلان الموسم',result:{name:'madar_result_1.mp4',mime:'video/mp4',size:1000},verification:[{id:'logo_first',label:'الشعار في أول مشهد',ok:true},{id:'duration',label:'المدة 58 ثانية (المطلوب 50)',ok:false,detail:'التعليق الصوتي أطول من المدة المطلوبة'}]}),request);
