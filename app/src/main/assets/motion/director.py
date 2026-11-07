@@ -416,6 +416,13 @@ for z in issues:
 local_rules.drop_products(copy['scenes'],GROUNDING)
 local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
 local_rules.repair_quality(copy['scenes'],dict(local_contract,businessName=local_contract.get('businessName') or copy.get('title','')))
+# The shop's real name (the client's, or the name the link gave) replaces a misspelt one («مطبخ» for «وفطيرة»).
+BRAND=local_contract.get('businessName') or next((str(x.get('name')) for x in brief.get('sources',[]) if x.get('name')),'')
+if not BRAND:
+ found=re.search(r'اسم النشاط حسب الرابط:\s*([^.\n]{3,60})',json.dumps(brief.get('sourceReads',[]),ensure_ascii=False))
+ BRAND=found.group(1).strip() if found else ''
+if BRAND:
+ local_rules.fix_brand(copy['scenes'],BRAND);holder=[{'title':copy.get('title','')}];local_rules.fix_brand(holder,BRAND);copy['title']=holder[0]['title']
 if [z for z in violations(copy,contract) if not ('required_copy' in z or 'reference' in z)]+[z for z in local_rules.copy_issues(copy,local_contract) if z.get('contract')!='missing']:raise ValueError('CONTRACT_COPY')
 if [z for z in issues if 'required_name' in z or 'required_topic' in z or 'unsupported_phrase' in z]:
  if brief.get('appFacts'):raise ValueError('STORY_INVALID')
@@ -451,6 +458,9 @@ if not chunks and not (isinstance(asked_scenes,int) and not isinstance(asked_sce
   return len(parts)==1 or local_rules.key(str(z.get('narration','')).strip(' .،,'))==local_rules.key(str(closing.get('businessName','')).strip(' .،,'))
  for i in range(len(story['scenes'])-2,0,-1):
   if len(story['scenes'])>4 and empty_scene(story['scenes'][i]):del story['scenes'][i]
+  # The same fact twice in other words (opening hours in scenes 2 and 5) keeps only the first.
+ for i in reversed(local_rules.topic_repeats(story['scenes'])):
+  if len(story['scenes'])>4:del story['scenes'][i]
  scene_count=len(story['scenes'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
@@ -459,24 +469,31 @@ for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo
 # The logo belongs to its scenes and the closing sign-off; other scenes that picked it get the least-used client photo.
 # Each client picture appears once: a repeat (or a stray logo) takes an unused picture, and when
 # none is left the scene becomes a typographic poster instead of showing the same photo again.
+# Only where the picture shows what the scene says: a crowd watching a match never illustrates
+# «فطائر مميزة» (the owner's 1.9.50 film); otherwise the scene keeps its drawing.
+PICTURE_CONCEPTS={'pastry':r'فطير|فطاي|معجن|مخبوز','tea':r'شاي|شاهي|كرك|استكان','coffee':r'قهوه|دله|فنجان','seating':r'جلس|طاول|كراسي|كرسي|ديكور|داخل','menu':r'منيو|قايمه|اسعار|اصناف','fries':r'بطاطس|بطاطا','grill':r'جمر|فحم|نار|مشوي','sweets':r'حلويات|حلا|كيك|حلي','cold':r'بارد|عصير|مثلج','storefront':r'واجهه|لافته|مدخل','night':r'ليل|مضاء|اضاء|زينه'}
+def picture_fits(z,index):
+ fact=next((f for f in reference_facts if f.get('index')==index),None)
+ if not fact:return False
+ def stems(text):
+  t=local_rules.key(text).replace('ئ','ي')
+  # Shared concepts count as a match even in different words (فطائر/فطيرة/معجنات, جلسات/طاولات).
+  concepts={'#'+k for k,rx in PICTURE_CONCEPTS.items() if re.search(rx,t)}
+  return {w[:4] for w in re.findall(r'[\u0621-\u064a]{3,}',re.sub(r'(?:^|\s)(?:[وبفل])?ال',' ',t)) if len(w)>=3}|concepts
+ return bool(stems(' '.join(str(z.get(k,'')) for k in ['title','caption','narration']))&stems(fact.get('description','')))
 photos=[n for n in range(len(images)) if n!=logo_index]
 seen=set()
 for i,z in enumerate(story['scenes']):
  ref=z.get('reference',-1)
  if i in logo_targets or ref==-1 or (ref==logo_index and i==len(story['scenes'])-1):continue
+ # The model's own pick must show what the scene says too (a crowd photo under «نكهة الفحم»).
+ if ref!=logo_index and reference_facts and not picture_fits(z,ref):z['reference']=-1;continue
  if ref==logo_index or ref in seen:
   free=[n for n in photos if n not in seen and all(x.get('reference')!=n for x in story['scenes'][i+1:])]
   z['reference']=free[0] if free else -1;ref=z['reference']
  if ref!=-1:seen.add(ref)
 # The client's pictures come first: any still unused take picture-less middle scenes (drawn
 # illustrations are for when the pictures run out).
-# Only where the picture shows what the scene says: a crowd watching a match never illustrates
-# «فطائر مميزة» (the owner's 1.9.50 film); otherwise the scene keeps its drawing.
-def picture_fits(z,index):
- fact=next((f for f in reference_facts if f.get('index')==index),None)
- if not fact:return False
- def stems(text):return {w[:4] for w in re.findall(r'[\u0621-\u064a]{3,}',re.sub(r'(?:^|\s)(?:[وبفل])?ال',' ',local_rules.key(text))) if len(w)>=3}
- return bool(stems(' '.join(str(z.get(k,'')) for k in ['title','caption','narration','visual']))&stems(fact.get('description','')))
 unused=[n for n in photos if n not in seen] if PICTURE_MODE!='inspired' else []
 for i,z in enumerate(story['scenes']):
  if not unused:break
@@ -518,7 +535,9 @@ for i,shot in enumerate(story['scenes']):
  # Preserve the reviewed story when CPU planning has used most of its budget.
  # The same validated adaptive layouts already handle invalid model geometry.
  # The closing call to action always uses the dedicated large, centred layout.
- for attempt in range(1 if shot['reference']==-1 and i!=len(story['scenes'])-1 and PICTURE_MODE!='photosOnly' and time.monotonic()-DIRECTOR_STARTED<1200 else 0):
+ # Model-drawn layouts came out as tall empty cards with tiny icons on the owner's phone (1.9.51): every
+ # scene now uses the validated layouts, which also keeps the film's look consistent.
+ for attempt in range(0):
   try:
    composition=generate(SYSTEM,SCHEMA+'\nUse exactly shot.title and shot.caption as the two visible text elements. Do not rewrite either text. Design this shot. Correct any validation feedback: '+error+'\n'+json.dumps(prompt,ensure_ascii=False),max_tokens=2200,schema=COMPOSITION)
   except ValueError:

@@ -282,3 +282,9 @@ for mode in ['inspired','photosOnly']:
   if mode=='inspired':assert shown<= {logo},shown;assert len(drawn)>=3,art
   else:assert not drawn,art;assert shown-{logo},shown
   print(mode,'pictures:',sorted(shown),'drawings:',sorted(drawn))
+# The owner's 1.9.51 film: opening hours told twice in other words, and the shop name misspelt.
+film=[{'title':'شاي جمر مطبخ الطيب','caption':'أهلا بك في شاي جمر مطبخ الطيب.'},{'title':'مفتوح على مدار الساعة','caption':'نعمل طوال الـ24 ساعة'},{'title':'نكهة الفحم','caption':'شاينا فوق الفحم'},{'title':'مطعمك المفتوح كل ساعة','caption':'نفتح لك أبوابنا طوال الـ24 ساعة'},{'title':'زورونا في فرعنا','caption':'شارع الجال'}]
+assert C.topic_repeats(film)==[3],C.topic_repeats(film)
+assert C.fix_brand(film,'شاي جمر وفطيرة الطيب') and film[0]['title']=='شاي جمر وفطيرة الطيب' and film[0]['caption']=='أهلا بك في شاي جمر وفطيرة الطيب.',film[0]
+assert not C.fix_brand([{'title':'شاي جمر على الفحم','caption':''}],'شاي جمر وفطيرة الطيب'),'only near-identical names are corrected'
+print('repeated topics found; misspelt shop name corrected')
