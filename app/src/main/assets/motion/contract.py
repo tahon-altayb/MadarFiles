@@ -108,6 +108,23 @@ def scrub(scenes,c,phrases=(),claims=()):
 
 META=re.compile(r'(?:^|\s)(?:[وبلف])?(?:ال)?(?:مشهد|مشاهد|فيديو|موشن|لقطه|كاميرا|مونتاج)(?=\s|$|[.،,!؟:])|هويه المحل|بدايه الاعلان|نهايه الاعلان|تفتتح المشهد')
 FOREIGN=re.compile(r'[\u0370-\u03ff\u0400-\u04ff]|[\u0621-\u064a][A-Za-z]|[A-Za-z][\u0621-\u064a]')
+CLICHES=['تجربه فريده','تجربه لا تنسي','لا تنسي','جوده عاليه','باعلي المعايير','اعلي معايير','لا مثيل','الافضل في','نبدا ب','نبدا رحلتنا','في هذا الاعلان']
+GREETING=re.compile(r'^(?:اهلا|مرحبا|حياكم|هلا)(?:\s|$)')
+def craft_issues(copy):
+ """Motion-craft review (soft): a weak hook, headlines too long to read at a glance, captions
+ too long for a five-second scene, and empty advertising clichés."""
+ issues=[];scenes=copy.get('scenes',[])
+ if scenes and GREETING.search(key(scenes[0].get('title',''))):issues.append({'scene':1,'quality':'hook','fix':'Scene 1 is the hook seen in the first 3 seconds. Replace the greeting with the single strongest concrete reason to watch (signature product, offer or place) in 2-5 words.'})
+ for i,shot in enumerate(scenes):
+  words=len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('title','')))
+  if words>6:issues.append({'scene':i+1,'quality':'headline','fix':'Headline has '+str(words)+' words; make it 2-5 strong words readable at a glance.'})
+  cap=len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('caption','')))
+  if cap>14:issues.append({'scene':i+1,'quality':'caption','fix':'Caption has '+str(cap)+' words; one sentence of at most 12 words with one concrete detail.'})
+  joined=key(' '.join(scene_texts(shot)))
+  hits=[c for c in CLICHES if c in joined]
+  if hits:issues.append({'scene':i+1,'quality':'cliche','fix':'Replace the empty cliché '+repr(hits[0])+' with a concrete fact from the brief, page or images (a menu item, price, place detail).'})
+ return issues
+
 def quality_issues(copy):
  """Production language, glitched letters and repeated headlines: audience copy problems
  the model must rewrite, found deterministically (the real run repeated scenes 1-4 as 5-8)."""
@@ -120,7 +137,7 @@ def quality_issues(copy):
   t=key(shot.get('title',''))
   if t and t in seen:issues.append({'scene':i+1,'quality':'repeat','fix':'This headline repeats scene '+str(seen[t]+1)+'. Every scene needs its own headline and a different idea from the facts.'})
   else:seen.setdefault(t,i)
- return issues
+ return issues+craft_issues(copy)
 
 def repair_quality(scenes,c=None):
  """Deterministic last resort for quality issues: drop meta or glitched clauses, and give a

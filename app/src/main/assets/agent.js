@@ -57,6 +57,9 @@
   const t=MadarConversation.normalize(text);if(/(?:موشن|اعلان|فيديو|مشروع)\s+جديد|\b(?:pdf|qr)\b|ترجم|استخرج|اعزل|الخلفيه/i.test(t))return '';
   const verb=/(?:^|\s)(?:و)?(?:اضف|ضيف|ضف|حط|استخدم|استعمل|بدل|استبدل|غير|ركب|دخل|خل|خلي)(?:\s|$)/.test(t),pictures=/(?:^|\s)(?:هذه|هذي|هاذي|ال)?(?:صور|صوره|الصور|الصوره|لقطات|اللقطات|شعار|الشعار|لوقو|لوجو)(?=\s|$|[.،,!؟])/.test(t);
   // «خل الشعار في الأخير» or «كبر الصورة» change the layout, not the pictures: that is a normal revision.
+  // Image-tool requests («غير حجم الصورة», «حولها png») stay with the tools; one picture needs the advert named.
+  if(/حجم|ابعاد|بكسل|ارتفاع|العرض|ضغط|صيغه|png|jpe?g|webp|تدوير|قص(?:\s|$)|دقه/.test(t))return '';
+  if(!/(?:^|\s)(?:ال)?(?:صور|لقطات)(?=\s|$|[.،,!؟])|شعار|لوقو|لوجو/.test(t)&&!/الاعلان|للاعلان|بالاعلان|الموشن|الفيديو/.test(t))return '';
   if(!verb||!pictures||/(?:^|\s)(?:اول|بالاول|الاول|اخر|الاخير|بالاخير|النهايه|بالنهايه|البدايه|بالبدايه|اكبر|اصغر|كبر|صغر|مكان|يمين|يسار|فوق|تحت|لون|الوان)(?=\s|$|[.،,!؟])/.test(t))return '';return /شعار|لوقو|لوجو/.test(t)&&!/صور/.test(t)?'logo':'photos';
  }
  function isMotionRequest(text){text=text.normalize('NFKC').replace(/[\u064b-\u065f\u0670]/g,'');if(/^(?:كيف|ليش|لماذا|وش يعني|اش يعني|إيش يعني)|(?:^|\s)(?:لا|مو|ما)\s+(?:تسوي|تسويلي|سوي|ابي|ابغى|أبي|أبغى|أريد|اريد)/.test(text))return false;return /^(?:موشن(?:\s+جرافيك)?|motion graphics)(?:$|[\s.!؟])/i.test(text)||/موشن|motion graphics|فيديو ترويجي|فيديو من الصور|اعلان|إعلان/i.test(text)&&/سوي|سو |انش|أنش|اعمل|إعمل|صمم|صمّم|اصنع|جهز|ابغ|أبغ|ابي|أبي|اريد|أريد|create|make/i.test(text)||isMotionRevision(text);}

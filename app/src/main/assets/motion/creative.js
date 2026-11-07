@@ -27,11 +27,13 @@ function validate(c){
  return c;
 }
 // Stricter checks apply only to newly planned layouts; imported projects remain editable.
+function safeText(e){return e.y>=.085&&e.y+e.h<=.785&&e.x>=.065&&e.x+e.w<=(e.y+e.h>.45?.865:.885);}
 function validateDesign(c,shot,aspect='9:16'){
  validate(c);const ratio=aspect==='16:9'?9/16:aspect==='1:1'?1:16/9;
  const meaningful=c.elements.filter(e=>['text','metric','icon','image','device'].includes(e.kind));
  if(!c.elements.some(e=>['icon','image','device'].includes(e.kind)&&e.w*e.h>=.025))throw Error('Give the topic a visible purposeful illustration');
  for(const e of c.elements){
+  if(['text','metric'].includes(e.kind)&&aspect==='9:16'&&!safeText(e))throw Error('Keep text inside the mobile safe zone: y from .09 to .78, x from .07, right edge .88 (.86 below mid-screen)');
   if(['text','metric'].includes(e.kind)){
    const min=e.text===shot.title?48:28,lines=Math.max(1,Math.ceil(e.text.length*min*.55/(e.w*1080)));
    if(e.h*1080*ratio<lines*min*1.55)throw Error('Text box would shrink Arabic below mobile reading size');
@@ -68,27 +70,29 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
  // Logos are shown whole; photographs fill their frame (cropped at the edges) like a printed advert.
  const whole={fit:'contain'};
  let elements=[];
+ // Vertical films are watched inside TikTok, Reels and Snapchat: every word stays in the safe zone
+ // (top 9% and bottom 22% are covered by the app; the right edge of the lower half by its buttons).
  if(closing&&!wide){
   // Closing call to action: large, centred, with the logo or photo as a smaller sign-off.
-  elements=[e('shape',.06,.20,.88,.46,'card','fade',0),text(title,.10,.25,.80,.17,110,.04),e('line',.38,.435,.24,.006,'accent','draw',.10),text(body,.10,.47,.80,.16,60,.14),...(asset?[media(.30,.71,.40,.20,.2,whole)]:[e('icon',.42,.74,.16,.10,'accent','scale',.2,{icon:'arrow'})])];
+  elements=[e('shape',.06,.16,.88,.50,'card','fade',0),text(title,.10,.21,.80,.17,110,.04),e('line',.38,.40,.24,.006,'accent','draw',.10),text(body,.10,.43,.76,.16,60,.14),...(asset?[media(.32,.62,.36,.16,.2,whole)]:[e('icon',.42,.68,.16,.09,'accent','scale',.2,{icon:'arrow'})])];
  }else if(logo&&asset&&!wide){
-  elements=[media(.14,.12,.72,.44,0,whole),text(title,.07,.61,.86,.15,108,.08),e('line',.38,.775,.24,.006,'accent','draw',.12),text(body,.09,.80,.82,.12,56,.16)];
+  elements=[media(.14,.10,.72,.40,0,whole),text(title,.08,.53,.78,.13,108,.08),e('line',.38,.675,.24,.006,'accent','draw',.12),text(body,.08,.69,.78,.09,56,.16)];
  }else if(!wide&&!square&&!asset&&!logo){
   // No picture for this scene: a typographic poster, never a lone oversized icon.
   const t=(index+seed)%4;
-  if(t===0)elements=[e('line',.40,.27,.20,.006,'accent','draw',0),text(title,.08,.30,.84,.20,110,.04),text(body,.10,.53,.80,.17,60,.14),e('icon',.45,.76,.10,.06,'accent','scale',.22,{icon:iconId})];
-  else if(t===1)elements=[e('shape',.06,.14,.88,.62,'card','fade',0),e('icon',.12,.19,.12,.07,'accent','scale',.06,{icon:iconId}),text(title,.12,.30,.76,.20,104,.04),e('line',.12,.52,.24,.006,'accent','draw',.10),text(body,.12,.555,.76,.16,56,.14)];
-  else if(t===3)elements=[e('icon',.80,.16,.12,.07,'accent','scale',0,{icon:iconId}),text(title,.07,.40,.86,.20,108,.04),e('line',.63,.62,.30,.006,'accent','draw',.10),text(body,.07,.65,.86,.16,58,.14)];
-  else elements=[text(title,.07,.12,.86,.22,110,0),e('line',.07,.36,.86,.005,'accent','draw',.06),text(body,.07,.40,.86,.20,60,.12),e('line',.07,.70,.40,.005,'accent','draw',.18),e('icon',.07,.74,.10,.06,'accent','scale',.22,{icon:iconId})];
+  if(t===0)elements=[e('line',.40,.25,.20,.006,'accent','draw',0),text(title,.08,.28,.80,.20,110,.04),text(body,.10,.51,.76,.16,60,.14),e('icon',.45,.71,.10,.06,'accent','scale',.22,{icon:iconId})];
+  else if(t===1)elements=[e('shape',.06,.12,.88,.62,'card','fade',0),e('icon',.12,.17,.12,.07,'accent','scale',.06,{icon:iconId}),text(title,.12,.27,.74,.20,104,.04),e('line',.12,.49,.24,.006,'accent','draw',.10),text(body,.12,.52,.74,.16,56,.14)];
+  else if(t===3)elements=[e('icon',.78,.14,.12,.07,'accent','scale',0,{icon:iconId}),text(title,.07,.36,.81,.20,108,.04),e('line',.58,.585,.28,.006,'accent','draw',.10),text(body,.07,.62,.79,.15,58,.14)];
+  else elements=[text(title,.07,.12,.81,.22,110,0),e('line',.07,.36,.81,.005,'accent','draw',.06),text(body,.07,.40,.79,.20,60,.12),e('line',.07,.66,.40,.005,'accent','draw',.18),e('icon',.07,.70,.10,.06,'accent','scale',.22,{icon:iconId})];
  }else if(!wide&&!square&&asset){
   // Six photo layouts rotate so a ten-scene vertical advert does not repeat the same frame.
   const side=(index+seed)%6;
-  if(side===0)elements=[text(title,.07,.05,.86,.14,104,0),e('line',.07,.195,.24,.006,'accent','draw',.04),media(.05,.22,.90,.55,.04),text(body,.08,.80,.84,.14,56,.10)];
-  else if(side===1)elements=[media(.05,.05,.90,.58,.02),text(title,.07,.66,.86,.14,100,.08),e('line',.70,.805,.23,.006,'accent','draw',.06),text(body,.07,.825,.86,.13,54,.13)];
-  else if(side===2)elements=[text(title,.07,.05,.86,.14,100,0),text(body,.07,.20,.86,.13,54,.06),e('line',.07,.34,.23,.006,'accent','draw',.08),media(.05,.37,.90,.57,.10)];
-  else if(side===3)elements=[media(0,0,1,.70,.02),e('shape',.05,.60,.90,.35,'card','rise',.08),text(title,.09,.635,.82,.14,100,.10),e('line',.09,.78,.23,.006,'accent','draw',.12),text(body,.09,.795,.82,.13,52,.15)];
-  else if(side===4)elements=[text(title,.07,.05,.86,.15,108,0),e('line',.38,.205,.24,.006,'accent','draw',.05),media(.10,.235,.80,.52,.06),text(body,.08,.785,.84,.14,56,.12)];
-  else elements=[text(title,.07,.05,.86,.14,104,0),text(body,.07,.195,.86,.13,54,.06),media(0,.35,1,.65,.10)];
+  if(side===0)elements=[text(title,.07,.09,.83,.13,104,0),e('line',.07,.23,.24,.006,'accent','draw',.04),media(.05,.26,.90,.40,.04),text(body,.08,.68,.78,.10,54,.10)];
+  else if(side===1)elements=[media(.05,.08,.90,.46,.02),text(title,.07,.56,.79,.11,96,.08),e('line',.62,.68,.24,.006,'accent','draw',.06),text(body,.07,.69,.79,.09,52,.13)];
+  else if(side===2)elements=[text(title,.07,.09,.83,.13,100,0),text(body,.07,.23,.81,.12,54,.06),e('line',.07,.36,.23,.006,'accent','draw',.08),media(.05,.39,.90,.55,.10)];
+  else if(side===3)elements=[media(0,0,1,.62,.02),e('shape',.05,.50,.90,.29,'card','rise',.08),text(title,.09,.53,.77,.12,100,.10),e('line',.09,.655,.23,.006,'accent','draw',.12),text(body,.09,.67,.77,.105,50,.15)];
+  else if(side===4)elements=[text(title,.07,.09,.83,.13,108,0),e('line',.38,.235,.24,.006,'accent','draw',.05),media(.10,.26,.80,.42,.06),text(body,.08,.69,.78,.09,54,.12)];
+  else elements=[text(title,.07,.09,.83,.13,104,0),text(body,.07,.23,.81,.11,54,.06),media(0,.37,1,.63,.10)];
  }else if(wide&&style===2){
   elements=[text(title,.08,.07,.84,.20,66,0),e('line',.08,.30,.20,.006,'accent','draw',.04),media(.08,.36,.36,.51,.06),text(body,.53,.40,.39,.30,30,.12),e('icon',.80,.78,.08,.10,'accent','scale',.2,{icon:iconId})];
  }else if(wide&&style===3){
@@ -113,6 +117,7 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
  }else{
   elements=[e('shape',.06,.065,.88,.38,'card','fade',0),text(title,.10,.10,.80,.17,76,.02),text(body,.10,.295,.80,.11,44,.10),media(.16,.49,.68,.40,.14),e('line',.08,.925,.30,.005,'accent','draw',.22)];
  }
+ if(!wide&&!square)for(const x of elements)if(['text','metric'].includes(x.kind)){const right=x.y+x.h>.45?.86:.88;if(x.x+x.w>right)x.w=Math.round((right-x.x)*1000)/1000;}
  return validate({backdrop:['plain','split','grid','orbit'][style],elements});
 }
 function rounded(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,Math.min(r,w/2,h/2));if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}}
@@ -157,4 +162,4 @@ function reviseImages(p,names,logo){
   for(const e of swap){if(!queue.length)break;e.asset=queue.shift();placed.push(e.asset);}}
  p.scenes.forEach(s=>validate(s.composition));return {placed,unused:queue};
 }
-return {validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});
+return {safeText,validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});

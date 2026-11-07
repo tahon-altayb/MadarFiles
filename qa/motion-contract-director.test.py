@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  last=' '.join([scenes[-1]['title']]+[e['text'] for e in scenes[-1]['composition']['elements'] if e['kind']=='text'])
  assert 'زورونا في فرعنا' in last,last
  assert 'حي النرجس' in last,last
- closing=scenes[-1]['composition']['elements'];assert closing[0]['kind']=='shape' and (closing[0]['x'],closing[0]['y'])==(.06,.20),'the call to action uses the large centred closing card'
+ closing=scenes[-1]['composition']['elements'];assert closing[0]['kind']=='shape' and (closing[0]['x'],closing[0]['y'])==(.06,.16),'the call to action uses the large centred closing card'
  assert 'brand' not in p,'an unreadable logo never invents a brand palette'
  checks={c['id']:c for c in p['verification']}
  for cid in ['logo_first','scene_count','forbidden','required','address','no_website','music']:assert checks[cid]['ok'],(cid,checks.get(cid))
@@ -128,6 +128,9 @@ if Image:
   im=Image.new('RGB',(200,200),'#5a3a23');ImageDraw.Draw(im).rectangle([40,40,160,160],outline='#d9a55a',width=12);im.save(Path(t)/'logo.jpg')
   brand=C.brand_palette(str(Path(t)/'logo.jpg'));assert brand and C._contrast(*[tuple(int(brand[k][i:i+2],16) for i in (1,3,5)) for k in ['ink','background']])>=4.5,brand
   Image.new('RGB',(200,200),'white').save(Path(t)/'blank.jpg');assert C.brand_palette(str(Path(t)/'blank.jpg')) is None and C.brand_palette(str(Path(t)/'missing.jpg')) is None
+# Motion craft (soft review): weak hook, long headline, long caption, clichés.
+craft=C.craft_issues({'scenes':[{'title':'أهلاً بكم في شاي جمر','caption':'تجربة فريدة لا تُنسى.','narration':'x'},{'title':'شاي على الجمر','caption':'نحضّر الشاي على الجمر كل يوم.','narration':'x'},{'title':'قائمة منيو غنية ومتنوعة تناسب جميع أفراد العائلة','caption':'تصفح قائمة شاي جمر وفطيرة الطيب المتنوعة والمميزة التي تضم الشاي والقهوة والفطائر الطازجة كل يوم.','narration':'x'}]})
+kinds=sorted((z['scene'],z['quality']) for z in craft);assert kinds==[(1,'cliche'),(1,'hook'),(3,'caption'),(3,'headline')],kinds
 print('motion contract director: logo first, 10x5s, forbidden removed, closing enforced, verification reported')
 
 # No identifiable logo: the job still finishes, the opening is typography (never the storefront), and the report says so.

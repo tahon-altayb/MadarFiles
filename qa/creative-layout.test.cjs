@@ -33,3 +33,8 @@ const orphan=C.compose({title:'عنوان واضح',caption:'وصف واضح',re
 orphan.elements.push({kind:'shape',x:.07,y:.01,w:.4,h:.1,color:'card',motion:'fade',delay:0});
 assert.throws(()=>C.validateDesign(orphan,{title:'عنوان واضح'},'16:9'),/Empty decorative/);
 console.log('PASS newly planned layouts reject unreadable text boxes and empty decorative cards');
+// Mobile safe zone: in vertical films no word sits under the TikTok/Reels/Snapchat interface.
+{const C=require('../app/src/main/assets/motion/creative.js');const A=c=>'asset_'+c.repeat(32)+'.jpg';
+ for(let i=0;i<12;i++)for(const [asset,logo,closing] of [[A('1'),0,0],[null,0,0],[A('2'),1,0],[A('2'),0,1],[null,0,1]]){const c=C.compose({title:'عنوان تجريبي طويل نسبيًا',caption:'وصف تجريبي للمشهد يكفي لسطرين',narration:'x',reference:asset?0:-1},{aspect:'9:16',images:asset?[asset]:[],index:i,logo:!!logo,closing:!!closing});
+  for(const e of c.elements)if(['text','metric'].includes(e.kind)&&!C.safeText(e))throw Error('text outside the safe zone: '+JSON.stringify([i,logo,closing,e.x,e.y,e.w,e.h]));}
+ console.log('PASS vertical layouts keep every word inside the mobile safe zone');}
