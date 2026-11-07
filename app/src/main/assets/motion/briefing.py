@@ -57,8 +57,8 @@ def lock_references(story,contract):
 
 def scene_durations(total,count,contract):
  fixed={}
- if contract.get('opening_logo'):fixed[0]=min(3.0,total/count)
- if contract.get('physical_visit'):fixed[count-1]=min(5.0,total/count)
+ if contract.get('opening_logo'):fixed[0]=min(4.0,total/count)
+ if contract.get('physical_visit'):fixed[count-1]=min(6.0,max(5.0,total/count))
  rest=(total-sum(fixed.values()))/(count-len(fixed));return [fixed.get(i,rest) for i in range(count)]
 
 def schema():

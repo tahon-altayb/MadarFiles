@@ -61,9 +61,9 @@
   const pace=Math.max(4,Math.min(10,Math.round((seconds||30)/5)));
   if(!Number.isInteger(images)||images<0)return pace;
   // Scenes follow the material: each picture once plus a hook and the closing (six without
-  // pictures), never longer than nine seconds a scene. Ten scenes from four photos meant repeats and filler.
-  const material=images>0?images+2:6,longest=Math.ceil((seconds||30)/9);
-  return Math.max(4,longest,Math.min(pace,material));
+  // pictures), never longer than eight seconds a scene on average. Ten scenes from four photos meant repeats and filler.
+  const material=images>0?images+2:6,longest=Math.ceil((seconds||30)/8);
+  return Math.min(10,Math.max(4,longest,Math.min(pace,material)));
  }
  function sentences(text){return soft(text).split(/\n+|(?<=[.!؟?])\s+|\s*[•·]\s*/).map(s=>s.trim()).filter(Boolean);}
  // A clause boundary inside run-on dialect: "...فرعنا واكتب ..." / "... وخلي ...".

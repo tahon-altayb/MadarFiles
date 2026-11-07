@@ -360,8 +360,8 @@ if len(story['scenes'])>2 and not has_cta(story['scenes'][-1]):
 for z in story['scenes'][1:-1]:
  if has_cta(z) or any(local_rules.is_cta(t,closing) for t in local_rules.scene_texts(z)):
   local_rules.strip_cta(z,closing)
-  clauses=[x.strip(' .،,') for x in re.split(r'(?<=[.!؟،,])\s*',str(z.get('narration',''))) if x.strip()]
-  if not z.get('title','').strip() or local_rules.is_cta(z['title'],closing):z['title']=(clauses[0] if clauses else str(closing.get('businessName') or ''))[:45]
+  if not z.get('title','').strip() or local_rules.is_cta(z['title'],closing):z['title']=local_rules.headline_from(z,closing,{local_rules.key(x.get('title','')) for x in story['scenes']}) or str(closing.get('businessName') or '')[:45]
+  if len(z['title'].split())>6:z['title']=local_rules.short_headline(z['title'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
@@ -384,7 +384,13 @@ story['title']=copy['title']
 if brief.get('appFacts') and 'مدار' not in json.dumps(story,ensure_ascii=False):raise ValueError('STORY_INVALID')
 story.update(theme=theme,aspect=aspect,concept=story['title'])
 seed=int(hashlib.sha256(story['title'].encode()).hexdigest()[:8],16)%4
-for shot,seconds in zip(story['scenes'],scene_durations(total_seconds,scene_count,contract)):shot['seconds']=seconds
+# Pacing: the logo opening is a short beat and the call to action stays long enough to read the
+# address; the middle scenes share the rest (scene_durations caps both by the average length).
+pacing=dict(contract)
+if local_contract and not chunks:
+ pacing['opening_logo']=bool(contract.get('opening_logo') or (local_contract.get('logoFirst') and logo_name))
+ pacing['physical_visit']=bool(contract.get('physical_visit') or local_contract.get('visitBranch') or local_contract.get('required') or local_contract.get('address'))
+for shot,seconds in zip(story['scenes'],scene_durations(total_seconds,scene_count,pacing)):shot['seconds']=seconds
 Path('story.json').write_text(json.dumps(story,ensure_ascii=False))
 # The full shot is synthesized from freely positioned primitives, not the product-template renderer.
 SCHEMA='''Output {"backdrop":"plain|orbit|grid|radial|split","elements":[...]}. Every element has kind, x,y,w,h (normalized 0..1), color (ink|accent|card|muted|background), motion (rise|left|right|scale|draw|fade), delay (0..0.7 fraction of initial 5 sec). Bounds x+w<=1,y+h<=1. Keep a .06 outer safe margin, use y=.08.. .91. Between 4 and 8 elements. Kind text/metric: text <=75 chars, size 20..110 in a 1080px wide canvas. Text blocks must NOT overlap. Allocate h >= size/1080*1.6*expectedLines / aspectHeightRatio. Short 1-5 word headlines, not narration paragraphs. kind image/device: asset must be an EXACT provided filename. Show screenshots inside device frames; do not crop. kind shape is a rounded color panel. kind icon: icon=play|file|audio|check|spark|arrow|grain|book|shield|image|phone|chat. kind line is a horizontal accent line. Draw order follows array. Background panels precede text and icons. Always visible text contrast ink over background/card or background over ink. At least two text elements (a striking heading and a brief supporting statement), and one purposeful visual. Use large whitespace, aligned groups, staggered entries. No text outside safe area. Do not put large empty boxes, tiny unreadable text, overlapping screenshots, extraneous counters, or unrelated decorative shapes. Do not repeat the same geometry for every scene.'''

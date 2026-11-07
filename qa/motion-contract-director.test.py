@@ -93,8 +93,8 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  r,job=run(brief,text,tmp)
  assert r.returncode==0,(r.stdout[-2000:],r.stderr[-3000:])
  p=json.loads((job/'project.json').read_text());scenes=p['scenes']
- assert len(scenes)==brief['sceneCount']==6,len(scenes)
- assert all(abs(s['seconds']-50/6)<.01 for s in scenes),[s['seconds'] for s in scenes]
+ assert len(scenes)==brief['sceneCount']==7,len(scenes)
+ assert [round(s['seconds'],2) for s in scenes]==[4,8,8,8,8,8,6],[s['seconds'] for s in scenes]
  assert abs(sum(s['seconds'] for s in scenes)-50)<.01
  assert p['aspect']=='9:16'
  logo='asset_'+'b'*32+'.jpg'
@@ -139,7 +139,7 @@ found=sorted((z['scene'],z['quality']) for z in C.quality_issues(film,{'address'
 assert found==[(3,'redundant'),(4,'cta')],found
 C.repair_quality(film['scenes'],{'businessName':'شاي جمر'});assert not any(C.is_cta(t) for z in film['scenes'][:-1] for t in C.scene_texts(z)),film['scenes'][3]
 assert film['scenes'][3]['title']=='جلسات عائلية' and 'جلسات واسعة' in film['scenes'][3]['narration']
-print('motion contract director: logo first, 6 scenes from the pictures, forbidden removed, closing enforced, verification reported')
+print('motion contract director: logo first, 7 paced scenes from the pictures, forbidden removed, closing enforced, verification reported')
 
 # No identifiable logo: the job still finishes, the opening is typography (never the storefront), and the report says so.
 nologo=dict(brief);nologo.pop('logoAsset',None)
@@ -210,7 +210,7 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-exec-') as tmp:
  r,job=run_executive(tmp)
  assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
  p=json.loads((job/'project.json').read_text());scenes=p['scenes']
- assert len(scenes)==6 and abs(sum(z['seconds'] for z in scenes)-50)<.01,[z['seconds'] for z in scenes]
+ assert len(scenes)==7 and abs(sum(z['seconds'] for z in scenes)-50)<.01,[z['seconds'] for z in scenes]
  assert C.has_asset(scenes[0]['composition'],'asset_'+'b'*32+'.jpg'),'logo first with both contracts'
  texts=[]
  for z in scenes:texts+=[z['title'],z['narration']]+[e['text'] for e in z['composition']['elements'] if e['kind'] in ['text','metric']]
