@@ -199,6 +199,16 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-context-') as tmp:
  assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
  assert len(json.loads((job/'project.json').read_text())['scenes']) in (7,9)
 print('seven pictures without the online catalog fit the model context')
+# A middle scene that becomes only the shop name (its call to action moved to the closing) is dropped.
+with tempfile.TemporaryDirectory(prefix='madar-contract-empty-') as tmp:
+ saved=FAKE_SERVER;FAKE_SERVER=saved.replace("  if bad and i==n-1:title='زوروا موقعنا';caption='اطلب أونلاين من موقعنا الإلكتروني.'","  if i==2:title='زورونا في فرعنا';caption='ننتظركم في فرعنا.';narration='تفضلوا بزيارتنا في فرعنا.'\n  if bad and i==n-1:title='زوروا موقعنا';caption='اطلب أونلاين من موقعنا الإلكتروني.'")
+ assert FAKE_SERVER!=saved
+ r,job=run(brief,text,tmp);FAKE_SERVER=saved
+ assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
+ p=json.loads((job/'project.json').read_text());scenes=p['scenes']
+ assert not any(len({z['title'],z.get('narration','')})==1 for z in scenes[1:-1]),[z['title'] for z in scenes]
+ assert abs(sum(z['seconds'] for z in scenes)-50)<.05 and {c['id']:c['ok'] for c in p['verification']}['scene_count']
+print('empty middle scene dropped; the others share its time')
 print('stubborn model: forbidden clauses removed, logo kept to opening and closing, film delivered')
 
 # Online interpretation and chat contract together (Gemini answered): the director must apply

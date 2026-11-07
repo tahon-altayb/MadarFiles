@@ -24,7 +24,7 @@ final class MotionContract {
   out.put("required",texts(in,"required",8,90)).put("forbidden",texts(in,"forbidden",60,80)).put("notes",texts(in,"notes",12,300));
   JSONArray corrections=new JSONArray(),src=in.optJSONArray("corrections");if(src!=null)for(int i=0;i<src.length()&&corrections.length()<10;i++){JSONObject c=src.optJSONObject(i);if(c==null)continue;JSONObject z=new JSONObject().put("text",text(c,"text",300)).put("subject",text(c,"subject",40)).put("wrong",text(c,"wrong",40));if(!z.getString("text").isEmpty())corrections.put(z);}
   out.put("corrections",corrections);
-  int scenes=in.optInt("sceneCount",0);if(scenes<3||scenes>12)throw new IOException("عدد مشاهد الموشن غير صالح");out.put("sceneCount",scenes);
+  int scenes=in.optInt("sceneCount",0);if(scenes<3||scenes>12)throw new IOException("عدد مشاهد الموشن غير صالح");out.put("sceneCount",scenes);int asked=in.optInt("explicitScenes",0);if(asked>=3&&asked<=12)out.put("explicitScenes",asked);
   double seconds=in.optDouble("sceneSeconds",0);if(!(seconds>=1&&seconds<=60))throw new IOException("مدة المشهد غير صالحة");out.put("sceneSeconds",seconds);
   String logo=in.optString("logoAttachment","");if(!logo.isEmpty()&&referenceMap!=null&&referenceMap.has(logo)){String asset=referenceMap.getString(logo);if(!asset.matches("asset_[a-f0-9]{32}\\.jpg"))throw new IOException("مرجع الشعار غير صالح");out.put("logoAsset",asset);}
   return out;
