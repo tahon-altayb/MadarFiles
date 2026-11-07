@@ -90,6 +90,15 @@ await page.evaluate(data=>{data=JSON.parse(JSON.stringify(data));data.threads.pu
 await send('سو اعلان موشن عن القهوة بدون صور مدته 20 ثانية');for(let n=0;n<3;n++){const b=page.locator('.agentChoiceActions .primary');if(await b.count()&&await b.isVisible())await b.click();}
 plain=(await starts()).at(-1);assert.equal(plain.thread,'skill2');assert.match(plain.prompt,/تعليمات مهارة/);assert.equal(plain.contract.durationSec,20,'the request’s own length beats the skill');assert.ok(plain.contract.forbidden.includes('توصيل مجاني'));
 await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'7'.repeat(32),status:'done',concept:'',result:{name:'madar_result_10.mp4',mime:'video/mp4',size:1000}}),plain);
+// 12. «اضف هذه الصور الخمس الجديده بدل التكرار» after a finished advert: a local image revision of it,
+// never the online planner (which timed out on the owner's phone), with no 8-picture prompt.
+{const before=await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan'||r.action==='agentRequest').length);
+ await page.evaluate(()=>{const t=JSON.parse(JSON.stringify(requests.filter(r=>r.action==='agentChatsSave').at(-1).data));const th=t.threads.find(x=>x.id===t.active);th.attachments=[...(th.attachments||[]),...Array.from({length:9},(_,i)=>({attachmentId:'9999999'+i+'-9999-9999-9999-999999999999',kind:'image',name:'new'+i+'.jpg'}))];receive({type:'agentChats',data:t});});
+ await send('اضف هذه الصور الخمس الجديده بدل التكرار');
+ const revision=(await starts()).at(-1);assert.equal(revision.revisionKind,'images');assert.equal(revision.assetRole,'photos');assert.equal(revision.previous,'7'.repeat(32));
+ assert.equal(await page.evaluate(()=>requests.filter(r=>r.action==='agentPlan'||r.action==='agentRequest').length),before,'no online planner call');
+ assert.doesNotMatch(await page.locator('#agentLog').textContent(),/اختر حتى ثماني صور/);
+ await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,project:'8'.repeat(32),status:'done',concept:'',result:{name:'madar_result_11.mp4',mime:'video/mp4',size:1000}}),revision);}
 await send('وش مهاراتك');assert.match(await page.locator('#agentLog').textContent(),/«إعلانات المطاعم» \(دائمة\)/);
 await send('احذف مهارة إعلانات المطاعم');savedData=await page.evaluate(()=>requests.filter(r=>r.action==='agentChatsSave').at(-1).data);assert.equal(savedData.skills.length,0);
 assert.deepEqual(errors,[]);await browser.close();console.log('agent motion brief: asks missing address, chooses logo, summarises, passes contract, reports checks, keeps constraints');

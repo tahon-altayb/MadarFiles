@@ -62,7 +62,7 @@ def rules(c):
  if c.get('address'):r.append('The final scene caption must contain this branch address verbatim: '+repr(c['address']))
  if c.get('phone'):r.append('Show this contact number verbatim in the final scene: '+repr(c['phone']))
  if c.get('noWebsite'):r.append('The business has NO website or online store. Never mention a website, online ordering, an app or a URL; the call to action is visiting the physical branch.')
- for z in c.get('corrections',[]):r.append('Binding client correction: '+repr(z['text'])+' Never describe '+repr(z.get('subject',''))+' as '+repr(z.get('wrong',''))+'.')
+ for z in c.get('corrections',[]):r.append('Binding client correction: '+repr(z['text'])+' Never describe '+repr(z.get('subject',''))+' as '+repr(z.get('wrong',''))+' — and do not deny or mention that attribute either.')
  if c.get('forbidden'):r.append('Never write any of these phrases anywhere: '+repr(c['forbidden'][:30]))
  if c.get('notes'):r.append('agent_notes are the client\'s directions to you, never audience copy. Do not quote or paraphrase them on screen: '+repr(c['notes']))
  return r
@@ -73,6 +73,98 @@ def forbidden_hits(texts,c):
  joined=key(' \n '.join(texts))
  return [f for f in c.get('forbidden',[]) if len(key(f))>=2 and key(f) in joined]
 
+def _fill(shot,c=None):
+ """Never leave a scene without words after clauses were removed."""
+ c=c or {}
+ for field,order in [('caption',['narration','title']),('narration',['caption','title']),('title',['caption','narration'])]:
+  if not str(shot.get(field,'')).strip():
+   for other in order:
+    v=str(shot.get(other,'')).strip()
+    if v:shot[field]=v.strip(' .،,')[:60] if field=='title' else v;break
+   else:shot[field]=str(c.get('businessName') or 'أهلاً بكم')
+
+def scrub(scenes,c,phrases=(),claims=()):
+ """Last resort after the review rounds: drop the clauses that still carry forbidden copy.
+
+ Never invents words: a clause holding a forbidden phrase, a denied correction or an
+ excluded claim is removed; an emptied title falls back to the scene's first clean clause."""
+ c=c or {};changed=[]
+ bad=[key(f) for f in list(c.get('forbidden',[]))+list(phrases) if len(key(f))>=2]
+ pairs=[(key(z.get('subject','')),key(z.get('wrong',''))) for z in c.get('corrections',[])]+[(key(a),key(b)) for a,b in claims]
+ pairs=[(a,b) for a,b in pairs if len(a)>=2 and len(b)>=2]
+ for i,shot in enumerate(scenes):
+  whole=key(' '.join(scene_texts(shot)))
+  def dirty(clause):
+   k=key(clause)
+   return any(b in k for b in bad) or any(b in k and (a in k or a in whole) for a,b in pairs)
+  for field in ['title','caption','narration']:
+   text=str(shot.get(field,''))
+   parts=[x for x in re.split(r'(?<=[.!؟،,;])\s*',text) if x.strip()]
+   kept=[x for x in parts if not dirty(x)]
+   if len(kept)!=len(parts):
+    shot[field]=' '.join(kept).strip(' ،,');changed.append((i+1,field))
+  _fill(shot,c)
+ return changed
+
+META=re.compile(r'(?:^|\s)(?:[وبلف])?(?:ال)?(?:مشهد|مشاهد|فيديو|موشن|لقطه|كاميرا|مونتاج)(?=\s|$|[.،,!؟:])|هويه المحل|بدايه الاعلان|نهايه الاعلان|تفتتح المشهد')
+FOREIGN=re.compile(r'[\u0370-\u03ff\u0400-\u04ff]|[\u0621-\u064a][A-Za-z]|[A-Za-z][\u0621-\u064a]')
+CLICHES=['تجربه فريده','تجربه لا تنسي','لا تنسي','جوده عاليه','باعلي المعايير','اعلي معايير','لا مثيل','الافضل في','نبدا ب','نبدا رحلتنا','في هذا الاعلان']
+GREETING=re.compile(r'^(?:اهلا|مرحبا|حياكم|هلا)(?:\s|$)')
+def craft_issues(copy):
+ """Motion-craft review (soft): a weak hook, headlines too long to read at a glance, captions
+ too long for a five-second scene, and empty advertising clichés."""
+ issues=[];scenes=copy.get('scenes',[])
+ if scenes and GREETING.search(key(scenes[0].get('title',''))):issues.append({'scene':1,'quality':'hook','fix':'Scene 1 is the hook seen in the first 3 seconds. Replace the greeting with the single strongest concrete reason to watch (signature product, offer or place) in 2-5 words.'})
+ for i,shot in enumerate(scenes):
+  words=len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('title','')))
+  if words>6:issues.append({'scene':i+1,'quality':'headline','fix':'Headline has '+str(words)+' words; make it 2-5 strong words readable at a glance.'})
+  cap=len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('caption','')))
+  if cap>14:issues.append({'scene':i+1,'quality':'caption','fix':'Caption has '+str(cap)+' words; one sentence of at most 12 words with one concrete detail.'})
+  joined=key(' '.join(scene_texts(shot)))
+  hits=[c for c in CLICHES if c in joined]
+  if hits:issues.append({'scene':i+1,'quality':'cliche','fix':'Replace the empty cliché '+repr(hits[0])+' with a concrete fact from the brief, page or images (a menu item, price, place detail).'})
+ return issues
+
+def quality_issues(copy):
+ """Production language, glitched letters and repeated headlines: audience copy problems
+ the model must rewrite, found deterministically (the real run repeated scenes 1-4 as 5-8)."""
+ issues=[];seen={}
+ for i,shot in enumerate(copy.get('scenes',[])):
+  for field in ['title','caption','narration']:
+   value=str(shot.get(field,''))
+   if META.search(key(value)):issues.append({'scene':i+1,'quality':'meta','field':field,'fix':'This is production language (scene/video/camera/identity). Rewrite '+field+' as audience-facing advert copy.'})
+   if FOREIGN.search(value):issues.append({'scene':i+1,'quality':'letters','field':field,'fix':'A word in '+field+' contains non-Arabic letters. Rewrite it in correct Arabic spelling.'})
+  t=key(shot.get('title',''))
+  if t and t in seen:issues.append({'scene':i+1,'quality':'repeat','fix':'This headline repeats scene '+str(seen[t]+1)+'. Every scene needs its own headline and a different idea from the facts.'})
+  else:seen.setdefault(t,i)
+ return issues+craft_issues(copy)
+
+def repair_quality(scenes,c=None):
+ """Deterministic last resort for quality issues: drop meta or glitched clauses, and give a
+ repeated headline the scene's own first caption clause."""
+ changed=[]
+ for i,shot in enumerate(scenes):
+  for field in ['caption','narration','title']:
+   text=str(shot.get(field,''))
+   parts=[x for x in re.split(r'(?<=[.!؟،,;])\s*',text) if x.strip()]
+   kept=[x for x in parts if not META.search(key(x)) and not FOREIGN.search(x)]
+   if len(kept)!=len(parts):shot[field]=' '.join(kept).strip(' ،,');changed.append((i+1,field))
+  _fill(shot,c)
+ titles=set()
+ for i,shot in enumerate(scenes):
+  t=key(shot.get('title',''))
+  if not t or t in titles:
+   pool=[x.strip(' .،,') for f in ['caption','narration'] for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get(f,''))) if x.strip()]
+   pool=[x for x in pool if key(x) not in titles and len(x)<=60]
+   if pool:
+    shot['title']=pool[0];changed.append((i+1,'title'))
+    # The headline now carries that clause; the caption keeps only what it adds.
+    rest=[x for x in re.split(r'(?<=[.!؟،,;])\s*',str(shot.get('caption',''))) if x.strip() and key(x.strip(' .،,'))!=key(pool[0])]
+    shot['caption']=' '.join(rest).strip(' ،,') or (shot.get('narration','') if key(shot.get('narration','').strip(' .،,'))!=key(pool[0]) else '')
+  _fill(shot,c)
+  titles.add(key(shot.get('title','')))
+ return changed
+
 def copy_issues(copy,c):
  """Contract violations in reviewed copy, in the director's issue format."""
  issues=[];scenes=copy.get('scenes',[])
@@ -80,6 +172,12 @@ def copy_issues(copy,c):
  for i,shot in enumerate(scenes):
   for phrase in forbidden_hits(scene_texts(shot),c):
    issues.append({'scene':i+1,'contract':'forbidden','forbidden_phrase':phrase,'fix':'The client forbade this. Rewrite the scene without '+repr(phrase)+' or any synonym of it; keep the rest correct.'})
+  # A corrected attribute must not be denied on screen either («دون أن تكون نكهة» still talks about flavour).
+  joined=key(' '.join(scene_texts(shot)))
+  for z in c.get('corrections',[]):
+   subject,wrong=key(z.get('subject','')),key(z.get('wrong',''))
+   if len(subject)>=2 and len(wrong)>=2 and subject in joined and re.search(r'(?:^|\s)(?:[وبلفك]|ال|بال|وال)?'+re.escape(wrong)+r'(?=\s|$|[.،,!؟])',joined) and not any(x.get('scene')==i+1 and x.get('correction') for x in issues):
+    issues.append({'scene':i+1,'contract':'forbidden','correction':z['text'],'fix':'Client correction: '+repr(z['text'])+'. Do not mention '+repr(z.get('wrong',''))+' at all in this scene, not even to deny it; describe '+repr(z.get('subject',''))+' only as the client said.'})
  everything=key(' '.join(t for s in scenes for t in scene_texts(s)))
  last=len(scenes)
  for phrase in c.get('required',[]):

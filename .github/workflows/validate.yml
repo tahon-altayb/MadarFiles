@@ -36,6 +36,7 @@ jobs:
           python3 qa/native-runner.test.py
           python3 qa/processing-runner.test.py
           node qa/motion-brief.test.cjs
+          node qa/motion-image-revision.test.cjs
           python3 qa/motion-contract-director.test.py
       - name: Compile Gemini integration before expensive model checks
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac

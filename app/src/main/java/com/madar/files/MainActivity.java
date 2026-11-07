@@ -185,13 +185,13 @@ public class MainActivity extends Activity {
                 send(new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("progress",0).put("message",visual==null&&request.optString("resumeProject").isEmpty()?"Gemini يفهم طلبك والصور ويقرأ المصادر ثم يراجع الشروط قبل طلب GPU":"استكمال المشروع المحفوظ وملفاته"));
                 if(visual==null&&(request.optString("resumeProject").isEmpty()||project.optBoolean("preflightPending"))){
                     project.put("preflightPending",true);MotionProject.save(this,project);
-                    try{AgentExecutive.prepareMotion(this,project,motionBriefCancel,label->{JSONObject state=new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("checkpoint",true).put("preflight",true).put("progress",0).put("message",label);getSharedPreferences("motion-studio",0).edit().putString("chatState",state.toString()).apply();send(state);});}
+                    try{if(AgentDiagnostics.recentlyDown(this))throw new AgentDiagnostics.Failure("GEMINI_UNAVAILABLE","Gemini ما رد قبل دقائق",null);AgentExecutive.prepareMotion(this,project,motionBriefCancel,label->{JSONObject state=new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("checkpoint",true).put("preflight",true).put("progress",0).put("message",label);getSharedPreferences("motion-studio",0).edit().putString("chatState",state.toString()).apply();send(state);});}
                     catch(MotionCloud.Clarification|java.util.concurrent.CancellationException stop){throw stop;}
                     catch(Exception unavailable){
                         // Gemini outage: continue with the chat's local contract instead of failing the whole film.
                         if(!AgentExecutive.localFallback(project,AgentDiagnostics.code(unavailable)))throw unavailable;
                         MotionProject.save(this,project);
-                        send(new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("progress",0).put("message","Gemini ما رد ("+AgentDiagnostics.code(unavailable)+")، فكمّلت بفهمي المحلي لطلبك، وبتحقق من الناتج بنفسي بعد الإنتاج"));
+                        send(new JSONObject().put("type","motionState").put("thread",project.getString("agentThread")).put("task",project.optString("agentTask")).put("project",id).put("status","running").put("progress",0).put("message",(AgentDiagnostics.code(unavailable).equals("GEMINI_UNAVAILABLE")?"Gemini ما رد قبل دقائق، فما أضيع وقتك بانتظاره: ":"Gemini ما رد ("+AgentDiagnostics.code(unavailable)+")، ")+"كمّلت بفهمي المحلي لطلبك، وبتحقق من الناتج بنفسي بعد الإنتاج"));
                     }
                 }
                 ColabProbe.check(motionBriefCancel);
