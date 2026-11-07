@@ -175,8 +175,18 @@ def generate(system,prompt,visual=False,max_tokens=1800,schema=None,seed=17):
  content.append({'type':'text','text':prompt})
  started=time.monotonic()
  if os.environ.get('MADAR_DIRECTOR_TRACE')=='1':print('DIRECTOR_GENERATE',max_tokens,flush=True)
- response=local_request('/v1/chat/completions',{'messages':[{'role':'system','content':system},{'role':'user','content':content}],'temperature':.7,'top_p':.8,'top_k':20,'min_p':0,'presence_penalty':1.5,'repeat_penalty':1.0,'seed':seed,'max_tokens':max_tokens,'response_format':{'type':'json_schema','json_schema':{'name':'madar_motion','strict':True,'schema':schema or STORY}},'chat_template_kwargs':{'enable_thinking':False}})
+ try:
+  response=local_request('/v1/chat/completions',{'messages':[{'role':'system','content':system},{'role':'user','content':content}],'temperature':.7,'top_p':.8,'top_k':20,'min_p':0,'presence_penalty':1.5,'repeat_penalty':1.0,'seed':seed,'max_tokens':max_tokens,'response_format':{'type':'json_schema','json_schema':{'name':'madar_motion','strict':True,'schema':schema or STORY}},'chat_template_kwargs':{'enable_thinking':False}})
+ except ValueError as failed:
+  try:
+   with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':prompt[:48],'max_tokens':max_tokens,'room':room,'pictures':len(shown),'error':str(failed)},ensure_ascii=False)+'\n')
+  except OSError:pass
+  raise
  choice=response['choices'][0]
+ # One line per model call (kind, budget, pictures, outcome) so a failed film can be explained.
+ try:
+  with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':prompt[:48],'max_tokens':max_tokens,'room':room,'pictures':len(shown),'of':len(images) if visual else 0,'finish':choice.get('finish_reason'),'tokens':response.get('usage',{}).get('completion_tokens'),'prompt':response.get('usage',{}).get('prompt_tokens'),'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
+ except OSError:pass
  if choice.get('finish_reason')!='stop':raise ValueError('DIRECTOR_INCOMPLETE')
  value=choice['message']['content'].strip()
  if os.environ.get('MADAR_DIRECTOR_TRACE')=='1':

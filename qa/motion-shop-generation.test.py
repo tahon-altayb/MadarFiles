@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
  request={'protocol':1,'mode':'compose','project':project,'files':files};(job/'request.json').write_text(json.dumps(request,ensure_ascii=False));(evidence/'input.json').write_text(json.dumps(request,ensure_ascii=False,indent=1))
  execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=8400,env={**os.environ,'MADAR_MOTION_QA':'1','MADAR_MOTION_QA_CPU':'1','MADAR_MOTION_QA_CONTEXT':'8192','MADAR_MOTION_QA_DIRECTOR_SECONDS':'7200'})
- for name in ['progress.json','project.json','story.json','director-runtime.log','director-response.txt','story-candidate.json','copy-review.json','reference-facts.json','brief-contract.json']:
+ for name in ['director-calls.log','progress.json','project.json','story.json','director-runtime.log','director-response.txt','story-candidate.json','copy-review.json','reference-facts.json','brief-contract.json']:
   if (job/name).exists():shutil.copyfile(job/name,evidence/name)
  # Artifacts are not always downloadable by reviewers, so the essentials go to the log as well.
  log=(job/'director-runtime.log').read_text(errors='replace') if (job/'director-runtime.log').exists() else ''
@@ -67,6 +67,8 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   if (job/name).exists():print('EVIDENCE',name,(job/name).read_text()[:3000],flush=True)
  if (job/'copy-review.json').exists():
   review=json.loads((job/'copy-review.json').read_text());print('EVIDENCE copy review attempt',review.get('attempt'),json.dumps(review.get('issues',[]),ensure_ascii=False)[:4000],flush=True)
+ if (job/'director-calls.log').exists():
+  for line in (job/'director-calls.log').read_text().splitlines():print('EVIDENCE call',line,flush=True)
  print('EVIDENCE director log tail',log[-3000:],flush=True)
  if (job/'story.json').exists():
   for i,z in enumerate(json.loads((job/'story.json').read_text()).get('scenes',[])):print('EVIDENCE scene',i+1,json.dumps({k:z.get(k) for k in ['title','caption','narration','reference']},ensure_ascii=False),flush=True)
