@@ -47,3 +47,8 @@ console.log('PASS newly planned layouts reject unreadable text boxes and empty d
  for(let i=0;i<4;i++){const c=C.compose({title:'مفتوحين 24 ساعة',caption:'نستقبلكم ليل نهار.',narration:'x',reference:-1},{aspect:'9:16',index:i});assert.ok(c.elements.some(e=>e.kind==='icon'&&e.icon==='clock24'));for(const e of c.elements)if(e.kind==='text')assert.ok(C.safeText(e));}
  assert.equal(C.compose({title:'نص عام',caption:'وصف',narration:'x',reference:-1},{aspect:'9:16',index:0}).elements.some(e=>C.ILLUSTRATIONS.includes(e.icon)),false,'no illustration when nothing fits');
  console.log('PASS picture-less scenes get a drawn illustration of their subject');}
+// A key number (opening hours, a starting price, a discount) becomes the counting hero of its scene.
+{const C=require('../app/src/main/assets/motion/creative.js');
+ assert.equal(C.keyNumber({title:'مفتوحين 24 ساعة'}),'24 ساعة');assert.equal(C.keyNumber({caption:'أسعار تبدأ من 5 ريال'}),'5 ريال');assert.equal(C.keyNumber({title:'خصم ٣٠٪'}),'30%');assert.equal(C.keyNumber({title:'فطاير طازجة'}),'');
+ const c=C.compose({title:'مفتوحين 24 ساعة',caption:'نستقبلكم ليل نهار.',narration:'x',reference:-1},{aspect:'9:16',index:0});assert.ok(c.elements.some(e=>e.kind==='metric'&&e.text==='24 ساعة'));for(const e of c.elements)if(['text','metric'].includes(e.kind))assert.ok(C.safeText(e));
+ console.log('PASS key numbers become a counting hero');}

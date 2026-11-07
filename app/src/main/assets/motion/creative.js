@@ -45,6 +45,11 @@ function validateDesign(c,shot,aspect='9:16'){
 // Match complete Arabic words (with ordinary clitics), so التدقيق cannot become دقيق القمح.
 // The illustration that shows what a picture-less scene talks about (tea, pastries, seating, opening
 // hours, location…); null when nothing fits, then the poster keeps a small icon.
+function keyNumber(shot){
+ const text=[shot.title,shot.caption].filter(Boolean).join(' ').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+ const m=text.match(/(\d{1,4}(?:[.,]\d{1,2})?)\s*(ريال|ر\.س|ساعة|ساعه|%|٪|دقيقة|دقيقه|دقائق|سنة|سنه|سنوات|عام|أعوام|فرع|فروع|نوع|أنواع|صنف|أصناف)/);
+ return m?(m[1]+' '+m[2]).replace('٪','%').replace(/\s+%/,'%'):'';
+}
 function illustrationFor(shot,used=[]){
  const normalize=v=>String(v||'').normalize('NFKC').replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').toLowerCase();
  const text=normalize([shot.title,shot.caption,shot.narration].filter(Boolean).join(' '));
@@ -86,6 +91,10 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
   elements=[e('shape',.06,.16,.88,.50,'card','fade',0),text(title,.10,.21,.80,.17,110,.04),e('line',.38,.40,.24,.006,'accent','draw',.10),text(body,.10,.43,.76,.16,60,.14),...(asset?[media(.32,.62,.36,.16,.2,whole)]:illustrationFor(shot)==='location'?[e('icon',.34,.62,.32,.16,'accent','scale',.2,{icon:'location'})]:[e('icon',.42,.68,.16,.09,'accent','scale',.2,{icon:'arrow'})])];
  }else if(logo&&asset&&!wide){
   elements=[media(.14,.10,.72,.40,0,whole),text(title,.08,.53,.78,.13,108,.08),e('line',.38,.675,.24,.006,'accent','draw',.12),text(body,.08,.69,.78,.09,56,.16)];
+ }else if(!wide&&!square&&!asset&&!logo&&keyNumber(shot)){
+  // A number worth remembering (24 ساعة، يبدأ من 5 ريال، 30%) becomes the hero and counts up.
+  const ill=art===undefined?illustrationFor(shot):art;
+  elements=[e('metric',.08,.15,.84,.17,'accent','scale',0,{text:keyNumber(shot),size:110}),e('line',.38,.335,.24,.006,'accent','draw',.12),text(title,.07,.36,.81,.13,104,.14),text(body,.08,.51,.78,.14,58,.2),...(ill?[e('icon',.39,.67,.22,.11,'accent','scale',.26,{icon:ill})]:[])];
  }else if(!wide&&!square&&!asset&&!logo&&(art===undefined?illustrationFor(shot):art)){
   // No client picture: a drawn illustration of what the scene says (tea, pastries, seating, opening
   // hours, location…) with the words, never a photo or a generated image.
@@ -237,7 +246,7 @@ function draw(ctx,p,s,time,images){
  if(p.motionEnabled!==false&&order>=0){const enter=order>0?1-(1-clamp(local/.45))**3:1,leave=order<p.scenes.length-1?clamp((local-(span-.32))/.32)**3:0,dx=((1-enter)-leave)*W*.09*side,zoom=1+.035*(1-enter)+.02*leave;ctx.translate(W/2+dx,H/2);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);}
  for(const e of c.elements){const t=local-e.delay*Math.min(span,2);if(t<0)continue;const q=clamp(t/.65),ease=1-(1-q)**3;let x=e.x*W,y=e.y*H,w=e.w*W,h=e.h*H;ctx.save();ctx.globalAlpha=p.motionEnabled===false?1:ease*Math.min(1,(s.end-time)/.2);if(e.motion==='rise')y+=H*.035*(1-ease);if(e.motion==='left')x+=W*.08*(1-ease);if(e.motion==='right')x-=W*.08*(1-ease);if(p.motionEnabled!==false&&['image','device'].includes(e.kind)){ctx.translate(x+w/2,y+h/2);const push=1+progress*.035;ctx.scale(push,push);ctx.translate(-x-w/2,-y-h/2);}
  if(e.motion==='scale'){ctx.translate(x+w/2,y+h/2);ctx.scale(.82+.18*ease,.82+.18*ease);ctx.translate(-x-w/2,-y-h/2);}const color=palette[e.color];if(p.motionEnabled!==false&&['image','device','icon'].includes(e.kind))y+=Math.sin(local*1.1+e.x*4)*H*.004;
- if(e.kind==='text'||e.kind==='metric'){const words=String(e.text).split(/\s+/).length,reveal=p.motionEnabled===false||e.kind!=='text'||e.size<90?1:clamp(t/(.18+.11*words));text(ctx,e.text,x,y,w,h,e.size*W/1080,color,e.kind==='metric'?900:700,reveal);}
+ if(e.kind==='text'||e.kind==='metric'){const counted=e.kind==='metric'&&p.motionEnabled!==false?String(e.text).replace(/\d+(?:[.,]\d+)?/,v=>{const n=parseFloat(v.replace(',','.')),k=1-(1-clamp(t/.9))**3;return Number.isInteger(n)?String(Math.round(n*k)):(n*k).toFixed(1);}):e.text;const words=String(counted).split(/\s+/).length,reveal=p.motionEnabled===false||e.kind!=='text'||e.size<90?1:clamp(t/(.18+.11*words));text(ctx,counted,x,y,w,h,e.size*W/1080,color,e.kind==='metric'?900:700,reveal);}
  if(e.kind==='shape')rounded(ctx,x,y,w,h,24*W/1080,color);
  if(e.kind==='line'){ctx.strokeStyle=color;ctx.lineWidth=4*W/1080;ctx.beginPath();ctx.moveTo(x,y+h/2);ctx.lineTo(x+w*(e.motion==='draw'?ease:1),y+h/2);ctx.stroke();}
  if(e.kind==='icon'){if(ILLUSTRATIONS.includes(e.icon))illustration(ctx,e.icon,x,y,w,h,palette,local);else icon(ctx,e.icon,x,y,w,h,color);}
@@ -265,4 +274,4 @@ function reviseImages(p,names,logo){
   for(const e of swap){if(!queue.length)break;e.asset=queue.shift();placed.push(e.asset);}}
  p.scenes.forEach(s=>validate(s.composition));return {placed,unused:queue};
 }
-return {ILLUSTRATIONS,illustration,illustrationFor,safeText,validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});
+return {ILLUSTRATIONS,illustration,illustrationFor,keyNumber,safeText,validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});
