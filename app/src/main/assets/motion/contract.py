@@ -143,10 +143,13 @@ def craft_issues(copy):
  return issues
 
 # Calls to action belong to the closing scene only («زورونا», «اطلبه الآن عبر موقعنا», «حمّل التطبيق»…).
-CTA=re.compile(r'(?:^|\s)(?:[وف])?(?:زورونا|زوروا|زوروه|تفضلوا بزيار|بانتظاركم|ننتظركم|نستقبلكم|اطلب(?:ه|ها|وا|ي)?\s+(?:الان|الحين|من|عبر|اون)|اطلب(?:وا)?\s+اونلاين|عبر\s+موقعنا|من\s+موقعنا|حمل(?:وا)?\s+التطبيق|نزل(?:وا)?\s+التطبيق|حملوه|تواصل(?:وا)?\s+معنا|اتصل(?:وا)?\s+(?:بنا|الان|علي)|راسلونا|احجز(?:وا)?\s+(?:الان|الحين|طاولت|موعد)|سارع(?:وا)?|لا\s+تفوت(?:وا)?|اشتر(?:ي|وا)?\s+الان|تسوق(?:وا)?\s+الان|لا\s+تنس(?:وا|ي)?\s+زيار|بزيارتنا|زيارتنا|زياره\s+فرع|فرعنا\s+في|عنواننا|موقعنا\s+في)')
+CTA=re.compile(r'(?:^|\s)(?:[وف])?(?:زورونا|زوروا|زوروه|تفضلوا بزيار|بانتظاركم|ننتظركم|نستقبلكم|اطلب(?:ه|ها|وا|ي)?\s+(?:الان|الحين|من|عبر|اون)|اطلب(?:وا)?\s+اونلاين|عبر\s+موقعنا|من\s+موقعنا|حمل(?:وا)?\s+التطبيق|نزل(?:وا)?\s+التطبيق|حملوه|تواصل(?:وا)?\s+معنا|اتصل(?:وا)?\s+(?:بنا|الان|علي)|راسلونا|احجز(?:وا)?\s+(?:الان|الحين|طاولت|موعد)|سارع(?:وا)?|لا\s+تفوت(?:وا)?|اشتر(?:ي|وا)?\s+الان|تسوق(?:وا)?\s+الان|لا\s+تنس(?:وا|ي)?\s+زيار|بزيارتنا|زيارتنا|زيارتكم|زياره\s+فرع|ننتظر(?:كم)?\s+(?:زيار|في)|فرعنا|فروعنا|عنواننا|موقعنا\s+في)')
 def is_cta(text,c=None):
  k=key(text);c=c or {}
- return bool(CTA.search(k)) or any(len(key(x))>=6 and key(x) in k for x in [c.get('address',''),c.get('phone','')] if x)
+ if CTA.search(k):return True
+ # The address or phone in any punctuation («شارع الجال - خلف…» or «شارع الجال خلف…»).
+ bare=lambda v:re.sub(r'[^\u0621-\u064aA-Za-z0-9]+',' ',key(v)).strip()
+ return any(len(bare(x))>=6 and bare(x) in bare(text) for x in [c.get('address',''),c.get('phone','')] if x)
 
 STOP=set(key(w) for w in 'في من على الى إلى عن مع و او أو ثم كل لكل لكم لك لنا لدينا عندنا نقدم يقدم تقدم هنا هذا هذه ذلك التي الذي مع بين أن ان لا ما قد كما مثل أكثر اكثر جدا دائما دائماً اليوم الآن الان كل يوم وقت تجربه مكان'.split())
 def _words(text):
@@ -166,13 +169,16 @@ def _words(text):
 def redundancy_issues(copy,c=None):
  """A scene that says again what an earlier scene said, in other words («لدينا شاهي وفطيرة طرية» then
  «الفطائر الطرية والشاهي اللذيذ»): each scene must bring a new fact."""
- issues=[];scenes=copy.get('scenes',[]);seen=[]
+ issues=[];scenes=copy.get('scenes',[]);seen=[];c=c or {}
+ # The business name recurs on purpose; it is not a repeated idea.
+ brand=_words(' '.join([str(c.get('businessName') or ''),str(copy.get('title') or '')]))
  for i,shot in enumerate(scenes):
   words=_words(' '.join([shot.get('title',''),shot.get('caption','')]))
+  for w in list(brand):words.pop(w,None)
   if i<len(scenes)-1:
    for j,earlier in seen:
     common=set(words)&set(earlier)
-    if len(common)>=2 and len(common)/max(1,min(len(words),len(earlier)))>=.5:
+    if len(common)>=3 or (len(common)>=2 and len(common)/max(1,min(len(words),len(earlier)))>=.5):
      issues.append({'scene':i+1,'quality':'redundant','fix':'Repeats the idea of scene '+str(j+1)+' ('+'، '.join(sorted(words[x] for x in common))+'). Give this scene a different fact from the brief, page, menu or images; never paraphrase an earlier scene.'});break
   seen.append((i,words))
  return issues

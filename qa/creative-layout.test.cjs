@@ -38,3 +38,12 @@ console.log('PASS newly planned layouts reject unreadable text boxes and empty d
  for(let i=0;i<12;i++)for(const [asset,logo,closing] of [[A('1'),0,0],[null,0,0],[A('2'),1,0],[A('2'),0,1],[null,0,1]]){const c=C.compose({title:'عنوان تجريبي طويل نسبيًا',caption:'وصف تجريبي للمشهد يكفي لسطرين',narration:'x',reference:asset?0:-1},{aspect:'9:16',images:asset?[asset]:[],index:i,logo:!!logo,closing:!!closing});
   for(const e of c.elements)if(['text','metric'].includes(e.kind)&&!C.safeText(e))throw Error('text outside the safe zone: '+JSON.stringify([i,logo,closing,e.x,e.y,e.w,e.h]));}
  console.log('PASS vertical layouts keep every word inside the mobile safe zone');}
+// Picture-less scenes are illustrated with drawn subjects, chosen from the words and varied.
+{const C=require('../app/src/main/assets/motion/creative.js');
+ const cases={'مفتوحين 24 ساعة':'clock24','فطاير طازجة كل صباح':'pastry','جلسات عائلية مريحة':'people','قهوة عربية بالهيل':'coffee','شاي حليب ساخن':'tea','خصم 20% على الفطائر':'offer'};
+ for(const [t,id] of Object.entries(cases))assert.equal(C.illustrationFor({title:t}),id,t);
+ assert.equal(C.illustrationFor({title:'شاي حليب وشاي كرك'},['tea']),'tea','falls back to the only fitting one');
+ assert.equal(C.illustrationFor({title:'فطاير مع شاي'},['pastry']),'tea','prefers an unused illustration');
+ for(let i=0;i<4;i++){const c=C.compose({title:'مفتوحين 24 ساعة',caption:'نستقبلكم ليل نهار.',narration:'x',reference:-1},{aspect:'9:16',index:i});assert.ok(c.elements.some(e=>e.kind==='icon'&&e.icon==='clock24'));for(const e of c.elements)if(e.kind==='text')assert.ok(C.safeText(e));}
+ assert.equal(C.compose({title:'نص عام',caption:'وصف',narration:'x',reference:-1},{aspect:'9:16',index:0}).elements.some(e=>C.ILLUSTRATIONS.includes(e.icon)),false,'no illustration when nothing fits');
+ console.log('PASS picture-less scenes get a drawn illustration of their subject');}
