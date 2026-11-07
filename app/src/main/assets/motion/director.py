@@ -435,6 +435,17 @@ for z in story['scenes'][1:-1]:
   local_rules.strip_cta(z,closing)
   if not z.get('title','').strip() or local_rules.is_cta(z['title'],closing):z['title']=local_rules.headline_from(z,closing,{local_rules.key(x.get('title','')) for x in story['scenes']}) or str(closing.get('businessName') or '')[:45]
   if len(z['title'].split())>6:z['title']=local_rules.short_headline(z['title'])
+# A middle scene left with nothing of its own (only the shop name, or one label repeated as headline,
+# caption and narration after calls to action were moved out) is dropped; the others share its time.
+# Never below four scenes, and never when the client asked for a number of scenes.
+asked_scenes=local_contract.get('explicitScenes')
+if not chunks and not (isinstance(asked_scenes,int) and not isinstance(asked_scenes,bool) and asked_scenes>0):
+ def empty_scene(z):
+  parts={local_rules.key(str(z.get(k,'')).strip(' .،,')) for k in ['title','caption','narration']}
+  return len(parts)==1 or local_rules.key(str(z.get('narration','')).strip(' .،,'))==local_rules.key(str(closing.get('businessName','')).strip(' .،,'))
+ for i in range(len(story['scenes'])-2,0,-1):
+  if len(story['scenes'])>4 and empty_scene(story['scenes'][i]):del story['scenes'][i]
+ scene_count=len(story['scenes'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.

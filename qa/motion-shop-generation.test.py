@@ -96,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  def check(ok,message):
   if not ok:findings.append(message)
  scenes=p['scenes'];duration=float(info['format']['duration'])
- check(len(scenes) in (SCENES,SCENES-2),f'scene count {len(scenes)} != {SCENES}')
+ check(4<=len(scenes)<=SCENES,f'scene count {len(scenes)} outside 4..{SCENES}')
  check(abs(duration-50)<=(2 if args.voice=='none' else 5),f'duration {duration:.1f}s, requested 50s')
  video_stream=next(s for s in info['streams'] if s['codec_type']=='video');check(video_stream['height']>video_stream['width'],'not vertical')
  check(not any(s['codec_type']=='audio' for s in info['streams']) if args.voice=='none' else any(s['codec_type']=='audio' for s in info['streams']),'audio track does not match the voice choice')
