@@ -57,11 +57,10 @@ final class AgentDiagnostics {
   if(input.has("userRequest"))return "plan_interpret";
   if(input.has("review_task"))return "motion_brief_review";
   if(input.has("client_brief"))return "motion_interpret";
-  if("motion_facts".equals(input.optString("task")))return "motion_facts";
   return "motion_result_review";
  }
  static synchronized void record(Context c,String stage,String status,long began,Throwable error){
-  if(!stage.matches("plan_(interpret|review)|motion_(interpret|brief_review|result_review|validate|facts)|connection_probe"))stage="motion_validate";
+  if(!stage.matches("plan_(interpret|review)|motion_(interpret|brief_review|result_review|validate)|connection_probe"))stage="motion_validate";
   long elapsed=Math.max(0,android.os.SystemClock.elapsedRealtime()-began);String issue=error==null?"":status.equals("cancelled")?"CANCELLED":code(error);
   android.content.SharedPreferences p=c.getSharedPreferences("assistant_diagnostics",0);JSONArray old;
   try{old=new JSONArray(p.getString("timeline","[]"));}catch(JSONException invalid){old=new JSONArray();}

@@ -1,5 +1,5 @@
-// Before a new advert the pictures are read, what was found is shown with the scenes it carries,
-// and the owner confirms, answers quick tap-questions or adds information. A text edit on a
+// Before a new advert the owner picks quick tap-questions, the information already given, or his own
+// text; the pictures are never read into facts or prices (the owner rejected that). A text edit on a
 // finished advert changes only that text (no planner), and «ما نبيع لحوم» becomes forbidden copy.
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('assert/strict');
 const B=require('../app/src/main/assets/motion-brief.js'),C=require('../app/src/main/assets/agent-conversation.js');
@@ -12,10 +12,6 @@ assert.deepEqual(C.textEdit('شيل كلمة واللحوم المشوية'),{fr
 for(const t of ['احذف المشهد الثالث','غير الخلفية الى الأسود','غير الصور','خل الشعار في الأخير'])assert.equal(C.textEdit(t),null,t);
 assert.deepEqual(B.parse('لاننا ما نبيع لحوم نهائيا',{images:0}).forbidden,['لحوم']);
 assert.equal(B.pictureMode('لا تحط الصور نفسها خله رسومات موشن'),'inspired');assert.equal(B.pictureMode('بالصور فقط'),'photosOnly');assert.equal(B.pictureMode('سوي اعلان لمحلي'),'');
-const facts={images:[{index:0,kind:'logo',summary:'شعار شاي جمر وفطيرة الطيب',items:[],facts:[]},{index:1,kind:'menu',summary:'منيو المشروبات والفطائر',items:[{name:'شاي جمر',price:'2 ريال'},{name:'كرك',price:'3 ريال'},{name:'فطيرة زعتر',price:'5 ريال'},{name:'بطاطس',price:'7 ريال'}],facts:['مفتوح 24 ساعة']},{index:2,kind:'storefront',summary:'واجهة المحل مضاءة ليلًا',items:[],facts:[]}]};
-const summary=B.factsSummary(facts,{seconds:50});assert.ok(summary.scenes>=4&&summary.scenes<=8,String(summary.scenes));assert.match(summary.lines.join('\n'),/كرك 3 ريال/);assert.match(summary.advice,/مشاهد/);assert.match(summary.block,/لا تضف منتجات/);
-assert.equal(B.parse('اعلان مدته 30 ثانية',{images:3,factScenes:summary.scenes}).sceneCount,Math.max(4,Math.min(6,summary.scenes)));
-
 (async()=>{const browser=await chromium.launch({...(process.env.MADAR_CHROME_PATH?{executablePath:process.env.MADAR_CHROME_PATH}:{channel:process.env.CI?'chrome':undefined}),headless:true});
  const page=await browser.newPage({viewport:{width:412,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{window.requests=[];window.Android={request:s=>requests.push(JSON.parse(s))};});
@@ -28,14 +24,13 @@ assert.equal(B.parse('اعلان مدته 30 ثانية',{images:3,factScenes:su
  const last=action=>page.evaluate(action=>requests.filter(r=>r.action===action).at(-1),action);const count=action=>page.evaluate(action=>requests.filter(r=>r.action===action).length,action);
  await load('facts',shots);await page.locator('#agentOpen').click();
  await send('سوي اعلان موشن لمحل شاي جمر وفطيرة الطيب مدته 50 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
- // The setup card asks how the pictures are used (three ways) before anything runs.
+ // The setup card asks how the pictures are used (three ways) and whether to ask quick questions first.
  const modes=await page.locator('[data-choice=references] option').evaluateAll(o=>o.map(x=>x.value));for(const m of ['attached','photosOnly','inspired'])assert.ok(modes.includes(m),m);
- await page.locator('[data-choice=references]').selectOption('inspired');if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();
- assert.equal(await count('agentMotionStart'),0,'nothing starts before the pictures are read');const asked=await last('agentMotionFacts');assert.equal(asked.attachments.length,3);
- await page.evaluate(([r,facts])=>receive({type:'motionFacts',thread:r.thread,token:r.token,ok:true,facts}),[asked,facts]);
- const log=await page.locator('#agentLog').innerText();assert.match(log,/هذي المعلومات اللي طلعتها من صورك/);assert.match(log,/كرك 3 ريال/);assert.match(log,/تكفي تقريبًا لـ \d+ مشاهد/);
- fs.mkdirSync('qa/evidence/chat-review',{recursive:true});await page.screenshot({path:'qa/evidence/chat-review/motion-facts.png',fullPage:false});
- await page.locator('[data-choice=info]').selectOption('ask');await page.locator('.agentChoiceActions .primary').click();
+ assert.equal(await page.locator('[data-choice=info]').inputValue(),'ask');
+ await page.locator('[data-choice=references]').selectOption('inspired');if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);
+ fs.mkdirSync('qa/evidence/chat-review',{recursive:true});await page.screenshot({path:'qa/evidence/chat-review/motion-setup.png',fullPage:false});
+ await page.locator('.agentChoiceActions .primary').click();
+ assert.equal(await count('agentMotionStart'),0,'nothing starts before the questions');assert.equal(await count('agentMotionFacts'),0,'the pictures are never read into facts');
  // Quick questions: tap suggestions (pre-selected from the request) and type «أخرى».
  assert.ok(await page.locator('.agentChip').count()>=10);assert.equal(await page.locator('.agentChip[aria-pressed=true]',{hasText:'شاي'}).first().count(),1,'what the request says is pre-selected');
  await page.locator('.agentChip',{hasText:'جلسات مريحة'}).click();await page.locator('.agentChip',{hasText:'الشباب'}).click();await page.locator('.agentChip',{hasText:'حماسية وشبابية'}).click();
@@ -43,15 +38,14 @@ assert.equal(B.parse('اعلان مدته 30 ثانية',{images:3,factScenes:su
  await page.screenshot({path:'qa/evidence/chat-review/motion-questions.png',fullPage:false});
  await page.locator('.agentChoiceActions .primary').click();
  const start=await last('agentMotionStart');assert.ok(start,'the film starts after the answers');
- assert.match(start.prompt,/الأصناف والأسعار كما في صور المنيو: شاي جمر 2 ريال/);assert.match(start.prompt,/مميزاتنا: .*جلسات مريحة/);assert.match(start.prompt,/جمهور الإعلان: الشباب/);assert.match(start.prompt,/العرض الحالي \(اكتبه كما هو\): الشاي بريالين/);assert.match(start.prompt,/روح الإعلان: حماسية وشبابية/);
+assert.match(start.prompt,/مميزاتنا: .*جلسات مريحة/);assert.match(start.prompt,/جمهور الإعلان: الشباب/);assert.match(start.prompt,/العرض الحالي \(اكتبه كما هو\): الشاي بريالين/);assert.match(start.prompt,/روح الإعلان: حماسية وشبابية/);
  assert.ok(start.contract.forbidden.includes('لحوم'),JSON.stringify(start.contract.forbidden));assert.equal(start.setup.references,'inspired');
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),start);
 
- // Analysis unavailable: the owner is told, and can still add his own information first.
- await load('facts-down',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
- if(await page.locator('[data-choice=logo]').count()){await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();}
- const asked2=await last('agentMotionFacts');await page.evaluate(r=>receive({type:'motionFacts',thread:r.thread,token:r.token,ok:false,error:'Gemini: انتهت المهلة بدون رد'}),asked2);
- assert.match(await page.locator('#agentLog').innerText(),/ما قدرت أحلل الصور الحين/);await page.locator('[data-choice=info]').selectOption('add');await page.locator('.agentChoiceActions .primary').click();
+ // «بكتب من عندي»: the owner's own text is added before the film starts.
+ await load('facts-add',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
+ await page.locator('[data-choice=info]').selectOption('add');if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();
+ assert.equal(await count('agentMotionStart'),1);
  const before=await count('agentMotionStart');await send('نبيع شاي جمر وكرك وفطاير، ومفتوحين 24 ساعة، وما نبيع لحوم');const start2=await last('agentMotionStart');assert.equal(await count('agentMotionStart'),before+1);assert.match(start2.prompt,/معلومات من صاحب المحل/);assert.ok(start2.contract.forbidden.includes('لحوم'));
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),start2);
 
@@ -61,5 +55,5 @@ assert.equal(B.parse('اعلان مدته 30 ثانية',{images:3,factScenes:su
  assert.equal(await count('agentPlan'),plans,'a text edit never waits on the online planner');const revision=await last('agentMotionStart');
  assert.equal(revision.revisionKind,'text');assert.equal(revision.previous,'a'.repeat(32));assert.equal(revision.textFrom,edit.from);assert.equal(revision.textTo,edit.to);assert.ok(revision.contract.forbidden.includes('لحوم'));
  assert.match(await page.locator('#agentLog').innerText(),/بغيّر «تناول وجبة خفيفة/);
- assert.deepEqual(errors,[]);await browser.close();console.log('motion facts flow: pictures read first, questions with choices, text edits local');
+ assert.deepEqual(errors,[]);await browser.close();console.log('motion questions flow: optional tap-questions or own text, no picture facts, text edits local');
 })().catch(e=>{console.error(e);process.exit(1);});

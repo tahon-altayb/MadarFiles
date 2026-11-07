@@ -40,25 +40,6 @@ final class GroqClient {
   return new JSONObject(content);
  }
 
- static final String VISION_MODEL="qwen/qwen3.8-27b";
- /** One picture (a data URL, at most 3 per Groq request) read into one JSON object. */
- static JSONObject vision(Context c,String system,String user,String imageUrl,JSONObject schema,AtomicBoolean cancel)throws Exception{
-  if(imageUrl==null||!imageUrl.startsWith("data:image/jpeg;base64,")||imageUrl.length()>6_000_000)throw new IOException("صورة غير صالحة للتحليل");
-  JSONArray content=new JSONArray().put(new JSONObject().put("type","text").put("text",user+"\n\nReturn ONLY one JSON object that matches this JSON schema exactly:\n"+schema)).put(new JSONObject().put("type","image_url").put("image_url",new JSONObject().put("url",imageUrl)));
-  JSONObject request=new JSONObject().put("model",VISION_MODEL).put("temperature",0).put("max_completion_tokens",2048).put("reasoning_effort","none")
-   .put("response_format",new JSONObject().put("type","json_object"))
-   .put("messages",new JSONArray().put(new JSONObject().put("role","system").put("content",system)).put(new JSONObject().put("role","user").put("content",content)));
-  JSONObject response;
-  try{response=post(key(c),request,cancel);}
-  catch(IOException unsupported){if(!String.valueOf(unsupported.getMessage()).contains("(400)"))throw unsupported;request.remove("reasoning_effort");response=post(key(c),request,cancel);}
-  return object(response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content",""));
- }
- /** The JSON object in a reply, also when a model wraps it in reasoning or a code fence. */
- static JSONObject object(String content)throws Exception{
-  String text=content.replaceAll("(?s)<think>.*?</think>","").trim();int a=text.indexOf('{'),b=text.lastIndexOf('}');
-  if(a<0||b<=a||b-a>24000)throw new IOException("رد Groq غير صالح");return new JSONObject(text.substring(a,b+1));
- }
-
  static JSONObject post(String key,JSONObject body,AtomicBoolean cancel)throws Exception{
   if(!validKey(key))throw new IOException("أضف مفتاح Groq صالحًا (يبدأ بـ gsk_)");
   HttpURLConnection connection=(HttpURLConnection)new URL(ENDPOINT).openConnection();
@@ -77,7 +58,7 @@ final class GroqClient {
 
  static void show(Activity a){
   LinearLayout box=new LinearLayout(a);box.setOrientation(LinearLayout.VERTICAL);int pad=(int)(20*a.getResources().getDisplayMetrics().density);box.setPadding(pad,pad,pad,pad);
-  TextView note=new TextView(a);note.setText((configured(a)?"مفتاح Groq محفوظ. ":"")+"Groq بديل مجاني يفهم طلبات الشات إذا ما رد Gemini. الصق مفتاحك من console.groq.com (يبدأ بـ gsk_). يُرسل له نص الشات، وصور الموشن لتحليلها قبل البدء إذا ما رد Gemini. للمجاني حدود بالدقيقة واليوم.");box.addView(note);
+  TextView note=new TextView(a);note.setText((configured(a)?"مفتاح Groq محفوظ. ":"")+"Groq بديل مجاني يفهم طلبات الشات إذا ما رد Gemini. الصق مفتاحك من console.groq.com (يبدأ بـ gsk_). النص يُرسل إلى Groq؛ الصور والموشن لا تُرسل له. للمجاني حدود بالدقيقة واليوم.");box.addView(note);
   EditText secret=new EditText(a);secret.setHint("gsk_…");secret.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);secret.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);box.addView(secret);
   AlertDialog dialog=new AlertDialog.Builder(a).setTitle("مفتاح Groq المجاني").setView(box).setPositiveButton("حفظ",null).setNegativeButton("إلغاء",null).setNeutralButton("حذف المفتاح",(d,w)->a.getSharedPreferences("groq",0).edit().clear().apply()).create();
   dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String value=secret.getText().toString().trim();if(!validKey(value)){Toast.makeText(a,"المفتاح لازم يبدأ بـ gsk_ وبدون مسافات",Toast.LENGTH_LONG).show();return;}if(!a.getSharedPreferences("groq",0).edit().putString("key",value).commit()){Toast.makeText(a,"تعذر الحفظ",Toast.LENGTH_LONG).show();return;}secret.setText("");Toast.makeText(a,"حُفظ مفتاح Groq؛ يُستخدم إذا ما رد Gemini",Toast.LENGTH_LONG).show();dialog.dismiss();}));
