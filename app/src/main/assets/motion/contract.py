@@ -584,7 +584,9 @@ def enforce_closing(scenes,c):
  last=scenes[-1];everything=key(' '.join(str(last.get(k,'')) for k in ['title','caption']))
  missing=[p for p in c.get('required',[]) if key(p) not in everything]
  address=str(c.get('address') or '')
- extras=[address] if address and not address.startswith('http') and key(address) not in everything else []
+ # «الرياض حي النخيل» is the same address as «الرياض – حي النخيل»: compare letters and digits only.
+ bare=lambda v:re.sub(r'[^\u0621-\u064a0-9]+','',key(v))
+ extras=[address] if address and not address.startswith('http') and bare(address) not in bare(everything) else []
  phone=str(c.get('phone') or '')
  if phone and phone not in everything.replace(' ',''):extras.append(phone)
  if not missing and not extras:return []
@@ -598,6 +600,10 @@ def enforce_closing(scenes,c):
   if head and key(head)!=key(last.get('title','')):last['title']=head;changed.append('title')
   missing=[p for p in required if key(p) not in key(last.get('title',''))]
   extras=[x for x in ([address] if address and not address.startswith('http') else [])+([phone] if phone else []) if key(x) not in key(last.get('title',''))]
+ else:
+  # Only the address or phone is missing: the phrases already on the card stay («زورونا في فرعنا» was
+  # replaced by the address alone in the 1.9.58 gym run).
+  missing=[p for p in required if key(p) not in key(last.get('title',''))]
  parts=[]
  for item in missing+extras:
   if len(' · '.join(parts+[item]))<=95:parts.append(item)
