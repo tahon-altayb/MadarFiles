@@ -340,20 +340,36 @@ def groq_story(count):
   'business_name':c.get('businessName',''),'closing_phrases':c.get('required',[]),'never_write':c.get('forbidden',[]),'corrections':c.get('corrections',[]),
   'address':c.get('address',''),'phone':c.get('phone',''),'visit_branch':bool(c.get('visitBranch')),'no_website':bool(c.get('noWebsite'))}
  schema={'type':'object','properties':{'title':{'type':'string'},'scenes':{'type':'array','items':{'type':'object','properties':{'title':{'type':'string'},'caption':{'type':'string'},'narration':{'type':'string'}},'required':['title','caption','narration']}}},'required':['title','scenes']}
- body={'model':str(WRITER.get('model') or 'openai/gpt-oss-120b'),'temperature':0,'max_completion_tokens':5000,'reasoning_effort':'medium','response_format':{'type':'json_object'},
-  'messages':[{'role':'system','content':str(WRITER['system'])+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(ask,ensure_ascii=False)}]}
- started=time.monotonic();answer=None;note=''
- for attempt in range(2):
-  try:
-   req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
-   answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content']);break
-  except Exception as failed:note=type(failed).__name__+(':'+str(getattr(failed,'code','')) if getattr(failed,'code',None) else '');time.sleep(3)
+ body={'model':str(WRITER.get('model') or 'openai/gpt-oss-120b'),'temperature':0,'max_completion_tokens':4000,'reasoning_effort':'medium','response_format':{'type':'json_object'}}
+ def call(system,user,label):
+  started=time.monotonic();note=''
+  payload=dict(body,messages=[{'role':'system','content':system+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(user,ensure_ascii=False)}])
+  for attempt in range(3):
+   try:
+    req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
+    answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'])
+    scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[]) if isinstance(z,dict)]
+    usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
+    with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':len(scenes),'usable':usable,'error':'','seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
+    return {'title':plain(answer.get('title'))[:80],'scenes':scenes} if usable else None
+   except urllib.error.HTTPError as failed:
+    note='HTTPError:'+str(failed.code)
+    # The free tier allows about 8000 tokens a minute: wait as long as Groq asks (at most 30 s).
+    wait=failed.headers.get('retry-after') if failed.code==429 else None
+    time.sleep(min(30,float(wait))+1 if wait and re.fullmatch(r'[0-9.]+',wait) else 3)
+   except Exception as failed:note=type(failed).__name__;time.sleep(3)
+  with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':0,'usable':False,'error':note,'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
+  return None
  plain=lambda v:re.sub(r'\s+',' ',re.sub(r'[\u064b-\u065f\u0670\u0640]','',str(v or ''))).strip()
- scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in (answer or {}).get('scenes',[]) if isinstance(z,dict)]
- usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
- with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'groq writer','scenes':len(scenes),'usable':usable,'error':note,'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
- if scenes:Path('groq-draft.json').write_text(json.dumps(scenes,ensure_ascii=False))
- return draft_story({'title':plain((answer or {}).get('title'))[:80],'scenes':scenes},count) if usable else None
+ # An optional second part after «=== EDITOR ===» runs a chief-editor pass. Off for now: on gpt-oss-120b it fixed
+ # some lines and broke others («فيديو موشن قصير», an empty closing caption) in the 1.9.57 comparison.
+ writer_rules,_,editor_rules=str(WRITER['system']).partition('=== EDITOR ===')
+ draft=call(writer_rules.strip(),ask,'groq writer')
+ if not draft:return None
+ Path('groq-draft.json').write_text(json.dumps(draft['scenes'],ensure_ascii=False))
+ final=call(editor_rules.strip(),{'facts':ask,'draft':draft},'groq editor') if editor_rules.strip() else None
+ if final:Path('groq-edited.json').write_text(json.dumps(final['scenes'],ensure_ascii=False))
+ return draft_story(final or draft,count)
 DRAFT=None if chunks else (groq_story(scene_count) or draft_story(brief.get('draftStory'),scene_count))
 if DRAFT:
  story=DRAFT;Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False));print('DIRECTOR_DRAFT groq',len(story['scenes']),file=sys.stderr,flush=True)
