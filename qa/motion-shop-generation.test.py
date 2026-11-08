@@ -7,8 +7,8 @@ assertions so a failed run can be inspected.
 """
 from pathlib import Path
 import argparse,json,subprocess,tempfile,shutil,hashlib,math,os,re,sys
-args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven','telecom','grocery','gym'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args=args.parse_args()
-repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case+('' if args.mode=='attached' else '-'+args.mode));evidence.mkdir(parents=True,exist_ok=True)
+args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven','telecom','grocery','gym'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args.add_argument('--draft',action='store_true');args=args.parse_args()
+repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case+('' if args.mode=='attached' else '-'+args.mode)+('-draft' if args.draft else ''));evidence.mkdir(parents=True,exist_ok=True)
 sys.path.insert(0,str(source));import contract as rules
 
 REQUEST='''سوّ لي إعلان موشن لهذا المحل من معلومات الرابط والصور المرفقه ، مدته 50 ثانية، عمودي للجوال، وبدون موسيقى. وإذا نقصتك معلومات اسألني.
@@ -44,6 +44,8 @@ contract=json.loads(subprocess.check_output(['node','-e',"const B=require(proces
 assert not contract['missing'] and contract['logoFirst'],contract
 if CAFE:assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
 SCENES=contract['sceneCount'];TARGET=contract['durationSec'];ASPECT=contract.get('aspect') or '9:16'
+DRAFT=json.loads((repo/'qa/motion-drafts'/(args.case+'.json')).read_text()) if args.draft else None
+if DRAFT:assert len(DRAFT['scenes'])==SCENES,(len(DRAFT['scenes']),SCENES)
 print('EVIDENCE contract',json.dumps({k:contract.get(k) for k in ['businessName','aspect','durationSec','sceneCount','required','forbidden','visitBranch']},ensure_ascii=False),flush=True)
 
 with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
@@ -74,7 +76,8 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  keep=['durationSec','durationSource','aspect','logoFirst','logoLast','visitBranch','noWebsite','askWhenMissing','musicRequested','address','phone','businessName','required','forbidden','notes','corrections','sceneCount','sceneSeconds','requireAddress']
  brief_contract={k:contract[k] for k in keep};brief_contract['version']=1;brief_contract['logoAsset']=logo
  project={'version':1,'id':'e'*32,'title':'إعلان المحل','theme':THEME,'aspect':ASPECT,'voiceMode':args.voice,'voice':'Charon','targetSeconds':TARGET,
-  'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract,**({'referenceMode':'inspired'} if args.mode=='inspired' else {})},
+  # «--draft»: the words a strong text model wrote on the phone (the owner's Groq), as the app sends them.
+  'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract,**({'referenceMode':'inspired'} if args.mode=='inspired' else {}),**({'draftStory':DRAFT} if DRAFT else {})},
   **({'fonts':fonts} if fonts else {}),
   'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
  request={'protocol':1,'mode':'compose','project':project,'files':files};(job/'request.json').write_text(json.dumps(request,ensure_ascii=False));(evidence/'input.json').write_text(json.dumps(request,ensure_ascii=False,indent=1))
@@ -149,6 +152,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')
  # Copy craft, on every film: one headline per idea, complete headlines, words not cut on screen,
  # no production language, no Latin words in an Arabic advert, a caption that adds to its headline.
+ if DRAFT:drafted=[rules.key(z['title']) for z in DRAFT['scenes']];check(all(rules.key(s.get('title','')) in drafted for s in scenes[:-1]),'the phone draft was not kept: '+str([s.get('title') for s in scenes]))
  titles=[rules.key(s.get('title','')) for s in scenes];check(len(set(titles))==len(titles),'a headline is repeated: '+str([s.get('title') for s in scenes]))
  for i,s in enumerate(scenes):
   t=s.get('title','');check(rules.trim_title(t)==t.strip(' .،,!؟:'),f'scene {i+1} headline ends on a dangling word: {t}')
