@@ -16,4 +16,4 @@ jobs:
       - name: Same request, several Groq models
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: python3 qa/groq-models/compare.py
+        run: python3 qa/groq-models/compound.py
