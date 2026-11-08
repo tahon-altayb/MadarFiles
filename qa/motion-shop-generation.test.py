@@ -45,25 +45,10 @@ assert not contract['missing'] and contract['logoFirst'],contract
 if CAFE:assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
 SCENES=contract['sceneCount'];TARGET=contract['durationSec'];ASPECT=contract.get('aspect') or '9:16'
 DRAFT=json.loads((repo/'qa/motion-drafts'/(args.case+'.json')).read_text()) if args.draft else None
-# «--groq»: the owner's Groq model writes the words exactly as MotionCopywriter.java asks it (same
-# instructions file, same request, same checks). Needs the GROQ_API_KEY secret; skipped without it.
-def groq_draft():
- import urllib.request
- key=os.environ.get('GROQ_API_KEY','')
- if not key.startswith('gsk_'):print('SKIP no GROQ_API_KEY secret: add it to the repository to test the Groq writer');sys.exit(0)
- system=(repo/'app/src/main/assets/agent-motion-copywriter.txt').read_text()
- n=max(3,min(10,contract.get('sceneCount') or 6));per=round((contract.get('durationSec') or 30)/n);low=max(5,per*2-2);high=max(low+3,per*2+3)
- request={'owner_brief':TEXT,'scene_count':n,'narration_words':f'{low}-{high}','business_name':contract.get('businessName',''),'closing_phrases':contract.get('required',[]),'never_write':contract.get('forbidden',[]),'corrections':contract.get('corrections',[]),'address':contract.get('address',''),'phone':contract.get('phone',''),'visit_branch':bool(contract.get('visitBranch')),'no_website':bool(contract.get('noWebsite')),'pictures_attached':len(ORDER)}
- schema={'type':'object','properties':{'title':{'type':'string'},'scenes':{'type':'array','items':{'type':'object','properties':{'title':{'type':'string'},'caption':{'type':'string'},'narration':{'type':'string'}},'required':['title','caption','narration']}}},'required':['title','scenes']}
- body={'model':'openai/gpt-oss-120b','temperature':0,'max_completion_tokens':3000,'reasoning_effort':'low','response_format':{'type':'json_object'},'messages':[{'role':'system','content':system+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(request,ensure_ascii=False)}]}
- req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-e2e'})
- answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=90).read())['choices'][0]['message']['content'])
- plain=lambda v:re.sub(r'\s+',' ',re.sub(r'[\u064b-\u065f\u0670\u0640]','',str(v or ''))).strip()
- scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[])]
- print('EVIDENCE groq draft',json.dumps(scenes,ensure_ascii=False),flush=True)
- assert len(scenes)==n and len({z['title'] for z in scenes})==n and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes),'the app would reject this Groq draft'
- return {'title':plain(answer.get('title'))[:80],'scenes':scenes,'writer':'groq'}
-if args.groq:DRAFT=groq_draft()
+# «--groq»: the owner's Groq model writes the words on Colab exactly as the app sends it (writer.json with his
+# key, the same instructions file); the director gives it the page and picture facts. Needs the GROQ_API_KEY secret.
+GROQ_KEY=os.environ.get('GROQ_API_KEY','')
+if args.groq and not GROQ_KEY.startswith('gsk_'):print('SKIP no GROQ_API_KEY secret: add it to the repository to test the Groq writer');sys.exit(0)
 if DRAFT:assert len(DRAFT['scenes'])==SCENES,(len(DRAFT['scenes']),SCENES)
 print('EVIDENCE contract',json.dumps({k:contract.get(k) for k in ['businessName','aspect','durationSec','sceneCount','required','forbidden','visitBranch']},ensure_ascii=False),flush=True)
 
@@ -99,6 +84,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract,**({'referenceMode':'inspired'} if args.mode=='inspired' else {}),**({'draftStory':DRAFT} if DRAFT else {})},
   **({'fonts':fonts} if fonts else {}),
   'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
+ if args.groq:(job/'writer.json').write_text(json.dumps({'groq_key':GROQ_KEY,'model':'openai/gpt-oss-120b','system':(repo/'app/src/main/assets/agent-motion-copywriter.txt').read_text()}))
  request={'protocol':1,'mode':'compose','project':project,'files':files};(job/'request.json').write_text(json.dumps(request,ensure_ascii=False));(evidence/'input.json').write_text(json.dumps(request,ensure_ascii=False,indent=1))
  execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=8400,env={**os.environ,'MADAR_MOTION_QA':'1','MADAR_MOTION_QA_CPU':'1','MADAR_MOTION_QA_CONTEXT':'8192','MADAR_MOTION_QA_DIRECTOR_SECONDS':'7200'})
  for name in ['director-calls.log','progress.json','project.json','story.json','director-runtime.log','director-response.txt','story-candidate.json','copy-review.json','reference-facts.json','brief-contract.json']:
@@ -117,6 +103,12 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  if (job/'director-calls.log').exists():
   for line in (job/'director-calls.log').read_text().splitlines():print('EVIDENCE call',line,flush=True)
  print('EVIDENCE director log tail',log[-3000:],flush=True)
+ if args.groq:
+  assert not (job/'writer.json').exists(),'the Groq key stayed on disk'
+  print('EVIDENCE groq draft',(job/'groq-draft.json').read_text() if (job/'groq-draft.json').exists() else 'none',flush=True)
+  calls=[json.loads(l) for l in (job/'director-calls.log').read_text().splitlines() if '"groq writer"' in l] if (job/'director-calls.log').exists() else []
+  assert calls and calls[0].get('usable'),('the Groq writer was not used',calls)
+  DRAFT={'scenes':json.loads((job/'groq-draft.json').read_text())}
  if (job/'story.json').exists():
   for i,z in enumerate(json.loads((job/'story.json').read_text()).get('scenes',[])):print('EVIDENCE scene',i+1,json.dumps({k:z.get(k) for k in ['title','caption','narration','reference']},ensure_ascii=False),flush=True)
  if execution.returncode:raise RuntimeError((job/'progress.json').read_text())

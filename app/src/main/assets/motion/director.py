@@ -16,6 +16,14 @@ ROOT=Path.cwd()
 def stage(name,progress=24,scene=0,total=0):
  tmp=Path('progress.json.tmp');tmp.write_text(json.dumps({'stage':name,'progress':progress,'scene':scene,'total':total,'engine':globals().get('active_engine','')}));tmp.replace('progress.json')
 request=json.loads(Path('request.json').read_text());p=request['project'];brief=p['creativeRequest']
+# The owner's Groq key (his own, for his own Colab session) is read once and removed from disk at once.
+WRITER={}
+if Path('writer.json').exists():
+ try:WRITER=json.loads(Path('writer.json').read_text())
+ except ValueError:WRITER={}
+ finally:
+  try:Path('writer.json').unlink()
+  except OSError:pass
 if not isinstance(brief.get('text'),str) or not 1<=len(brief['text'])<=6000:raise ValueError('BRIEF_SIZE')
 from sources import collect
 from briefing import timing,validate_contract,clarification,violations,lock_references,scene_durations
@@ -319,7 +327,34 @@ def draft_story(value,count):
   if not isinstance(z,dict):return None
   out['scenes'].append({'title':str(z.get('title') or '')[:60],'caption':str(z.get('caption') or '')[:95],'narration':str(z.get('narration') or '')[:400],'visual':'','reference':-1})
  return None if story_problems(out,count) else out
-DRAFT=None if chunks else draft_story(brief.get('draftStory'),scene_count)
+# The owner's Groq model writes the words here, on his Colab, knowing everything the job knows: his brief,
+# what the link's page says and what each attached picture shows. Written on the phone it saw the brief
+# only, and a café brief whose facts live in the link and the photos came back as a generic shop advert.
+def groq_story(count):
+ key=str(WRITER.get('groq_key',''))
+ if chunks or not re.fullmatch(r'gsk_[A-Za-z0-9]{20,200}',key) or not WRITER.get('system'):return None
+ c=local_contract or {};per=round(total_seconds/count);low=max(5,per*2-2);high=max(low+3,per*2+3)
+ pages=[s['text'][:2500] for s in source_facts]+[str(v.get('text',''))[:2500] for v in brief.get('sourceReads',[]) if isinstance(v,dict) and v.get('text')]
+ pictures=[{'picture':z.get('index'),'kind':z.get('kind'),'shows':str(z.get('description',''))[:300]} for z in reference_facts if z.get('kind') not in ('unrelated','platform_icon')]
+ ask={'owner_brief':brief.get('text',''),'page_facts':list(dict.fromkeys(pages))[:3],'picture_facts':pictures,'scene_count':count,'narration_words':f'{low}-{high}',
+  'business_name':c.get('businessName',''),'closing_phrases':c.get('required',[]),'never_write':c.get('forbidden',[]),'corrections':c.get('corrections',[]),
+  'address':c.get('address',''),'phone':c.get('phone',''),'visit_branch':bool(c.get('visitBranch')),'no_website':bool(c.get('noWebsite'))}
+ schema={'type':'object','properties':{'title':{'type':'string'},'scenes':{'type':'array','items':{'type':'object','properties':{'title':{'type':'string'},'caption':{'type':'string'},'narration':{'type':'string'}},'required':['title','caption','narration']}}},'required':['title','scenes']}
+ body={'model':str(WRITER.get('model') or 'openai/gpt-oss-120b'),'temperature':0,'max_completion_tokens':5000,'reasoning_effort':'medium','response_format':{'type':'json_object'},
+  'messages':[{'role':'system','content':str(WRITER['system'])+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(ask,ensure_ascii=False)}]}
+ started=time.monotonic();answer=None;note=''
+ for attempt in range(2):
+  try:
+   req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
+   answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content']);break
+  except Exception as failed:note=type(failed).__name__+(':'+str(getattr(failed,'code','')) if getattr(failed,'code',None) else '');time.sleep(3)
+ plain=lambda v:re.sub(r'\s+',' ',re.sub(r'[\u064b-\u065f\u0670\u0640]','',str(v or ''))).strip()
+ scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in (answer or {}).get('scenes',[]) if isinstance(z,dict)]
+ usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
+ with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'groq writer','scenes':len(scenes),'usable':usable,'error':note,'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
+ if scenes:Path('groq-draft.json').write_text(json.dumps(scenes,ensure_ascii=False))
+ return draft_story({'title':plain((answer or {}).get('title'))[:80],'scenes':scenes},count) if usable else None
+DRAFT=None if chunks else (groq_story(scene_count) or draft_story(brief.get('draftStory'),scene_count))
 if DRAFT:
  story=DRAFT;Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False));print('DIRECTOR_DRAFT groq',len(story['scenes']),file=sys.stderr,flush=True)
 else:

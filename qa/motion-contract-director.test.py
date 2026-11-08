@@ -357,3 +357,6 @@ assert fused[0]['caption']=='كل شراء لكفرات يعطيك حماية ش
 long=[{'title':'فطائر','caption':'لا تكتمل وجبتك دون فطيرتي الزعتر والجبن الطازجتين اللتين ستشعر بهما في كل لقمه','narration':'n'},{'title':'زورونا','caption':'c','narration':'زورونا'}]
 C.tidy_copy(long,{'required':['زورونا']});assert long[0]['caption']=='لا تكتمل وجبتك دون فطيرتي الزعتر والجبن الطازجتين',long
 print('fused words are split back; long captions stop at a clause')
+grocer=[{'title':'منتجاتنا المميزة','caption':'من السادسة صباحا حتى الثانية عشرة ليلا','narration':'منتجاتكم'}]
+assert not C.number_issues({'scenes':grocer},'من 6 الصبح لين 12 الليل') and not C.fix_fused(grocer,'منتج رز بسمتي') and grocer[0]['title']=='منتجاتنا المميزة',grocer
+print('a word with its plural ending stays; «الثانية عشرة» is an hour')

@@ -24,4 +24,12 @@ public class MotionCopywriterTest {
   JSONObject p=new JSONObject().put("voiceMode","none").put("creativeRequest",new JSONObject().put("text","سوي موشن لنادي قوة").put("images",new JSONArray().put("a")).put("contract",contract));
   JSONObject in=MotionCopywriter.input(p);assertEquals(6,in.getInt("scene_count"));assertEquals("قوة",in.getString("business_name"));assertEquals("سجل الحين",in.getJSONArray("closing_phrases").getString(0));assertEquals("أسعار",in.getJSONArray("never_write").getString(0));assertEquals(1,in.getInt("pictures_attached"));assertEquals("8-13",in.getString("narration_words"));
  }
+ @Test public void requestCarriesThePageAndPictureFacts()throws Exception{
+  JSONObject brief=new JSONObject().put("text","سوي موشن لهذا المحل من الرابط والصور").put("images",new JSONArray().put("a").put("b")).put("contract",new JSONObject().put("sceneCount",5))
+   .put("sourceReads",new JSONArray().put(new JSONObject().put("text","شاي جمر وفطيرة الطيب، مقهى في الرياض")).put(new JSONObject().put("text","")))
+   .put("referenceFacts",new JSONArray().put(new JSONObject().put("index",0).put("kind","product_photo").put("description","أباريق شاي على الفحم")).put(new JSONObject().put("index",1).put("kind","unrelated").put("description","خلفية")));
+  JSONObject in=MotionCopywriter.input(new JSONObject().put("voiceMode","none").put("creativeRequest",brief));
+  assertEquals(1,in.getJSONArray("page_facts").length());assertEquals("شاي جمر وفطيرة الطيب، مقهى في الرياض",in.getJSONArray("page_facts").getString(0));
+  assertEquals(1,in.getJSONArray("picture_facts").length());assertEquals("أباريق شاي على الفحم",in.getJSONArray("picture_facts").getJSONObject(0).getString("shows"));
+ }
 }
