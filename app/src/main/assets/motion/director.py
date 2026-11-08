@@ -359,6 +359,8 @@ def groq_story(count):
     payload['messages'].append({'role':'user','content':f'Return all {count} scenes, each with a unique Arabic title, a caption of at most 12 words and a complete narration.'})
    except urllib.error.HTTPError as failed:
     note='HTTPError:'+str(failed.code)
+    try:note+=' '+re.sub(r'gsk_\w+','gsk_…',failed.read().decode('utf-8','replace'))[:240]
+    except Exception:pass
     # 400 is Groq's JSON check failing on the model's answer (the same answer again at temperature 0):
     # ask again a little warmer, then without the JSON mode and read the object out of the text.
     if failed.code==400:
@@ -371,7 +373,7 @@ def groq_story(count):
     # The day's free tokens for the big model are gone: the smaller model (its own limits) writes instead.
     if failed.code==429 and seconds>30 and payload['model']!='openai/gpt-oss-20b':payload['model']='openai/gpt-oss-20b';continue
     time.sleep(min(30,seconds)+1)
-   except Exception as failed:note=type(failed).__name__;time.sleep(3)
+   except Exception as failed:note=type(failed).__name__+' '+str(failed)[:160];time.sleep(3)
   with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':0,'usable':False,'error':note,'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
   return None
  plain=lambda v:re.sub(r'\s+',' ',re.sub(r'[\u064b-\u065f\u0670\u0640]','',str(v or ''))).strip()
