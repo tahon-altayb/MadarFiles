@@ -44,6 +44,8 @@ console.log('PASS newly planned layouts reject unreadable text boxes and empty d
  for(const [t,id] of Object.entries(cases))assert.equal(C.illustrationFor({title:t}),id,t);
  assert.equal(C.illustrationFor({title:'شاي حليب وشاي كرك'},['tea']),'tea','falls back to the only fitting one');
  assert.equal(C.illustrationFor({title:'فطاير مع شاي'},['pastry']),'tea','prefers an unused illustration');
+ // The hidden picture's description (a price list) never outranks the words (1.9.56: a price tag for «فطائر دافئة»).
+ assert.equal(C.illustrationFor({title:'فطائر دافئة',caption:'استمتع بفطائر الجبنة والزعتر',artHint:'قائمة أسعار بالريال'}),'pastry');assert.equal(C.illustrationFor({title:'تعال',caption:'نستناك',artHint:'أباريق شاي على الجمر'}),'flame');
  for(let i=0;i<4;i++){const c=C.compose({title:'مفتوحين 24 ساعة',caption:'نستقبلكم ليل نهار.',narration:'x',reference:-1},{aspect:'9:16',index:i});assert.ok(c.elements.some(e=>e.kind==='icon'&&e.icon==='clock24'));for(const e of c.elements)if(e.kind==='text')assert.ok(C.safeText(e));}
  assert.equal(C.compose({title:'نص عام',caption:'وصف',narration:'x',reference:-1},{aspect:'9:16',index:0}).elements.some(e=>C.ILLUSTRATIONS.includes(e.icon)),false,'no illustration when nothing fits');
  console.log('PASS picture-less scenes get a drawn illustration of their subject');}

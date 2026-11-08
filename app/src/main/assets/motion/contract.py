@@ -81,6 +81,41 @@ def short_headline(text,limit=5):
  cut=words[:limit]
  while len(cut)>2 and WEAK_END.search(key(' '.join(cut))):cut=cut[:-1]
  return ' '.join(cut)
+# A headline never ends on a verb or a link word waiting for its object: «شاي جمر وفطيرة الطيب تقدم».
+DANGLING=re.compile(r'(?:^|\s)(?:[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين)$')
+def trim_title(text):
+ """Drops dangling last words; keeps at least two words."""
+ words=str(text).strip(' .،,!؟:').split()
+ while len(words)>2 and (WEAK_END.search(key(' '.join(words))) or DANGLING.search(key(' '.join(words)))):words=words[:-1]
+ return ' '.join(words)
+def same_title(a,b):
+ """The same headline twice («فطائر متنوعة وطازجة» in scenes 3 and 5 of the 1.9.56 run)."""
+ x,y=set(_words(a)),set(_words(b))
+ # «عرض 1» and «عرض 2» are numbered items, not one headline twice.
+ if re.findall(r'\d+',key(a))!=re.findall(r'\d+',key(b)):return False
+ return bool(x) and (key(a)==key(b) or len(x&y)>=2 and len(x&y)/max(1,min(len(x),len(y)))>=.75)
+def dedupe_titles(scenes,c=None,keep=4):
+ """A later scene whose headline repeats an earlier one gets a headline from its own caption; if it
+ has none of its own, the scene is dropped (never below `keep` scenes). Returns the dropped indexes."""
+ dropped=[];i=1
+ while i<len(scenes)-1:
+  z=scenes[i];earlier=[x.get('title','') for x in scenes[:i]]
+  if any(same_title(z.get('title',''),t) for t in earlier):
+   new=''
+   for limit in (5,6,7):
+    for field in ['caption','narration']:
+     for clause in re.split(r'(?<=[.!؟،,;])\s*',str(z.get(field,''))):
+      clause=clause.strip(' .،,')
+      if len(clause.split())<2 or GREETING.search(key(clause)) or is_cta(clause,c) or META.search(key(clause)):continue
+      option=trim_title(short_headline(clause,limit))
+      # The whole caption as headline would make the scene say one line three times.
+      if option and key(option)!=key(z.get('caption','').strip(' .،,')) and not any(same_title(option,t) for t in earlier):new=option;break
+     if new:break
+    if new:break
+   if new:z['title']=new
+   elif len(scenes)>keep:del scenes[i];dropped.append(i);continue
+  i+=1
+ return dropped
 def headline_from(shot,c=None,taken=()):
  """A headline from the scene's own words: a clause that is not a greeting or a call to action."""
  for field in ['caption','narration']:

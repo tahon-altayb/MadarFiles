@@ -19,10 +19,11 @@ from http.server import BaseHTTPRequestHandler,HTTPServer
 from pathlib import Path
 port=int(sys.argv[1]);counter=Path('fake-copy-count.txt')
 STORE='asset_'+'a'*32+'.jpg';LOGO='asset_'+'b'*32+'.jpg'
-def scenes(n,bad):
+def scenes(n,bad,start=0):
  out=[]
  for i in range(n):
-  title='ورد الموسم %d'%(i+1);caption='تشكيلة جديدة من المحل للموسم رقم %d.'%(i+1)
+  # Each call words its scenes differently, as a real model does; one headline twice is dropped.
+  title='ورد الموسم %d'%(i+1);caption='تشكيلة رقم %d جديدة من المحل للموسم.'%(start+i+1)
   narration='نقدم لكم في هذا المشهد تشكيلة مميزة من منتجاتنا للموسم رقم %d.'%(i+1)
   if bad and i==1:caption='استمتع بنكهة الورد في كل منتج.'
   if bad and i==n-1:title='زوروا موقعنا';caption='اطلب أونلاين من موقعنا الإلكتروني.'
@@ -56,7 +57,7 @@ class H(BaseHTTPRequestHandler):
    Path('story-prompt.txt').write_text(prompt);self.reply({'title':'إعلان الموسم','scenes':scenes(n,True)});return
   count=int(counter.read_text()) if counter.exists() else 0;counter.write_text(str(count+1))
   Path('copy-prompt-%d.txt'%count).write_text(prompt)
-  shots=scenes(n,count==0)
+  shots=scenes(n,count==0,100*(count+1))
   for s in shots:s.pop('narration') if 'narration' not in schema['properties']['scenes']['items']['properties'] else None
   self.reply({'title':'إعلان الموسم','scenes':shots})
 HTTPServer(('127.0.0.1',port),H).serve_forever()
@@ -102,7 +103,7 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-') as tmp:
  r,job=run(brief,text,tmp)
  assert r.returncode==0,(r.stdout[-2000:],r.stderr[-3000:])
  p=json.loads((job/'project.json').read_text());scenes=p['scenes']
- assert len(scenes)==brief['sceneCount']==7,len(scenes)
+ assert len(scenes)==brief['sceneCount']==7,[(z['title'],z.get('narration')) for z in scenes]
  assert [round(s['seconds'],2) for s in scenes]==[4,8,8,8,8,8,6],[s['seconds'] for s in scenes]
  assert abs(sum(s['seconds'] for s in scenes)-50)<.01
  assert p['aspect']=='9:16'
@@ -171,7 +172,7 @@ print('no identifiable logo: typography opening, reported, job not failed')
 # A stubborn model: forbidden copy every round and the logo on every scene. The film is still made,
 # the forbidden clauses are removed, and the logo stays on the opening and closing only.
 with tempfile.TemporaryDirectory(prefix='madar-contract-stubborn-') as tmp:
- saved=FAKE_SERVER;FAKE_SERVER=saved.replace("shots=scenes(n,count==0)","shots=scenes(n,True)").replace("'reference':0}","'reference':1}")
+ saved=FAKE_SERVER;FAKE_SERVER=saved.replace("shots=scenes(n,count==0,100*(count+1))","shots=scenes(n,True,100*(count+1))").replace("'reference':0}","'reference':1}")
  r,job=run(brief,text,tmp);FAKE_SERVER=saved
  assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
  p=json.loads((job/'project.json').read_text());scenes=p['scenes']
@@ -292,3 +293,13 @@ print('repeated topics found; misspelt shop name corrected')
 twice=[{'title':'شاي جمر وفطيرة الطيب','caption':'أشهى أنواع الشاي'},{'title':'شاي ساخن على الفحم','caption':'نقدم الشاي فوق الفحم'},{'title':'فطائر','caption':'جبن وزعتر'},{'title':'شاي جمر وفطيرة الطيب','caption':'نقدم لكم الفطائر الطازجة'},{'title':'شاي ساخن على الجمر','caption':'نغلي الشاي فوق الفحم المتوهج'},{'title':'زورونا','caption':'شارع'}]
 assert C.topic_repeats(twice,'شاي جمر وفطيرة الطيب')==[4],C.topic_repeats(twice,'شاي جمر وفطيرة الطيب')
 print('one scene about the coals; the shop name is not a topic')
+# The 1.9.56 run: «شاي جمر وفطيرة الطيب تقدم» (a headline waiting for its object) and «فطائر متنوعة وطازجة»
+# as the headline of scenes 3 and 5.
+assert C.trim_title('شاي جمر وفطيرة الطيب تقدم')=='شاي جمر وفطيرة الطيب' and C.trim_title('قهوة عربية دافئة')=='قهوة عربية دافئة'
+film=[{'title':'شاي جمر وفطيرة الطيب','caption':'أهلًا بكم'},{'title':'فطائر متنوعة وطازجة','caption':'تشكيلة من الفطائر الشهية'},{'title':'قهوة عربية دافئة','caption':'مذاق أصيل'},
+      {'title':'فطائر متنوعة وطازجة','caption':'اختر من بين فطيرتي الزعتر والجبن اللتين لا تهنأ بهما إلا معنا.'},{'title':'زورونا في فرعنا','caption':'شارع الجال'}]
+assert C.dedupe_titles(film)==[] and film[3]['title']=='اختر من بين فطيرتي الزعتر',[z['title'] for z in film]
+again=[dict(z) for z in film];again[3]={'title':'فطائر متنوعة وطازجة','caption':'فطائر متنوعة وطازجة'};again.insert(1,{'title':'أباريق على الفحم','caption':'شاي'})
+assert C.dedupe_titles(again)==[4] and len({z['title'] for z in again})==len(again),[z['title'] for z in again]
+assert not C.same_title('عرض 1','عرض 2')
+print('headlines end complete and are never repeated')

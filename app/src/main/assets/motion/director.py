@@ -449,6 +449,10 @@ for z in story['scenes'][1:-1]:
   local_rules.strip_cta(z,closing)
   if not z.get('title','').strip() or local_rules.is_cta(z['title'],closing):z['title']=local_rules.headline_from(z,closing,{local_rules.key(x.get('title','')) for x in story['scenes']}) or str(closing.get('businessName') or '')[:45]
   if len(z['title'].split())>6:z['title']=local_rules.short_headline(z['title'])
+# Headlines end on a word that completes them, and no two scenes share one headline.
+for z in story['scenes']:
+ if z.get('title'):z['title']=local_rules.trim_title(z['title'])
+if not chunks:local_rules.dedupe_titles(story['scenes'],closing,keep=4 if not isinstance(local_contract.get('explicitScenes'),int) else len(story['scenes']))
 # A middle scene left with nothing of its own (only the shop name, or one label repeated as headline,
 # caption and narration after calls to action were moved out) is dropped; the others share its time.
 # Never below four scenes, and never when the client asked for a number of scenes.
