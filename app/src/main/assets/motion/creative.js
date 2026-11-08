@@ -52,10 +52,13 @@ function keyNumber(shot){
 }
 function illustrationFor(shot,used=[]){
  const normalize=v=>String(v||'').normalize('NFKC').replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/[ىئ]/g,'ي').replace(/ؤ/g,'و').replace(/ة/g,'ه').toLowerCase();
- const text=normalize([shot.title,shot.caption,shot.narration,shot.artHint].filter(Boolean).join(' '));
+ // The headline and caption decide first; the narration only when they name nothing drawable
+ // («قهوة عربية دافئة … تملأ المكان» is coffee, not seating).
+ const head=normalize([shot.title,shot.caption,shot.artHint].filter(Boolean).join(' ')),full=normalize([shot.title,shot.caption,shot.narration,shot.artHint].filter(Boolean).join(' '));
  const rules=[['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|عايل|اصدقاء|اصدقا|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف/],['seating',/جلس|جلسات|اجواء|مكان|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/]];
- const hits=rules.filter(([,re])=>re.test(text)).map(([id])=>id);
- if(used==='all')return hits;
+ const match=t=>rules.filter(([,re])=>re.test(t)).map(([id])=>id);
+ if(used==='all')return [...new Set([...match(head),...match(full)])];
+ const first=match(head),hits=first.length?first:match(full);
  return hits.find(id=>!used.includes(id))||hits[0]||null;
 }
 // The drawings a scene's words allow: a model-designed scene may not draw fries for «فطائر».
