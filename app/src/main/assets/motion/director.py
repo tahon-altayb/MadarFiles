@@ -460,7 +460,7 @@ if not chunks and not (isinstance(asked_scenes,int) and not isinstance(asked_sce
  for i in range(len(story['scenes'])-2,0,-1):
   if len(story['scenes'])>4 and empty_scene(story['scenes'][i]):del story['scenes'][i]
   # The same fact twice in other words (opening hours in scenes 2 and 5) keeps only the first.
- for i in reversed(local_rules.topic_repeats(story['scenes'])):
+ for i in reversed(local_rules.topic_repeats(story['scenes'],globals().get('BRAND') or closing.get('businessName') or story.get('title',''))):
   if len(story['scenes'])>4:del story['scenes'][i]
  scene_count=len(story['scenes'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)

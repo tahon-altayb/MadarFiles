@@ -144,7 +144,7 @@ kinds=sorted((z['scene'],z['quality']) for z in craft);assert kinds==[(1,'cliche
 for phrase in ['زورونا في فرعنا','اطلبه الآن عبر موقعنا','حمّل التطبيق الآن','تواصلوا معنا','احجز طاولتك الآن','تفضلوا بزيارتنا في شارع الجال','لا تنسوا زيارة فرعنا']:assert C.is_cta(phrase),phrase
 for phrase in ['شاي حليب ومخبوزات دافئة','جلسات عائلية واسعة','قائمة متنوعة من المشروبات']:assert not C.is_cta(phrase),phrase
 film={'scenes':[{'title':'شاي جمر','caption':'شاي حليب ومخبوزات دافئة.','narration':'شاي حليب ومخبوزات دافئة كل يوم.'},{'title':'لدينا شاهي وفطيرة طرية','caption':'شاهي على الجمر وفطيرة طرية.','narration':'نحضر الشاهي على الجمر.'},{'title':'الفطائر الطرية والشاهي اللذيذ','caption':'فطاير طرية وشاهي لذيذ.','narration':'فطاير طرية مع شاهي لذيذ.'},{'title':'جلسات عائلية','caption':'حمّل التطبيق الآن واطلب.','narration':'جلسات واسعة. حمّلوا التطبيق الآن.'},{'title':'زورونا في فرعنا','caption':'شارع الجال','narration':'نسعد بزيارتكم.'}]}
-found=sorted((z['scene'],z['quality']) for z in C.quality_issues(film,{'address':'شارع الجال'}) if z['quality'] in ['cta','redundant'])
+found=sorted((z['scene'],z['quality']) for z in C.quality_issues(film,{'address':'شارع الجال','businessName':'شاي جمر'}) if z['quality'] in ['cta','redundant'])
 assert found==[(3,'redundant'),(4,'cta')],found
 C.repair_quality(film['scenes'],{'businessName':'شاي جمر'});assert not any(C.is_cta(t) for z in film['scenes'][:-1] for t in C.scene_texts(z)),film['scenes'][3]
 assert film['scenes'][3]['title']=='جلسات عائلية' and 'جلسات واسعة' in film['scenes'][3]['narration']
@@ -284,7 +284,11 @@ for mode in ['inspired','photosOnly']:
   print(mode,'pictures:',sorted(shown),'drawings:',sorted(drawn))
 # The owner's 1.9.51 film: opening hours told twice in other words, and the shop name misspelt.
 film=[{'title':'شاي جمر مطبخ الطيب','caption':'أهلا بك في شاي جمر مطبخ الطيب.'},{'title':'مفتوح على مدار الساعة','caption':'نعمل طوال الـ24 ساعة'},{'title':'نكهة الفحم','caption':'شاينا فوق الفحم'},{'title':'مطعمك المفتوح كل ساعة','caption':'نفتح لك أبوابنا طوال الـ24 ساعة'},{'title':'زورونا في فرعنا','caption':'شارع الجال'}]
-assert C.topic_repeats(film)==[3],C.topic_repeats(film)
 assert C.fix_brand(film,'شاي جمر وفطيرة الطيب') and film[0]['title']=='شاي جمر وفطيرة الطيب' and film[0]['caption']=='أهلا بك في شاي جمر وفطيرة الطيب.',film[0]
+assert C.topic_repeats(film,'شاي جمر وفطيرة الطيب')==[3],C.topic_repeats(film,'شاي جمر وفطيرة الطيب')
 assert not C.fix_brand([{'title':'شاي جمر على الفحم','caption':''}],'شاي جمر وفطيرة الطيب'),'only near-identical names are corrected'
 print('repeated topics found; misspelt shop name corrected')
+# Tea on coals twice in other words (1.9.55 four-picture run); the shop name «شاي جمر…» is not a topic.
+twice=[{'title':'شاي جمر وفطيرة الطيب','caption':'أشهى أنواع الشاي'},{'title':'شاي ساخن على الفحم','caption':'نقدم الشاي فوق الفحم'},{'title':'فطائر','caption':'جبن وزعتر'},{'title':'شاي جمر وفطيرة الطيب','caption':'نقدم لكم الفطائر الطازجة'},{'title':'شاي ساخن على الجمر','caption':'نغلي الشاي فوق الفحم المتوهج'},{'title':'زورونا','caption':'شارع'}]
+assert C.topic_repeats(twice,'شاي جمر وفطيرة الطيب')==[4],C.topic_repeats(twice,'شاي جمر وفطيرة الطيب')
+print('one scene about the coals; the shop name is not a topic')

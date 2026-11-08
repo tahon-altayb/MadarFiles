@@ -197,20 +197,24 @@ TOPICS={
  'hours':re.compile(r'24|٢٤|مدار الساعه|طوال اليوم|طول اليوم|ليل نهار|ليلا ونهارا|كل ساعه|مفتوح|نفتح|ابوابنا|ساعات العمل'),
  'delivery':re.compile(r'توصيل|هنقرستيشن|هنقر|كيتا|جاهز|مرسول|تويو|التطبيقات'),
  'location':re.compile(r'زورونا|فرعنا|عنوان|شارع|موقعنا'),
+ # «شاي ساخن على الجمر» then «شاي ساخن على الفحم» (the 1.9.55 four-picture run): one scene about the coals.
+ 'coals':re.compile(r'جمر|فحم|الحطب|على النار'),
 }
-def topic_of(shot):
+def topic_of(shot,brand=''):
  t=key(' '.join([str(shot.get('title','')),str(shot.get('caption',''))]))
+ # The shop's name («شاي جمر وفطيرة الطيب») is not a topic: every scene may say it.
+ if brand and len(key(brand))>=4:t=t.replace(key(brand),' ')
  return [name for name,rx in TOPICS.items() if rx.search(t)]
-def topic_repeats(scenes):
+def topic_repeats(scenes,brand=''):
  """Indexes (not the first or the last scene) whose topic an earlier scene already covered."""
  seen=set();out=[]
  for i,z in enumerate(scenes[:-1]):
-  topics=topic_of(z)
+  topics=topic_of(z,brand)
   if i>0 and topics and all(x in seen for x in topics):out.append(i)
   seen.update(topics)
  return out
-def topic_issues(copy):
- return [{'scene':i+1,'quality':'redundant','fix':'This scene repeats a fact an earlier scene already gave ('+'، '.join(topic_of(copy['scenes'][i]))+'). Give it a different fact from the brief, page or images.'} for i in topic_repeats(copy.get('scenes',[]))]
+def topic_issues(copy,brand=''):
+ return [{'scene':i+1,'quality':'redundant','fix':'This scene repeats a fact an earlier scene already gave ('+'، '.join(topic_of(copy['scenes'][i],brand))+'). Give it a different fact from the brief, page or images.'} for i in topic_repeats(copy.get('scenes',[]),brand)]
 def fix_brand(scenes,name):
  """A misspelt shop name («شاي جمر مطبخ الطيب» for «شاي جمر وفطيرة الطيب») becomes the real one:
  a run of words that matches the name in all but one word is replaced by the name."""
@@ -306,7 +310,7 @@ def quality_issues(copy,c=None):
   t=key(shot.get('title',''))
   if t and t in seen:issues.append({'scene':i+1,'quality':'repeat','fix':'This headline repeats scene '+str(seen[t]+1)+'. Every scene needs its own headline and a different idea from the facts.'})
   else:seen.setdefault(t,i)
- return issues+craft_issues(copy)+cta_issues(copy,c)+redundancy_issues(copy,c)+topic_issues(copy)
+ return issues+craft_issues(copy)+cta_issues(copy,c)+redundancy_issues(copy,c)+topic_issues(copy,(c or {}).get('businessName') or copy.get('title',''))
 
 def repair_quality(scenes,c=None):
  """Deterministic last resort for quality issues: drop meta or glitched clauses, and give a
