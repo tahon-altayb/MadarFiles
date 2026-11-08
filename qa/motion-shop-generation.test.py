@@ -30,7 +30,7 @@ if args.case=='answers':
  # The café answered through the questions (1.9.58 review): name typed, outdoor and indoor seating, the big screen,
  # baloot, open all day and night, Hungerstation and Keeta, a baloot tournament, Snapchat and TikTok.
  node=r'''const Q=require(process.argv[1]);const f=Q.build('cafe','');const set=(n,sel,other)=>{const x=f.find(z=>z.name===n);x.selected=sel;if(other)x.other=other;};
- set('name',[],'شاهي جمر الطيب');set('hook',['h24']);set('sells',['coalTea','milkTea','zaatar']);set('place',['outdoor','indoor','screens']);set('hours',['h24']);set('apps',['hunger','keeta']);
+ set('name',[],'شاهي جمر الطيب');set('goal',['brand']);set('pain',['closed']);set('hook',['h24']);set('sells',['coalTea','milkTea','zaatar']);set('place',['outdoor','indoor','screens']);set('hours',['h24']);set('apps',['hunger','keeta']);
  set('news',['event'],'بطولة بلوت كل خميس');set('cta',['visit']);set('extras',['hours','apps']);set('social',['snap','tiktok']);set('pace',['medium']);process.stdout.write(Q.plan(f,''));'''
  PLAN=subprocess.check_output(['node','-e',node,str(repo/'app/src/main/assets/motion-questions.js')]).decode()
  REQUEST='سوّ لي إعلان موشن لمحلي من الصور المرفقة، مدته 45 ثانية، عمودي، وبدون موسيقى. خلي الشعار أولا.\n'+PLAN
@@ -51,7 +51,7 @@ if args.case=='gym':
 TEXT=REQUEST+('\nعنوان الفرع: '+ADDRESS if ADDRESS else '')
 contract=json.loads(subprocess.check_output(['node','-e',"const B=require(process.argv[1]);process.stdout.write(JSON.stringify(B.parse(process.argv[2],{images:+process.argv[4],answers:process.argv[3]?{address:process.argv[3]}:{}})))",str(repo/'app/src/main/assets/motion-brief.js'),REQUEST,ADDRESS,str(len(ORDER))]))
 assert not contract['missing'] and contract['logoFirst'],contract
-if CAFE:assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
+if args.case in ('four','seven'):assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
 SCENES=contract['sceneCount'];TARGET=contract['durationSec'];ASPECT=contract.get('aspect') or '9:16'
 DRAFT=json.loads((repo/'qa/motion-drafts'/(args.case+'.json')).read_text()) if args.draft else None
 # «--groq»: the owner's Groq model writes the words on Colab exactly as the app sends it (writer.json with his

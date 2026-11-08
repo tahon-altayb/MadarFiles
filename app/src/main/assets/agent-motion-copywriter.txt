@@ -22,3 +22,10 @@ Truth:
 - When the owner has no website (no_website), never mention a website, an online store or ordering online unless he named a delivery app; then name that app.
 - Never use production words: مشهد، فيديو، لقطة، كاميرا، موشن، شعار، إعلان، تصميم.
 - Call the business by its name or its kind (مقهى، مطعم، نادي، محل)، never «متجرنا» for a café, restaurant or gym.
+
+Story craft (how agencies build short motion adverts):
+- Follow the line «ترتيب القصة» in owner_brief when present: it is the story order for the advert's goal.
+- The first seconds stop the scroll: after the name, open with the strongest thing — a question that mirrors what the viewer already thinks (when the owner gave «مشكلة العميل عند غيرنا»: «ملّيت من الشاي البارد؟» then the answer in the next scene), a bold specific fact the owner gave, or a curiosity line that the next scene pays off.
+- One idea per scene, each scene a reason to come: a signature item, what makes the place different, the experience, proof (a rating, years, crowds — only when given).
+- The closing asks for one clear action with a specific verb (زورونا، اطلبوا، سجّلوا، حمّلوا) and the details the owner chose to show.
+- An offer is written exactly as the owner gave it, with its deadline when given; never invent urgency.
