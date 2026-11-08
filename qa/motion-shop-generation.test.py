@@ -7,7 +7,7 @@ assertions so a failed run can be inspected.
 """
 from pathlib import Path
 import argparse,json,subprocess,tempfile,shutil,hashlib,math,os,re,sys
-args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args=args.parse_args()
+args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven','telecom','grocery','gym'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args=args.parse_args()
 repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case+('' if args.mode=='attached' else '-'+args.mode));evidence.mkdir(parents=True,exist_ok=True)
 sys.path.insert(0,str(source));import contract as rules
 
@@ -26,12 +26,25 @@ https://share.google/gqr792aGPFX7jVCXY
 خلي الشعار يكون اولا 👍
 ماعندنا موقع إلكتروني فقط عبر تطبيقات التوصيل هنقرستيشن و كيتا وعندنا محل اكتب زورونا في فرعنا واكتب مكان الموقع'''
  ADDRESS='شارع الجال - بجانب الزينة الجديده'
-# Exactly what the chat sends after the address question: the answer appended verbatim.
-TEXT=REQUEST+'\nعنوان الفرع: '+ADDRESS
 ORDER=['menu.jpg','mint.jpg','logo.jpg','kettles.jpg']+(['kettles2.jpg','mint2.jpg','menu2.jpg'] if args.case=='seven' else [])
-contract=json.loads(subprocess.check_output(['node','-e',"const B=require(process.argv[1]);process.stdout.write(JSON.stringify(B.parse(process.argv[2],{images:+process.argv[4],answers:{address:process.argv[3]}})))",str(repo/'app/src/main/assets/motion-brief.js'),REQUEST,ADDRESS,str(len(ORDER))]))
-assert not contract['missing'] and contract['logoFirst'] and contract['sceneCount']==(7 if args.case=='four' else 9),contract
-SCENES=contract['sceneCount']
+LOGO='logo.jpg';CAFE=args.case in ('four','seven');THEME='night'
+# Other kinds of business, other shapes and lengths, written the way owners write.
+if args.case=='telecom':
+ REQUEST='سوي لي إعلان موشن لمحلي «العبور للاتصالات»، نبيع ساعات ذكية وسماعات بلوتوث وشواحن سريعة وكفرات جوالات. عندنا ضمان سنة على الساعات، وتركيب حماية الشاشة مجانًا مع كل كفر. مدته 30 ثانية ستوري. الشعار يكون أول شي. لا تكتب أسعار. اكتب زورونا في فرعنا واكتب العنوان.'
+ ADDRESS='الرياض – حي الملز – شارع الجامعة';ORDER=['watch.jpg','telecom-logo.jpg','earbuds.jpg','telecom-store.jpg'];LOGO='telecom-logo.jpg';THEME='paper'
+if args.case=='grocery':
+ REQUEST='ابي اعلان موشن لمتجري الإلكتروني «بيت الحبوب» على منصة زد. نبيع رز بسمتي وعدس أحمر وحمص وفاصوليا وبرغل، كلها معبأة بأكياس محكمة ونظيفة. التوصيل لكل مناطق المملكة خلال ٣ أيام، والدفع عند الاستلام متوفر. المدة 40 ثانية بالعرض لليوتيوب. حط الشعار أول شي، واختم بـ «اطلب الحين من متجرنا».'
+ ADDRESS='';ORDER=['grocery-logo.jpg','rice.jpg','lentils.jpg','parcel.jpg'];LOGO='grocery-logo.jpg';THEME='sand'
+if args.case=='gym':
+ REQUEST='سوي موشن لنادي «قوة» الرياضي: أجهزة حديثة، مدربين معتمدين، قسم خاص للسيدات بأوقات منفصلة، ومفتوح من ٦ الصبح لين ١٢ الليل. 30 ثانية بوست انستقرام مربع. الشعار أول شي واختم بـ «سجّل الحين» واكتب زورونا في فرعنا والعنوان.'
+ ADDRESS='الرياض – حي النخيل – طريق الملك فهد';ORDER=['gym-logo.jpg','gym.jpg'];LOGO='gym-logo.jpg'
+# Exactly what the chat sends after the address question: the answer appended verbatim.
+TEXT=REQUEST+('\nعنوان الفرع: '+ADDRESS if ADDRESS else '')
+contract=json.loads(subprocess.check_output(['node','-e',"const B=require(process.argv[1]);process.stdout.write(JSON.stringify(B.parse(process.argv[2],{images:+process.argv[4],answers:process.argv[3]?{address:process.argv[3]}:{}})))",str(repo/'app/src/main/assets/motion-brief.js'),REQUEST,ADDRESS,str(len(ORDER))]))
+assert not contract['missing'] and contract['logoFirst'],contract
+if CAFE:assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
+SCENES=contract['sceneCount'];TARGET=contract['durationSec'];ASPECT=contract.get('aspect') or '9:16'
+print('EVIDENCE contract',json.dumps({k:contract.get(k) for k in ['businessName','aspect','durationSec','sceneCount','required','forbidden','visitBranch']},ensure_ascii=False),flush=True)
 
 with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  job=Path(tmp)/('madar_'+'d'*32);job.mkdir()
@@ -46,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   target='asset_'+'0123456789'[i]*32+'.jpg';data=(evidence/'references'/name).read_bytes();images.append(target)
   files.append({'name':target,'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'chunks':math.ceil(len(data)/750000)})
   for n in range(files[-1]['chunks']):(job/f'{target}.part_{n}').write_bytes(data[n*750000:(n+1)*750000])
- logo=images[ORDER.index('logo.jpg')]
+ logo=images[ORDER.index(LOGO)]
  # The «inspired» case also renders with the owner's own font (a free Arabic font stands in for a licensed one).
  fonts=None
  if args.mode=='inspired':
@@ -58,9 +71,9 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
    fonts={'heading':'MadarHeading','body':'MadarBody','headingFile':'brand-heading.ttf','bodyFile':'brand-body.ttf'}
    print('EVIDENCE font',source_font,flush=True)
  # MotionContract.java keeps these fields and resolves the chosen attachment to the owned asset.
- keep=['durationSec','durationSource','aspect','logoFirst','logoLast','visitBranch','noWebsite','askWhenMissing','musicRequested','address','phone','businessName','required','forbidden','notes','corrections','sceneCount','sceneSeconds']
+ keep=['durationSec','durationSource','aspect','logoFirst','logoLast','visitBranch','noWebsite','askWhenMissing','musicRequested','address','phone','businessName','required','forbidden','notes','corrections','sceneCount','sceneSeconds','requireAddress']
  brief_contract={k:contract[k] for k in keep};brief_contract['version']=1;brief_contract['logoAsset']=logo
- project={'version':1,'id':'e'*32,'title':'إعلان المحل','theme':'night','aspect':'9:16','voiceMode':args.voice,'voice':'Charon','targetSeconds':50,
+ project={'version':1,'id':'e'*32,'title':'إعلان المحل','theme':THEME,'aspect':ASPECT,'voiceMode':args.voice,'voice':'Charon','targetSeconds':TARGET,
   'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract,**({'referenceMode':'inspired'} if args.mode=='inspired' else {})},
   **({'fonts':fonts} if fonts else {}),
   'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
@@ -92,7 +105,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  # Evidence first: three frames per scene (entry, middle, exit) so motion and layout can be reviewed.
  for i,scene in enumerate(p['scenes']):
   for label,at in [('a',scene['start']+.4),('b',(scene['start']+scene['end'])/2),('c',scene['end']-.3)]:
-   subprocess.run(['ffmpeg','-v','error','-y','-ss',str(max(0,at)),'-i',str(video),'-frames:v','1','-vf','scale=360:-1',str(evidence/f'scene-{i+1:02d}{label}.jpg')],check=True)
+   subprocess.run(['ffmpeg','-v','error','-y','-ss',str(max(0,at)),'-i',str(video),'-frames:v','1','-vf','scale=360:-2',str(evidence/f'scene-{i+1:02d}{label}.jpg')],check=True)
  mids=[evidence/f'scene-{i+1:02d}b.jpg' for i in range(len(p['scenes']))]
  inputs=[x for m in mids for x in ['-i',str(m)]];cols=5;rows=math.ceil(len(mids)/cols)
  subprocess.run(['ffmpeg','-v','error','-y',*inputs,'-filter_complex',''.join(f'[{i}:v]scale=200:-2[v{i}];' for i in range(len(mids)))+''.join(f'[v{i}]' for i in range(len(mids)))+f'xstack=inputs={len(mids)}:layout='+'|'.join(f'{(i%cols)*200}_{(i//cols)*356}' for i in range(len(mids)))+':fill=black','-q:v','5',str(evidence/'contact.jpg')],check=True)
@@ -107,29 +120,45 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  def check(ok,message):
   if not ok:findings.append(message)
  scenes=p['scenes'];duration=float(info['format']['duration'])
- check(4<=len(scenes)<=SCENES,f'scene count {len(scenes)} outside 4..{SCENES}')
- check(abs(duration-50)<=(2 if args.voice=='none' else 5),f'duration {duration:.1f}s, requested 50s')
- video_stream=next(s for s in info['streams'] if s['codec_type']=='video');check(video_stream['height']>video_stream['width'],'not vertical')
+ check(3<=len(scenes)<=SCENES,f'scene count {len(scenes)} outside 3..{SCENES}')
+ check(abs(duration-TARGET)<=(2 if args.voice=='none' else 5),f'duration {duration:.1f}s, requested {TARGET}s')
+ video_stream=next(s for s in info['streams'] if s['codec_type']=='video');w,h=video_stream['width'],video_stream['height']
+ check({'9:16':h>w,'16:9':w>h,'1:1':w==h}[ASPECT],f'frame {w}x{h} is not {ASPECT}')
  check(not any(s['codec_type']=='audio' for s in info['streams']) if args.voice=='none' else any(s['codec_type']=='audio' for s in info['streams']),'audio track does not match the voice choice')
  check(rules.has_asset(scenes[0]['composition'],logo),'scene 1 does not show the logo')
  texts=[]
  for s in scenes:texts+=[s.get('title',''),s.get('narration','')]+[e.get('text','') for e in s['composition']['elements'] if e.get('kind') in ['text','metric']]
  joined=rules.key(' '.join(texts))
- for bad in ['لحوم','مشويات','اللحم']:check(rules.key(bad) not in joined,f'invented product on screen: {bad}')
- for bad in ['نكهة الورد','بنكهة الورد','طعم الورد','موقع إلكتروني','موقعنا','اطلب أونلاين','ماعندنا','www']:check(rules.key(bad) not in joined,f'forbidden text on screen: {bad}')
+ if CAFE:
+  for bad in ['لحوم','مشويات','اللحم']:check(rules.key(bad) not in joined,f'invented product on screen: {bad}')
+  for bad in ['نكهة الورد','بنكهة الورد','طعم الورد','موقع إلكتروني','موقعنا','اطلب أونلاين','ماعندنا','www']:check(rules.key(bad) not in joined,f'forbidden text on screen: {bad}')
+ if args.case=='telecom':check(not re.search(r'\d+\s*(?:ريال|ر\.?\s*س)|سعر|اسعار',joined),'a price on screen although the owner said «لا تكتب أسعار»')
  last=rules.key(' '.join([scenes[-1].get('title','')]+[e.get('text','') for e in scenes[-1]['composition']['elements'] if e.get('kind')=='text']))
- check(rules.key('زورونا في فرعنا') in last,'closing «زورونا في فرعنا» missing from the last scene')
- check(rules.key(ADDRESS) in last,'branch address missing from the last scene')
- geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in scenes};check(len(geometry)>=4,f'only {len(geometry)} distinct layouts')
+ for phrase in contract.get('required',[]):check(rules.key(phrase) in last,f'closing «{phrase}» missing from the last scene')
+ if ADDRESS:check(rules.key(ADDRESS) in last,'branch address missing from the last scene')
+ geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in scenes};check(len(geometry)>=min(4,len(scenes)-1),f'only {len(geometry)} distinct layouts')
  used={e.get('asset') for s in scenes for e in s['composition']['elements'] if e.get('asset')}
+ DRAWINGS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell']
  if args.mode=='inspired':
   check(used<={logo},'«inspired» shows only the logo: '+str(used))
-  drawn=[e.get('icon') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('kind')=='icon' and e.get('icon') in ['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu']];check(len(set(drawn))>=min(3,len(scenes)-2),'too few drawings: '+str(drawn))
+  drawn=[e.get('icon') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('kind')=='icon' and e.get('icon') in DRAWINGS];check(len(set(drawn))>=min(3,len(scenes)-2),'too few drawings: '+str(drawn))
  else:check(len(used)>=math.ceil(len(ORDER)/2),f'only {len(used)} of {len(ORDER)} owned images used')
  shown=[e.get('asset') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('asset') and e.get('asset')!=logo];check(len(shown)==len(set(shown)),'a picture is repeated: '+str(shown))
  for i,s in enumerate(scenes[:-1]):check(not any(rules.is_cta(t,{'address':ADDRESS}) for t in [s.get('title',''),s.get('caption','')]),f'call to action before the closing in scene {i+1}: '+s.get('title',''))
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')
+ # Copy craft, on every film: one headline per idea, complete headlines, words not cut on screen,
+ # no production language, no Latin words in an Arabic advert, a caption that adds to its headline.
+ titles=[rules.key(s.get('title','')) for s in scenes];check(len(set(titles))==len(titles),'a headline is repeated: '+str([s.get('title') for s in scenes]))
+ for i,s in enumerate(scenes):
+  t=s.get('title','');check(rules.trim_title(t)==t.strip(' .،,!؟:'),f'scene {i+1} headline ends on a dangling word: {t}')
+  check(len(t.split())<=7,f'scene {i+1} headline is too long: {t}')
+  check(not rules.META.search(rules.key(t)),f'scene {i+1} headline is production language: {t}')
+  check(not re.search(r'[A-Za-z]{3,}',t+' '+s.get('caption','')),f'scene {i+1} shows Latin words: {t} / {s.get("caption")}')
+  shown_text=[e.get('text','') for e in s['composition']['elements'] if e.get('kind')=='text']
+  caption=str(s.get('caption') or '').strip()
+  if caption:check(any(rules.key(caption)==rules.key(x) for x in shown_text),f'scene {i+1} caption is cut or missing on screen: {caption}')
+  check(rules.key(caption)!=rules.key(t),f'scene {i+1} caption only repeats its headline: {t}')
  failed=[c for c in p.get('verification',[]) if not c['ok'] and c['id']!='source'];check(not failed,'verification failures: '+json.dumps(failed,ensure_ascii=False))
  (evidence/'findings.json').write_text(json.dumps({'findings':findings,'verification':p.get('verification',[]),'duration':duration,'scenes':[{k:s.get(k) for k in ['title','caption','narration','seconds']} for s in scenes]},ensure_ascii=False,indent=1))
  assert not findings,'\n'.join(findings)
- print('PASS shop request end to end: real model, logo first, 7 paced scenes without repeated pictures, 50 s, vertical, forbidden text absent, closing and address present')
+ print('PASS',args.case,args.mode,'end to end: real model, logo first, paced scenes without repeated pictures or headlines,',TARGET,'s',ASPECT,', forbidden text absent, closing words present')

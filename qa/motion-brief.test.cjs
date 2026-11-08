@@ -128,3 +128,12 @@ console.log('PASS scene count follows the pictures');
  assert.match(text,/✓ فهم طلب الموشن والصور — تم \(56 ث\)/);assert.match(text,/✗ مراجعة فهم الموشن — انتهت المهلة بدون رد \(120 ث\)/);assert.match(text,/اربط Groq المجاني/);
  assert.match(M.diagnostics({groq:true,timeline:[{stage:'plan_interpret',status:'failed',code:'GEMINI_NETWORK'}]}),/Groq مربوط ويرد بدل Gemini/);
  console.log('PASS assistant report explains each step in plain words');}
+// Other kinds of business, written the way owners write: a quoted name after the kind of shop, the logo
+// «أول شي» in the same sentence as the closing words, «اختم بـ «…»», and «… والعنوان» as a request for the address.
+{const telecom=B.parse('سوي لي إعلان موشن لمحلي «العبور للاتصالات»، نبيع ساعات ذكية. الشعار يكون أول شي. لا تكتب أسعار. اكتب زورونا في فرعنا واكتب العنوان.',{images:4,answers:{address:'الرياض – حي الملز'}});
+ assert.equal(telecom.businessName,'العبور للاتصالات');assert.ok(telecom.logoFirst);assert.deepEqual(telecom.required,['زورونا في فرعنا']);assert.deepEqual(telecom.forbidden,['أسعار']);
+ const store=B.parse('ابي اعلان موشن لمتجري الإلكتروني «بيت الحبوب» على منصة زد. المدة 40 ثانية بالعرض لليوتيوب. حط الشعار أول شي، واختم بـ «اطلب الحين من متجرنا».',{images:4});
+ assert.equal(store.businessName,'بيت الحبوب');assert.ok(store.logoFirst&&!store.logoLast);assert.equal(store.aspect,'16:9');assert.deepEqual(store.required,['اطلب الحين من متجرنا']);assert.equal(store.visitBranch,false);
+ const gym=B.parse('سوي موشن لنادي «قوة» الرياضي. الشعار أول شي واختم بـ «سجّل الحين» واكتب زورونا في فرعنا والعنوان.',{images:2,answers:{address:'الرياض – حي الملز'}});
+ assert.equal(gym.businessName,'قوة');assert.ok(gym.logoFirst&&!gym.logoLast);assert.deepEqual(gym.required,['سجل الحين','زورونا في فرعنا']);assert.ok(gym.requireAddress&&gym.visitBranch);
+ console.log('PASS other businesses: quoted names, closing words, logo first, address asked by «والعنوان»');}

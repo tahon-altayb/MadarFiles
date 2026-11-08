@@ -67,7 +67,7 @@
  }
  function sentences(text){return soft(text).split(/\n+|(?<=[.!؟?])\s+|\s*[•·]\s*/).map(s=>s.trim()).filter(Boolean);}
  // A clause boundary inside run-on dialect: "...فرعنا واكتب ..." / "... وخلي ...".
- const CLAUSE=/\s+(?=و?\s*(?:اكتب|أكتب|حط|ضع|خلي|خل|لا\s+(?:تكتب|تحط|تذكر)|ما\s+(?:تكتب|تحط|تذكر)|شيل|احذف|امسح|اذا|إذا|لو|ابي|أبي|ابغى|أبغى|ابغي|استخدم|ابدا|ابدأ|ماعندنا|ما\s+عندنا)\s)/;
+ const CLAUSE=/\s+(?=و?\s*(?:اكتب|أكتب|حط|ضع|خلي|خل|اختم|اختتم|لا\s+(?:تكتب|تحط|تذكر)|ما\s+(?:تكتب|تحط|تذكر)|شيل|احذف|امسح|اذا|إذا|لو|ابي|أبي|ابغى|أبغى|ابغي|استخدم|ابدا|ابدأ|ماعندنا|ما\s+عندنا)\s)/;
  const quoted=s=>{const m=/[«"“]([^»"”]{2,90})[»"”]/.exec(s);return m?clean(m[1]):'';};
 
  function literals(text,result){
@@ -83,6 +83,9 @@
     if(m){const v=quoted(m[1])||clean(m[1]);if(v&&!VISUAL.test(key(v)))result.forbidden.push(v);else if(v&&new RegExp(LOGO).test(key(v)))result.dropLogo=true;continue;}
     m=/^(?:شيل|احذف|امسح|الغ|الغي)\s+(?:عباره\s+|عبارة\s+|جمله\s+|جملة\s+|كلمه\s+|كلمة\s+|نص\s+)?(.{2,80})$/.exec(plain);
     if(m){const v=quoted(m[1])||clean(m[1]);if(new RegExp(LOGO).test(key(v)))result.dropLogo=true;else if(v)result.removed.push(v);continue;}
+    // «اختم بـ «سجّل الحين»»: the closing words the owner wants, written as given.
+    const closingWords=/^(?:اختم|اختتم|ونختم)\s*(?:بـ|ب|بعباره|بعبارة|بجمله|بجملة)?\s*(.{2,90})$/.exec(plain);
+    if(closingWords&&!new RegExp(LOGO).test(key(closingWords[1]))){const v=quoted(closingWords[1])||clean(closingWords[1]);if(v){result.required.push(v);if(/زورونا|زوروا|زورو|تفضلوا|حياكم|ننتظركم/.test(key(v))&&/فرع|محل|معرض|مقر/.test(key(v)))result.visitBranch=true;}continue;}
     m=/^(?:اكتب|أكتب|حط|ضع)\s+(.{2,100})$/.exec(plain);
     if(!m)continue;
     const verb=/^(?:اكتب|أكتب)/.test(plain),body=m[1];
@@ -99,6 +102,8 @@
     if(META_PHONE.test(v)){result.requirePhone=true;continue;}
     if(META_NAME.test(v)){result.requireName=true;continue;}
     if(!quoted(body)&&(VISUAL.test(v)||value.length>60||/^(?:ان|إن|انه|إنه|عن)\s/.test(v)))continue;
+    // «اكتب زورونا في فرعنا والعنوان»: the tail asks for the address (or phone), it is not part of the words.
+    if(!quoted(body)){const tail=/\s+و\s*(?:اكتب\s+)?(?:ال)?(عنوان(?:ه|نا)?|موقع(?:ه|نا)?|رقم(?:ه|نا)?(?:\s+التواصل)?|الرقم)$/.exec(value);if(tail){if(/رقم/.test(tail[1]))result.requirePhone=true;else result.requireAddress=true;value=clean(value.slice(0,tail.index));}}
     result.required.push(value);
     if(/زورونا|زوروا|زورو|تفضلوا|حياكم|ننتظركم/.test(v)&&/فرع|محل|معرض|مقر/.test(v))result.visitBranch=true;
    }
@@ -160,6 +165,8 @@
   if(skip(answers.logo)){result.logoFirst=false;result.logoLast=false;}
   if(answers.name&&!skip(answers.name))result.businessName=clean(answers.name);
   const name=/(?:اسم\s+(?:المحل|المتجر|النشاط|المطعم|الكوفي|المقهى|المقهي))\s*(?:هو|:)?\s*([^\n.،]{2,40})/.exec(soft(text));if(name&&!result.businessName)result.businessName=clean(name[1]);
+  // «لمحلي «العبور للاتصالات»» / «لمتجري الإلكتروني «بيت الحبوب»» / «لنادي «قوة» الرياضي»: the quoted name after the kind of business.
+  const quotedName=/(?:محل|متجر|مطعم|مقهى|مقهي|كافيه|كوفي|نادي|صالون|عياده|عيادة|شركه|شركة|تطبيق|مركز|معرض|مخبز|بوتيك|مشغل)(?:ي|نا)?\s+(?:(?:الإلكتروني|الالكتروني|الرياضي|الجديد|الصغير)\s+)?[«"“]([^»"”]{2,40})[»"”]/.exec(soft(text));if(quotedName&&!result.businessName)result.businessName=clean(quotedName[1]);
   if(context.logoAttachment)result.logoAttachment=String(context.logoAttachment);
   // Notes are the client's side remarks to the agent (formatting directions, corrections,
   // "we have no website"): never audience copy. The request itself stays ordinary brief.

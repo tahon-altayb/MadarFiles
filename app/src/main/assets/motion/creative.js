@@ -56,7 +56,7 @@ function illustrationFor(shot,used=[]){
  // («قهوة عربية دافئة … تملأ المكان» is coffee, not seating).
  // The hidden picture's description (a menu with prices) comes after the words: «فطائر دافئة» is pastries, not an offer.
  const head=normalize([shot.title,shot.caption].filter(Boolean).join(' ')),hint=normalize(shot.artHint),full=normalize([shot.title,shot.caption,shot.narration,shot.artHint].filter(Boolean).join(' '));
- const rules=[['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|عايل|اصدقاء|اصدقا|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف/],['seating',/جلس|جلسات|اجواء|مكان|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/]];
+ const rules=[['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|عايل|اصدقاء|اصدقا|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف|مدرب|فريق|طاقم|كادر/],['seating',/جلس|جلسات|اجواء|مكان|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/],['watch',/ساعه ذكيه|ساعات ذكيه|الساعات الذكيه|ساعتك الذكيه|سمارت ?واتش|smart ?watch/],['headphones',/سماع|ايربود|بلوتوث|airpods/],['smartphone',/جوال|جولات|هاتف|ايفون|سامسونج|شاحن|شواحن|كفر|كفرات|حمايه الشاشه|اكسسوار|اجهزه ذكيه|تقنيه/],['grains',/(?:^|\s)(?:وال|بال|ال|و)?(?:رز|ارز)(?:\s|$)|عدس|حمص|فاصوليا|برغل|حبوب|بقوليات|قمح|شوفان|بهارات|تمور/],['dumbbell',/نادي|رياضي|رياضه|تمارين|تمرين|لياقه|جيم|اوزان|حديد|اجهزه رياضيه|معدات|كمال اجسام/]];
  const match=t=>rules.filter(([,re])=>re.test(t)).map(([id])=>id);
  if(used==='all')return [...new Set([...match(head),...match(hint),...match(full)])];
  const first=match(head),second=first.length?first:match(hint),hits=second.length?second:match(full);
@@ -90,7 +90,9 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
  const iconId=semanticIcon(shot);
  const e=(kind,x,y,w,h,color,motion,delay,extra={})=>({kind,x,y,w,h,color,motion,delay,...extra});
  const text=(value,x,y,w,h,size,delay)=>e('text',x,y,w,h,'ink','rise',delay,{text:value,size});
- const media=(x,y,w,h,delay,extra={})=>asset?e(deviceShot?'device':'image',x,y,w,h,'ink','scale',delay,{asset,...extra}):e('icon',x,y,w,h,'accent','draw',delay,{icon:iconId});
+ // Without a picture, the frame shows the drawing of what the scene says (wide and square films too), never a lone symbol.
+ const drawn=art===undefined?illustrationFor(shot):art;
+ const media=(x,y,w,h,delay,extra={})=>asset?e(deviceShot?'device':'image',x,y,w,h,'ink','scale',delay,{asset,...extra}):e('icon',x,y,w,h,'accent',drawn?'scale':'draw',delay,{icon:drawn||iconId});
  // Logos are shown whole; photographs fill their frame (cropped at the edges) like a printed advert.
  const whole={fit:'contain'};
  let elements=[];
@@ -129,6 +131,10 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
   else if(side===3)elements=[media(0,0,1,.62,.02),e('shape',.05,.50,.90,.29,'card','rise',.08),text(title,.09,.53,.77,.12,100,.10),e('line',.09,.655,.23,.006,'accent','draw',.12),text(body,.09,.67,.77,.105,50,.15)];
   else if(side===4)elements=[text(title,.07,.09,.83,.13,108,0),e('line',.38,.235,.24,.006,'accent','draw',.05),media(.10,.26,.80,.39,.06),text(body,.08,.70,.78,.085,54,.12)];
   else elements=[text(title,.07,.09,.83,.13,104,0),text(body,.07,.23,.81,.11,54,.06),media(0,.37,1,.63,.10)];
+ }else if((wide||square)&&!asset&&!logo&&!drawn){
+  // Nothing to draw and no picture: a typographic card, the words large and centred.
+  elements=wide?[e('shape',.12,.14,.76,.70,'card','fade',0),text(title,.17,.22,.66,.24,74,.02),e('line',.42,.50,.16,.006,'accent','draw',.08),text(body,.20,.55,.60,.18,34,.12),e('icon',.47,.76,.06,.06,'accent','scale',.2,{icon:iconId})]
+   :[e('shape',.07,.12,.86,.74,'card','fade',0),text(title,.12,.20,.76,.24,88,.02),e('line',.40,.47,.20,.006,'accent','draw',.08),text(body,.12,.52,.76,.20,46,.12),e('icon',.45,.76,.10,.07,'accent','scale',.2,{icon:iconId})];
  }else if(wide&&style===2){
   elements=[text(title,.08,.07,.84,.20,66,0),e('line',.08,.30,.20,.006,'accent','draw',.04),media(.08,.36,.36,.51,.06),text(body,.53,.40,.39,.30,30,.12),e('icon',.80,.78,.08,.10,'accent','scale',.2,{icon:iconId})];
  }else if(wide&&style===3){
@@ -137,13 +143,13 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
   const left=style%2===0,tx=left?.54:.07,mx=left?.07:.55;
   elements=[e('shape',tx-.02,.10,.43,.78,'card','fade',0),text(title,tx,.16,.37,.22,58,0),e('line',tx,.41,.17,.006,'accent','draw',.05),text(body,tx,.47,.37,.29,28,.12),media(mx,.11,.38,.76,.06),e('icon',tx+.27,.79,.06,.07,'accent','scale',.2,{icon:'check'})];
  }else if(square&&style===1){
-  elements=[text(title,.08,.06,.84,.17,70,0),text(body,.08,.26,.84,.14,32,.08),media(.25,.44,.50,.46,.10),e('line',.08,.415,.22,.005,'accent','draw',.06)];
+  elements=[text(title,.08,.06,.84,.17,84,0),text(body,.08,.25,.84,.15,44,.08),media(.25,.44,.50,.46,.10),e('line',.70,.415,.22,.005,'accent','draw',.06)];
  }else if(square&&style===3){
-  elements=[e('shape',.06,.10,.88,.55,'card','fade',0),text(title,.10,.15,.80,.22,76,0),text(body,.10,.42,.80,.18,34,.10),media(.60,.70,.30,.22,.12),e('icon',.12,.72,.20,.16,'accent','scale',.16,{icon:iconId})];
+  elements=[e('shape',.06,.10,.88,.55,'card','fade',0),text(title,.10,.15,.80,.22,76,0),text(body,.10,.42,.80,.18,46,.10),media(.60,.70,.30,.22,.12),e('icon',.12,.72,.20,.16,'accent','scale',.16,{icon:iconId})];
  }else if(square&&style===2){
-  elements=[media(.06,.14,.42,.72,.06),text(title,.54,.15,.40,.25,60,0),text(body,.54,.46,.40,.30,28,.12),e('line',.54,.41,.18,.005,'accent','draw',.05),e('icon',.70,.81,.13,.11,'accent','scale',.2,{icon:iconId})];
+  elements=[media(.06,.14,.42,.72,.06),text(title,.54,.15,.40,.25,60,0),text(body,.54,.46,.40,.30,40,.12),e('line',.54,.41,.18,.005,'accent','draw',.05),e('icon',.70,.81,.13,.11,'accent','scale',.2,{icon:iconId})];
  }else if(square){
-  elements=[text(title,.08,.07,.84,.19,68,0),e('line',.08,.29,.19,.006,'accent','draw',.05),media(style%2?.48:.08,.34,.43,.49,.07),text(body,style%2?.08:.56,.37,.36,.34,30,.13),e('icon',style%2?.18:.68,.79,.12,.10,'accent','scale',.2,{icon:iconId})];
+  elements=[text(title,.08,.07,.84,.19,80,0),e('line',.73,.29,.19,.006,'accent','draw',.05),media(style%2?.48:.08,.34,.43,.49,.07),text(body,style%2?.08:.56,.37,.36,.34,42,.13),e('icon',style%2?.18:.68,.79,.12,.10,'accent','scale',.2,{icon:iconId})];
  }else if(style===0){
   elements=[text(title,.08,.07,.84,.15,78,0),e('line',.08,.245,.22,.005,'accent','draw',.04),text(body,.08,.285,.84,.10,44,.10),media(.20,.415,.60,.48,.12),e('icon',.83,.90,.07,.04,'accent','scale',.22,{icon:'check'})];
  }else if(style===1){
@@ -170,7 +176,7 @@ function text(ctx,value,x,y,w,h,size,color,weight=700,reveal=1,marker=0,markerCo
   shown-=ws.length;});}
 // Vector illustrations for scenes without a client picture: drawn shapes (never photos or generated
 // images) in the film's palette with a few natural accents, gently animated. Unit square -1..1.
-const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu'];
+const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell'];
 function illustration(ctx,id,x,y,w,h,pal,t=0){
  const s=Math.min(w,h)/2;ctx.save();ctx.translate(x+w/2,y+h/2);ctx.scale(s,s);ctx.lineCap='round';ctx.lineJoin='round';
  const ink=pal.ink,accent=pal.accent,card=pal.card,muted=pal.muted,amber='#c8692a',green='#5aa364',flame='#f08a3c',glow='#ffd27a';
@@ -256,6 +262,31 @@ function illustration(ctx,id,x,y,w,h,pal,t=0){
   fill(ink,()=>ctx.roundRect(-.62,-.82,1.24,1.6,.08));line(accent,.04,()=>ctx.roundRect(-.55,-.75,1.1,1.46,.06));
   fill(accent,()=>ctx.roundRect(-.3,-.66,.6,.12,.05));
   for(let i=0;i<5;i++){const shown=Math.max(0,Math.min(1,t*1.2-i*.25)),yy=-.36+i*.24;line(card,.05,()=>{ctx.moveTo(.42,yy);ctx.lineTo(.42-.5*shown,yy);});if(shown>=1)fill(glow,()=>ctx.arc(-.36,yy,.05,0,Math.PI*2));}
+ }else if(id==='watch'){
+  // A smartwatch: strap, rounded case, a lit face with a sweeping ring.
+  fill(muted,()=>ctx.roundRect(-.22,-.95,.44,1.9,.12));fill(ink,()=>ctx.roundRect(-.42,-.5,.84,1,.2));fill(card,()=>ctx.roundRect(-.35,-.43,.7,.86,.15));
+  const sweep=(t*.8)%1;line(muted,.07,()=>ctx.arc(0,0,.24,0,Math.PI*2));line(accent,.07,()=>ctx.arc(0,0,.24,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.max(.15,sweep)));
+  fill(accent,()=>ctx.roundRect(.42,-.14,.07,.2,.03));fill(glow,()=>ctx.arc(0,0,.05,0,Math.PI*2));
+ }else if(id==='headphones'){
+  line(ink,.11,()=>ctx.arc(0,.05,.62,Math.PI*1.05,Math.PI*1.95));
+  for(const side of [-1,1]){fill(accent,()=>ctx.roundRect(side*.62-.17,-.05,.34,.6,.15));fill(card,()=>ctx.roundRect(side*.62-.09,.05,.18,.4,.08));}
+  for(let i=0;i<3;i++){const ph=(t*.7+i/3)%1;ctx.globalAlpha=1-ph;line(accent,.035,()=>ctx.arc(0,.3,.12+ph*.32,-Math.PI*.3,Math.PI*.3));line(accent,.035,()=>ctx.arc(0,.3,.12+ph*.32,Math.PI*.7,Math.PI*1.3));}ctx.globalAlpha=1;
+ }else if(id==='smartphone'){
+  fill(ink,()=>ctx.roundRect(-.4,-.85,.8,1.7,.14));fill(card,()=>ctx.roundRect(-.33,-.72,.66,1.42,.08));fill(ink,()=>ctx.roundRect(-.1,-.79,.2,.05,.03));
+  for(let i=0;i<6;i++){const shown=Math.max(0,Math.min(1,t*1.5-i*.18));ctx.globalAlpha=shown;fill(i%2?muted:accent,()=>ctx.roundRect(-.25+(i%2)*.26,-.6+Math.floor(i/2)*.36,.22,.28,.05));}ctx.globalAlpha=1;
+ }else if(id==='grains'){
+  // An open sack of grains with a scoop: rice, lentils, chickpeas and other dry foods.
+  fill(muted,()=>{ctx.moveTo(-.5,-.3);ctx.quadraticCurveTo(-.62,.35,-.45,.72);ctx.lineTo(.45,.72);ctx.quadraticCurveTo(.62,.35,.5,-.3);ctx.closePath();});
+  fill(card,()=>ctx.ellipse(0,-.3,.5,.14,0,0,Math.PI*2));fill(accent,()=>ctx.ellipse(0,-.33,.42,.1,0,0,Math.PI*2));
+  for(let i=0;i<18;i++)fill(i%3?'#f4ede1':glow,()=>ctx.ellipse(-.32+(i%6)*.13,-.42+Math.floor(i/6)*.05,.05,.025,i,0,Math.PI*2));
+  line(ink,.05,()=>{ctx.moveTo(-.5,.1);ctx.lineTo(.5,.1);});
+  const fall=(t*.9)%1;for(let i=0;i<4;i++)fill(glow,()=>ctx.ellipse(.55+i*.04,-.75+((fall+i*.25)%1)*.4,.03,.018,i,0,Math.PI*2));
+  fill(amber,()=>ctx.ellipse(.62,-.82,.18,.08,-.5,0,Math.PI*2));
+ }else if(id==='dumbbell'){
+  const lift=Math.sin(t*2)*.08;ctx.translate(0,lift);
+  fill(ink,()=>ctx.roundRect(-.55,-.06,1.1,.12,.05));
+  for(const side of [-1,1]){fill(accent,()=>ctx.roundRect(side*.62-.1,-.38,.2,.76,.06));fill(accent,()=>ctx.roundRect(side*.82-.07,-.28,.14,.56,.05));}
+  ctx.translate(0,-lift);line(muted,.03,()=>{ctx.moveTo(-.4,.62);ctx.lineTo(.4,.62);});
  }
  ctx.restore();
 }

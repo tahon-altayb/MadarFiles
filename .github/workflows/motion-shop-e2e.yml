@@ -22,6 +22,15 @@ jobs:
           - voice: none
             case: seven
             mode: inspired
+          - voice: none
+            case: telecom
+            mode: attached
+          - voice: none
+            case: grocery
+            mode: attached
+          - voice: none
+            case: gym
+            mode: inspired
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
