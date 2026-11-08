@@ -37,4 +37,7 @@ public class TransferService extends Service {
  private void emit(JSONObject event){try{event.put("at",System.currentTimeMillis());}catch(JSONException ignored){}lastEvent=event.toString();if(java.util.Arrays.asList("result","text","subtitles","driveShared").contains(event.optString("type")))WorkNotifications.complete(this,741);sendBroadcast(new Intent(VideoExportService.EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
  @Override public IBinder onBind(Intent i){return null;}
  @Override public void onDestroy(){if(active){cancel.set(true);LinkDownloads.cancel();if(drive!=null)drive.cancel();if(worker!=null)worker.interrupt();}if(timer!=null)timer.removeCallbacksAndMessages(null);if(wake!=null&&wake.isHeld())wake.release();super.onDestroy();}
+
+ // Android 15 ends a data-sync service after its daily allowance: stop at once so the app is never closed for it.
+ @Override public void onTimeout(int startId,int type){cancel.set(true);LinkDownloads.cancel();if(drive!=null)drive.cancel();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
 }

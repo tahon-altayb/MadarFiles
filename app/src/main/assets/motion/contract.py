@@ -82,7 +82,7 @@ def short_headline(text,limit=5):
  while len(cut)>2 and (WEAK_END.search(key(' '.join(cut))) or DANGLING.search(key(' '.join(cut)))):cut=cut[:-1]
  return ' '.join(cut)
 # A headline never ends on a verb or a link word waiting for its object: «شاي جمر وفطيرة الطيب تقدم».
-DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|(?:في\s+)?(?:قلب|وسط|عالم|مجال|مدينه)|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين|خلال|لكل|لجميع|جميع|كافه|لكافه|اصناف|انواع|افضل|اجود|احدث|اكثر|اقل|مختلف|منذ|بعد|قبل|عبر|داخل|طوال|حول|ضمن|نحو|لدي|عن|الى)$')
+DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|(?:في\s+)?(?:قلب|وسط|عالم|مجال|مدينه)|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين|خلال|لكل|لجميع|جميع|كافه|لكافه|اصناف|انواع|افضل|اجود|احدث|اكثر|اقل|مختلف|منذ|بعد|قبل|عبر|داخل|طوال|حول|ضمن|نحو|لدي|عن|الى|عاليه|عالي|فائقه|فائق)$')
 def trim_title(text):
  """Drops dangling last words («… في قلب»، «… تقدم»), keeping at least one word."""
  words=str(text).strip(' .،,!؟:').split()
@@ -636,7 +636,9 @@ def tidy_copy(scenes,c=None):
    # A relative clause is where a long sentence can stop («… الطازجتين | اللتين ستشعر بهما في كل لقمه»).
    cut=next((k for k,w in enumerate(words) if k>=4 and key(w) in ('الذي','التي','اللتين','اللذين','الذين','اللي','حيث')),None)
    if cut:words=words[:cut]
-   short=' '.join(words) if 3<=len(words)<=12 else trim_title(' '.join(words[:12]))
+   # Without a clause to stop at, a sentence of up to 16 words stays whole: cutting it left «… في أكواب زجاجية بألوان».
+   short=' '.join(words) if 3<=len(words)<=12 or (not cut and len(words)<=16 and words==first.split() and first==cap.strip(' .،,')) else trim_title(' '.join(words[:12]))
+   if short==cap.strip(' .،,'):short=cap
    if short and short!=cap:z['caption']=short;changed.append(i+1)
   # The closing voice says the closing: a product line read there («نوفر ساعات ذكية بعمر ضمان سنتين»,
   # «مرحباً بكم في نادي قوة») becomes the closing headline and who and where.
