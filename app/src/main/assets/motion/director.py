@@ -361,7 +361,8 @@ def groq_story(count):
   with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':0,'usable':False,'error':note,'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
   return None
  plain=lambda v:re.sub(r'\s+',' ',re.sub(r'[\u064b-\u065f\u0670\u0640]','',str(v or ''))).strip()
- # The instructions file holds the copywriter and, after «=== EDITOR ===», the chief editor who checks his draft against the facts.
+ # An optional second part after «=== EDITOR ===» runs a chief-editor pass. Off for now: on gpt-oss-120b it fixed
+ # some lines and broke others («فيديو موشن قصير», an empty closing caption) in the 1.9.57 comparison.
  writer_rules,_,editor_rules=str(WRITER['system']).partition('=== EDITOR ===')
  draft=call(writer_rules.strip(),ask,'groq writer')
  if not draft:return None
