@@ -6,29 +6,14 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Writes the advert's words with the owner's own Groq model (a much larger text model than the one on
- * Colab) before the job leaves the phone. The Colab director keeps this draft when it passes its checks
+ * Writes the advert's words with the owner's own Groq model (or Gemini when Groq is not connected), much
+ * larger text models than the one on Colab, before the job leaves the phone. The Colab director keeps this draft when it passes its checks
  * and only picks pictures, designs the frames and repairs what the checks reject. Without Groq, or
  * when its answer is unusable, the film is written on Colab as before.
  */
 final class MotionCopywriter {
- static final String SYSTEM=String.join("\n",
-  "You are a senior Arabic advertising copywriter for short motion-graphics adverts of Saudi shops, stores, clinics, gyms and apps.",
-  "Write the words of ONE advert from the owner's brief. Output JSON only: {\"title\":string,\"scenes\":[{\"title\":string,\"caption\":string,\"narration\":string}]} with EXACTLY the requested number of scenes.",
-  "Structure:",
-  "- Scene 1 opens the advert with the business's exact name (its logo is shown there) and one promise taken from the brief.",
-  "- Each middle scene tells ONE different fact from the brief, the most persuasive first. Never repeat a fact, never greet, never introduce the business again in the middle.",
-  "- The last scene is the closing: its title is the owner's first requested closing phrase VERBATIM; its caption holds his other requested phrases and the address or phone VERBATIM, joined by « · ». If he requested none, close with a short call to visit or order that fits the business.",
-  "Writing craft:",
-  "- title: 2 to 5 words, a punchy complete headline that a viewer reads in one second. No trailing verb or preposition waiting for its object, no full stop, no colon. The business name only in scene 1.",
-  "- caption: one complete short sentence of 5 to 12 words that adds a concrete detail beyond its title. Never repeat the title's words as the caption's opening.",
-  "- narration: one natural spoken sentence of the requested length, correct Modern Standard Arabic with a warm Saudi tone, correct grammar and spelling, no repeated words.",
-  "- Plain Arabic letters only: no English or Latin words, no emojis, no hashtags, no quotation marks around the text, no optional vowel marks.",
-  "Truth:",
-  "- Use ONLY facts the owner wrote (products, services, hours, delivery, guarantees, places, names, numbers). Never invent products, prices, numbers, years, awards, certifications or superlatives such as معتمد، الأول، رقم 1، الأفضل في المملكة، منذ سنوات.",
-  "- Never write anything the owner said not to write, and apply his corrections exactly (for example a word he said is not a flavour stays out).",
-  "- Never use production words: مشهد، فيديو، لقطة، كاميرا، موشن، شعار، إعلان، تصميم.",
-  "- Keep the owner's exact spelling of the business name.");
+ /** The writer's instructions live in an asset shared with the end-to-end test, so CI checks the very same words. */
+ static String system(Context c)throws java.io.IOException{try(java.io.InputStream in=c.getAssets().open("agent-motion-copywriter.txt");java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){FilesUtil.copy(in,out);return out.toString("UTF-8");}}
 
  static String plain(String v){return v==null?"":v.replaceAll("[\\u064b-\\u065f\\u0670\\u0640]","").replaceAll("\\s+"," ").trim();}
 
@@ -63,14 +48,24 @@ final class MotionCopywriter {
  static void attach(Context c,JSONObject project,AtomicBoolean cancel,MotionCloud.Progress progress,ColabDiagnostics diagnostic){
   try{
    JSONObject brief=project.getJSONObject("creativeRequest");
-   if(!GroqClient.configured(c)||brief.optJSONObject("previous")!=null||project.optString("voiceMode").equals("recording")||brief.optJSONObject("contract")==null){brief.remove("draftStory");return;}
+   boolean groq=GroqClient.configured(c),gemini=!groq&&GeminiClient.configured(c)&&!AgentDiagnostics.recentlyDown(c);
+   if(!(groq||gemini)||brief.optJSONObject("previous")!=null||project.optString("voiceMode").equals("recording")||brief.optJSONObject("contract")==null){brief.remove("draftStory");return;}
    JSONObject request=input(project);String key=MotionProject.hashText(request.toString());
    if(key.equals(brief.optString("draftStoryKey"))&&brief.optJSONObject("draftStory")!=null)return;
-   progress.update(4,"Groq يكتب نصوص المشاهد");
+   progress.update(4,(groq?"Groq":"Gemini")+" يكتب نصوص المشاهد");
    JSONObject schema=new JSONObject("{\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"},\"scenes\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"},\"caption\":{\"type\":\"string\"},\"narration\":{\"type\":\"string\"}},\"required\":[\"title\",\"caption\",\"narration\"]}}},\"required\":[\"title\",\"scenes\"]}");
-   JSONObject draft=validate(GroqClient.json(c,SYSTEM,request.toString(),schema,3000,cancel),request.getInt("scene_count"));
+   JSONObject answer;
+   if(groq)answer=GroqClient.json(c,system(c),request.toString(),schema,3000,cancel);
+   else{
+    // Without Groq, Gemini (when it answers) writes the same draft through the app's own Firebase or key.
+    JSONObject body=new JSONObject().put("systemInstruction",new JSONObject().put("parts",new JSONArray().put(new JSONObject().put("text",system(c)))))
+     .put("contents",new JSONArray().put(new JSONObject().put("role","user").put("parts",new JSONArray().put(new JSONObject().put("text",request.toString())))))
+     .put("generationConfig",new JSONObject().put("maxOutputTokens",3000).put("responseMimeType","application/json").put("responseSchema",new JSONObject("{\"type\":\"OBJECT\",\"properties\":{\"title\":{\"type\":\"STRING\"},\"scenes\":{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"title\":{\"type\":\"STRING\"},\"caption\":{\"type\":\"STRING\"},\"narration\":{\"type\":\"STRING\"}},\"required\":[\"title\",\"caption\",\"narration\"]}}},\"required\":[\"title\",\"scenes\"]}")));
+    answer=new JSONObject(GeminiClient.generate(c,body,cancel).getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text"));
+   }
+   JSONObject draft=validate(answer,request.getInt("scene_count"));if(draft!=null)draft.put("writer",groq?"groq":"gemini");
    if(draft==null){brief.remove("draftStory");diagnostic.record("MOTION_DRAFT_REJECTED");return;}
-   brief.put("draftStory",draft).put("draftStoryKey",key);MotionProject.save(c,project);diagnostic.record("MOTION_DRAFT_GROQ");
+   brief.put("draftStory",draft).put("draftStoryKey",key);MotionProject.save(c,project);diagnostic.record(groq?"MOTION_DRAFT_GROQ":"MOTION_DRAFT_GEMINI");
   }catch(java.util.concurrent.CancellationException stop){throw stop;}
   catch(Exception failed){try{project.getJSONObject("creativeRequest").remove("draftStory");}catch(JSONException ignored){}diagnostic.record("MOTION_DRAFT_FAILED");}
  }

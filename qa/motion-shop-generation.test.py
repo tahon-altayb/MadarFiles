@@ -7,8 +7,8 @@ assertions so a failed run can be inspected.
 """
 from pathlib import Path
 import argparse,json,subprocess,tempfile,shutil,hashlib,math,os,re,sys
-args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven','telecom','grocery','gym'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args.add_argument('--draft',action='store_true');args=args.parse_args()
-repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case+('' if args.mode=='attached' else '-'+args.mode)+('-draft' if args.draft else ''));evidence.mkdir(parents=True,exist_ok=True)
+args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven','telecom','grocery','gym'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args.add_argument('--draft',action='store_true');args.add_argument('--groq',action='store_true');args=args.parse_args()
+repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case+('' if args.mode=='attached' else '-'+args.mode)+('-draft' if args.draft else '')+('-groq' if args.groq else ''));evidence.mkdir(parents=True,exist_ok=True)
 sys.path.insert(0,str(source));import contract as rules
 
 REQUEST='''سوّ لي إعلان موشن لهذا المحل من معلومات الرابط والصور المرفقه ، مدته 50 ثانية، عمودي للجوال، وبدون موسيقى. وإذا نقصتك معلومات اسألني.
@@ -45,6 +45,25 @@ assert not contract['missing'] and contract['logoFirst'],contract
 if CAFE:assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
 SCENES=contract['sceneCount'];TARGET=contract['durationSec'];ASPECT=contract.get('aspect') or '9:16'
 DRAFT=json.loads((repo/'qa/motion-drafts'/(args.case+'.json')).read_text()) if args.draft else None
+# «--groq»: the owner's Groq model writes the words exactly as MotionCopywriter.java asks it (same
+# instructions file, same request, same checks). Needs the GROQ_API_KEY secret; skipped without it.
+def groq_draft():
+ import urllib.request
+ key=os.environ.get('GROQ_API_KEY','')
+ if not key.startswith('gsk_'):print('SKIP no GROQ_API_KEY secret: add it to the repository to test the Groq writer');sys.exit(0)
+ system=(repo/'app/src/main/assets/agent-motion-copywriter.txt').read_text()
+ n=max(3,min(10,contract.get('sceneCount') or 6));per=round((contract.get('durationSec') or 30)/n);low=max(5,per*2-2);high=max(low+3,per*2+3)
+ request={'owner_brief':TEXT,'scene_count':n,'narration_words':f'{low}-{high}','business_name':contract.get('businessName',''),'closing_phrases':contract.get('required',[]),'never_write':contract.get('forbidden',[]),'corrections':contract.get('corrections',[]),'address':contract.get('address',''),'phone':contract.get('phone',''),'visit_branch':bool(contract.get('visitBranch')),'no_website':bool(contract.get('noWebsite')),'pictures_attached':len(ORDER)}
+ schema={'type':'object','properties':{'title':{'type':'string'},'scenes':{'type':'array','items':{'type':'object','properties':{'title':{'type':'string'},'caption':{'type':'string'},'narration':{'type':'string'}},'required':['title','caption','narration']}}},'required':['title','scenes']}
+ body={'model':'openai/gpt-oss-120b','temperature':0,'max_completion_tokens':3000,'reasoning_effort':'low','response_format':{'type':'json_object'},'messages':[{'role':'system','content':system+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(request,ensure_ascii=False)}]}
+ req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-e2e'})
+ answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=90).read())['choices'][0]['message']['content'])
+ plain=lambda v:re.sub(r'\s+',' ',re.sub(r'[\u064b-\u065f\u0670\u0640]','',str(v or ''))).strip()
+ scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[])]
+ print('EVIDENCE groq draft',json.dumps(scenes,ensure_ascii=False),flush=True)
+ assert len(scenes)==n and len({z['title'] for z in scenes})==n and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes),'the app would reject this Groq draft'
+ return {'title':plain(answer.get('title'))[:80],'scenes':scenes,'writer':'groq'}
+if args.groq:DRAFT=groq_draft()
 if DRAFT:assert len(DRAFT['scenes'])==SCENES,(len(DRAFT['scenes']),SCENES)
 print('EVIDENCE contract',json.dumps({k:contract.get(k) for k in ['businessName','aspect','durationSec','sceneCount','required','forbidden','visitBranch']},ensure_ascii=False),flush=True)
 
@@ -90,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  tokens=sum(int(l.split()[1]) for l in calls if l.split()[1].isdigit());seconds=sum(float(l.split()[2]) for l in calls)
  print('EVIDENCE model calls',len(calls),'tokens',tokens,'seconds',round(seconds),'tok/s',round(tokens/max(seconds,1),2),flush=True)
  for l in calls:print('EVIDENCE',l,flush=True)
- for name in ['progress.json','brief-contract.json']:
+ for name in ['progress.json','brief-contract.json','reference-facts.json']:
   if (job/name).exists():print('EVIDENCE',name,(job/name).read_text()[:3000],flush=True)
  if (job/'copy-review.json').exists():
   review=json.loads((job/'copy-review.json').read_text());print('EVIDENCE copy review attempt',review.get('attempt'),json.dumps(review.get('issues',[]),ensure_ascii=False)[:4000],flush=True)

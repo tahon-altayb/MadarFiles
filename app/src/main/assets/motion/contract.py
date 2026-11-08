@@ -82,11 +82,11 @@ def short_headline(text,limit=5):
  while len(cut)>2 and WEAK_END.search(key(' '.join(cut))):cut=cut[:-1]
  return ' '.join(cut)
 # A headline never ends on a verb or a link word waiting for its object: «شاي جمر وفطيرة الطيب تقدم».
-DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين)$')
+DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|(?:في\s+)?(?:قلب|وسط|عالم|مجال|مدينه)|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين)$')
 def trim_title(text):
- """Drops dangling last words; keeps at least two words."""
+ """Drops dangling last words («… في قلب»، «… تقدم»), keeping at least one word."""
  words=str(text).strip(' .،,!؟:').split()
- while len(words)>2 and (WEAK_END.search(key(' '.join(words))) or DANGLING.search(key(' '.join(words)))):words=words[:-1]
+ while len(words)>1 and (WEAK_END.search(key(' '.join(words))) or DANGLING.search(key(' '.join(words)))):words=words[:-1]
  return ' '.join(words)
 def same_title(a,b):
  """The same headline twice («فطائر متنوعة وطازجة» in scenes 3 and 5 of the 1.9.56 run)."""
@@ -351,7 +351,7 @@ def drop_products(scenes,grounding):
 
 # Credentials and superlatives the owner never claimed («أفضل أنواع الحبوب النظيفة والمعتمدة»، «المحضرة باحترافية»):
 # allowed only when the brief, the page or the pictures say them.
-CLAIM_WORDS=re.compile(r'(?:^|\s)(?:[وب]?(?:ال)?(?:معتمد(?:ه|ين|ون|ات)?|مرخص(?:ه|ين)?|حاصل(?:ه)?|حائز(?:ه)?|جوائز|عالمي(?:ه)?|باحترافيه|احترافي(?:ه)?|مضمون(?:ه)?|ارخص|الارخص|رقم\s*(?:1|واحد)|100\s*%))(?=\s|$|[.،,!؟])')
+CLAIM_WORDS=re.compile(r'(?:^|\s)(?:[وب]?(?:ال)?(?:معتمد(?:ه|ين|ون|ات)?|مرخص(?:ه|ين)?|حاصل(?:ه)?|حائز(?:ه)?|جوائز|عالمي(?:ه)?|باحترافيه|احترافي(?:ه)?|مضمون(?:ه)?|موثوق(?:ه)?|حصري(?:ه)?|ارخص|الارخص|رقم\s*(?:1|واحد)|100\s*%))(?=\s|$|[.،,!؟])')
 def unsupported_claims(copy,grounding):
  ground=key(grounding)
  out=[]
@@ -499,6 +499,11 @@ def tidy_copy(scenes,c=None):
    sentence left there by the model («رز بسمتي خالص الوزن …» under «اطلب الحين من متجرنا»).
  Returns the changed scene numbers."""
  c=c or {};changed=[]
+ # An English word in an Arabic advert («توصيل سريع nationwide» in the 1.9.57 store run) is dropped.
+ for i,z in enumerate(scenes):
+  for field in ['title','caption']:
+   v=str(z.get(field,''));w=re.sub(r'\s*\b[A-Za-z][A-Za-z\-]{2,}\b','',v).strip(' ،,')
+   if w!=v and re.search('[ء-ي]',w):z[field]=re.sub(r'\s{2,}',' ',w);changed.append(i+1)
  for i,z in enumerate(scenes[:-1]):
   t,cap=key(z.get('title','')).strip(' .،,'),key(z.get('caption','')).strip(' .،,')
   if t and cap.startswith(t):
