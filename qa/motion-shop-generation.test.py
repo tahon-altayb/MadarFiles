@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  # MotionContract.java keeps these fields and resolves the chosen attachment to the owned asset.
  keep=['durationSec','durationSource','aspect','logoFirst','logoLast','visitBranch','noWebsite','askWhenMissing','musicRequested','address','phone','businessName','required','forbidden','notes','corrections','sceneCount','sceneSeconds','requireAddress']
  brief_contract={k:contract[k] for k in keep};brief_contract['version']=1;brief_contract['logoAsset']=logo
- project={'version':1,'id':'e'*32,'title':'إعلان المحل','theme':THEME,'aspect':ASPECT,'voiceMode':args.voice,'voice':'Charon','targetSeconds':TARGET,
+ project={'version':1,'id':'e'*32,'title':'إعلان المحل','theme':THEME,'aspect':ASPECT,'voiceMode':args.voice,'soundEffects':'energetic','voice':'Charon','targetSeconds':TARGET,
   # «--draft»: the words a strong text model wrote on the phone (the owner's Groq), as the app sends them.
   'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract,**({'referenceMode':'inspired'} if args.mode=='inspired' else {}),**({'draftStory':DRAFT} if DRAFT else {})},
   **({'fonts':fonts} if fonts else {}),
@@ -143,7 +143,16 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  check(abs(duration-TARGET)<=(2 if args.voice=='none' else 5),f'duration {duration:.1f}s, requested {TARGET}s')
  video_stream=next(s for s in info['streams'] if s['codec_type']=='video');w,h=video_stream['width'],video_stream['height']
  check({'9:16':h>w,'16:9':w>h,'1:1':w==h}[ASPECT],f'frame {w}x{h} is not {ASPECT}')
- check(not any(s['codec_type']=='audio' for s in info['streams']) if args.voice=='none' else any(s['codec_type']=='audio' for s in info['streams']),'audio track does not match the voice choice')
+ check(any(s['codec_type']=='audio' for s in info['streams']),'the energetic effects track is missing')
+ # Every cut has its whoosh: the sound around each scene start is clearly louder than the quiet middle of a scene.
+ subprocess.run(['ffmpeg','-v','error','-y','-i',str(video),'-vn','-ac','1','-ar','8000','-c:a','pcm_s16le',str(evidence/'effects.wav')],check=True)
+ import array as _array,wave as _wave
+ with _wave.open(str(evidence/'effects.wav')) as w:pcm=_array.array('h',w.readframes(w.getnframes()))
+ def rms(a,b):
+  part=pcm[max(0,int(a*8000)):max(0,int(b*8000))];return (sum(v*v for v in part)/max(1,len(part)))**.5
+ cuts=[s['start'] for s in scenes[1:]];loud=[round(rms(t-.25,t+.12)) for t in cuts];quiet=[round(rms(s['start']+(s['end']-s['start'])*.55,s['start']+(s['end']-s['start'])*.55+.3)) for s in scenes]
+ print('EVIDENCE effects cut loudness',loud,'quiet',quiet,flush=True)
+ check(all(v>3*max(1,min(quiet)) for v in loud),'a cut has no whoosh: '+str((loud,quiet)))
  check(rules.has_asset(scenes[0]['composition'],logo),'scene 1 does not show the logo')
  texts=[]
  for s in scenes:texts+=[s.get('title',''),s.get('narration','')]+[e.get('text','') for e in s['composition']['elements'] if e.get('kind') in ['text','metric']]
