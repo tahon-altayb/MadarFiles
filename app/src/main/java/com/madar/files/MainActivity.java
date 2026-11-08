@@ -60,6 +60,8 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new Bridge(),"Android");
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
+            // When Android ends the page's renderer (memory pressure while editing large media), rebuild the screen instead of closing the app.
+            @Override public boolean onRenderProcessGone(WebView v,android.webkit.RenderProcessGoneDetail detail){ready=false;if(v.getParent() instanceof android.view.ViewGroup)((android.view.ViewGroup)v.getParent()).removeView(v);v.destroy();if(web==v)web=null;recreate();return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
                 if(mediaServer!=null&&mediaServer.owns(r.getUrl()))return null;
                 String path=r.getUrl().toString();

@@ -133,7 +133,7 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 #linkHome .platforms{justify-content:center;gap:6px;margin:18px 0 8px}#linkHome .platforms span{padding:6px 9px;font-size:10px;background:transparent}#linkHome #linkDetails{padding:14px 8px;background:transparent;border:0}#linkHome #linkDetails h3{margin:5px 8px 15px;font-weight:500}#linkHome .downloadMode{display:flex;align-items:center;justify-content:center;gap:12px}#linkHome .downloadMode label{font-size:13px}#linkHome .downloadMode select{width:auto;margin:0;padding:10px}
 .qualityOrbit{width:min(100%,410px);aspect-ratio:1;position:relative;margin:16px auto 6px;border-radius:50%;background:radial-gradient(circle,transparent 50%,#d6d1c3 50.3%,transparent 50.8%)}.qualityOrbit button{position:absolute;transform:translate(-50%,-50%);margin:0;border:1px solid #d9d9ca;cursor:pointer;min-height:52px}.qualityChoice{width:64px;height:64px;border-radius:22px;background:#e8ecdf;color:#28443a;font-size:14px;box-shadow:0 5px 14px #263c3410}.qualityChoice:hover{background:#d5dfc6}.qualityCenter{left:50%;top:50%;width:42%;height:42%;border-radius:28px;background:#2b443d;color:#fff9eb;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-size:14px;padding:10px;box-shadow:0 12px 35px #23433520}.qualityCenter img{max-height:65px!important;width:80%!important;object-fit:cover!important;border-radius:10px!important}
 /* The gap at the bottom is a discoverable portal to the remaining tools. */
-#orbitPortal{position:absolute;left:50%;top:93%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;white-space:nowrap;z-index:5;background:#f8f4eb;border-radius:30px;padding:3px 8px;box-shadow:0 -5px 16px #e5dec568}#orbitPortal[hidden]{display:none}#orbitPortal small{font-size:10px;color:#69766c}#orbitPortal button{border:0;background:#e6eadc;color:#34594b;border-radius:50%;font-size:22px;width:30px;height:30px;padding:0}#orbitPortal:after{content:'';position:absolute;top:-8px;left:20%;right:20%;height:3px;border-radius:50%;background:#8ba387;animation:orbit-breathe 2.6s ease-in-out 3}@keyframes orbit-breathe{50%{opacity:.15;transform:scaleX(.5)}}
+#orbitPortal{position:relative;width:max-content;margin:-4px auto 6px;display:flex;align-items:center;gap:7px;white-space:nowrap;z-index:5;background:#f8f4eb;border-radius:30px;padding:3px 8px;box-shadow:0 -5px 16px #e5dec568}#orbitPortal[hidden]{display:none}#orbitPortal small{font-size:10px;color:#69766c}#orbitPortal button{border:0;background:#e6eadc;color:#34594b;border-radius:50%;font-size:22px;width:30px;height:30px;padding:0}#orbitPortal:after{content:'';position:absolute;top:-8px;left:20%;right:20%;height:3px;border-radius:50%;background:#8ba387;animation:orbit-breathe 2.6s ease-in-out 3}@keyframes orbit-breathe{50%{opacity:.15;transform:scaleX(.5)}}
 /* Text mode dedicates the available viewport to preview + entry, not a stack of drawers. */
 #sheet.studio15{bottom:auto;height:var(--editor-height,100dvh);align-items:stretch}#sheet.studio15>.sheet{height:100%;max-height:100%;width:100%;padding:8px 12px max(8px,env(safe-area-inset-bottom))}
 #sheet.studio15.layerEditing #timelineScroll,#sheet.studio15.layerEditing .editorTimelineControls,#sheet.studio15.layerEditing .studioAdd,#sheet.studio15.layerEditing .clipContext,#sheet.studio15.layerEditing .studioToolbar{display:none}
@@ -240,3 +240,12 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 button:active:not(:disabled){opacity:.82}
 button,.agentChip,select,input{-webkit-tap-highlight-color:transparent}
 @media(prefers-reduced-motion:reduce){.overlay:not([hidden])>.sheet{animation:none}}
+
+/* The tools pager sits under the orbit, never on the lowest tool cards; its label replaces the drag hint. */
+#orbit:has(+ #orbitPortal:not([hidden])):after{display:none}
+/* One assistant button at a time: the floating one hides under every open sheet or panel (the sheet has its own). */
+body:has(.overlay:not([hidden])) .agentFab{display:none}
+/* The page scrolls clear of the floating assistant button. */
+main{padding-bottom:96px}
+/* The Colab button keeps the page's side margins like the other buttons. */
+#colabConnect{display:block;width:calc(100% - 36px);margin:14px auto 4px}
