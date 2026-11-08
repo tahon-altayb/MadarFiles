@@ -159,18 +159,70 @@ def visual_revision(p,node):
     run([node,'-e',code],30)
     revised=json.loads(Path('visual-revision.json').read_text());p.clear();p.update(revised)
 
+def energetic_track(p,rate):
+    """Whooshes on every cut, a hit where each headline lands, pops for the other elements and a riser into
+    the closing, all synthesised here (no music, no sound files), on the clock creative.js animates with."""
+    import random
+    length=math.ceil(p['duration']*30)/30;total=int(math.ceil(length*rate));mix=[0.0]*total;rng=random.Random(7341)
+    def put(at,samples,gain):
+        start=int(at*rate)
+        for n,v in enumerate(samples):
+            k=start+n
+            if 0<=k<total:mix[k]+=v*gain
+    def sweep(seconds,low,high,peak=.6,down=None):
+        # Band-passed noise whose centre glides low→high (→down): the «ووووش» of a whip pan.
+        n=int(seconds*rate);out=[];lp=bp=0.0
+        for i in range(n):
+            x=i/max(1,n-1);centre=low+(high-low)*min(1,x/peak) if down is None or x<peak else high+(down-high)*(x-peak)/(1-peak)
+            f=2*math.sin(math.pi*min(centre,rate/6)/rate);hp=rng.uniform(-1,1)-lp-.28*bp;bp+=f*hp;lp+=f*bp
+            env=(x/peak)**2 if x<peak else (1-(x-peak)/(1-peak))**1.6
+            out.append(bp*env*.55)
+        return out
+    def hit(seconds=.42,top=125,bottom=42):
+        # A pitched-down thump with a short click on top: the headline landing.
+        n=int(seconds*rate);out=[];phase=0.0
+        for i in range(n):
+            t=i/rate;freq=bottom+(top-bottom)*math.exp(-t*18);phase+=2*math.pi*freq/rate
+            out.append(math.sin(phase)*math.exp(-t*7.5)+(rng.uniform(-1,1)*math.exp(-t*260)*.55))
+        return out
+    def pop(freq=880):
+        n=int(.07*rate);out=[];phase=0.0
+        for i in range(n):
+            t=i/rate;phase+=2*math.pi*(freq*(1+t*6))/rate;out.append(math.sin(phase)*math.exp(-t*55))
+        return out
+    def shimmer():
+        n=int(.9*rate);return [sum(math.sin(2*math.pi*f*i/rate)/(k+1) for k,f in enumerate([2637,3951,5274]))*math.exp(-i/rate*4.2)*.5 for i in range(n)]
+    scenes=p['scenes'];last=len(scenes)-1
+    for order,scene in enumerate(scenes):
+        start,span=scene['start'],scene['end']-scene['start']
+        elements=(scene.get('composition') or {}).get('elements',[])
+        if order>0:put(start-.26,sweep(.44,350,3400,.62,700),.5)
+        if order==last and last>0:put(start-.95,sweep(.95,250,5200,.97),.32);put(start+.9,shimmer(),.12)
+        head=next((e for e in elements if e.get('kind')=='text' and (e.get('textRole')=='heading' or e.get('text')==scene.get('title'))),None)
+        land=start+(head['delay']*min(span,2) if head else 0)+.2
+        put(land,hit(.5 if order in (0,last) else .42,140 if order in (0,last) else 125),.9 if order in (0,last) else .7)
+        for e in elements:
+            if e is head or e.get('kind') not in ('text','metric','image','device','icon'):continue
+            at=start+e.get('delay',0)*min(span,2)
+            if at<scene['end']-.2 and abs(at-land)>.12:put(at+.05,pop(700 if e.get('kind') in ('image','device') else 980),.16)
+    peak=max(1e-6,max(abs(v) for v in mix));scale=.70/peak
+    return [int(max(-1,min(1,v*scale))*32767) for v in mix]
+
 def sound_effects(p,path):
-    if p.get('soundEffects','none')!='soft':return
+    if p.get('soundEffects','none') not in ('soft','energetic'):return
     import array,random
     rate=24000;length=math.ceil(p['duration']*30)/30;data=array.array('h',[0])*int(math.ceil(length*rate));rng=random.Random(7341)
-    for scene in p['scenes']:
+    if p['soundEffects']=='energetic':
+        data=array.array('h',energetic_track(p,rate))
+    else:
+     for scene in p['scenes']:
         start=int(scene['start']*rate);span=min(int(.16*rate),len(data)-start);previous=0.0
         for n in range(max(0,span)):
             previous=.8*previous+.2*rng.uniform(-1,1);envelope=math.sin(math.pi*n/max(1,span-1))**2;data[start+n]=int(previous*2200*envelope)
     if sys.byteorder!='little':data.byteswap()
     with wave.open('motion-effects.wav','wb') as out:out.setparams((1,2,rate,0,'NONE',''));out.writeframes(data.tobytes())
     args=['ffmpeg','-v','error','-y','-i',str(path),'-i','motion-effects.wav']
-    if p['voiceMode']!='none':args+=['-filter_complex','[0:a][1:a]amix=inputs=2:normalize=0:duration=first[a]','-map','0:v:0','-map','[a]']
+    if p['voiceMode']!='none':args+=['-filter_complex','[1:a]volume=%s[f];[0:a][f]amix=inputs=2:normalize=0:duration=first[a]'%('0.45' if p['soundEffects']=='energetic' else '1'),'-map','0:v:0','-map','[a]']
     else:args+=['-map','0:v:0','-map','1:a:0']
     args+=['-c:v','copy','-c:a','aac','-b:a','192k','-t',str(length),'-movflags','+faststart','output-effects.mp4'];run(args,120);Path('output-effects.mp4').replace(path)
 
@@ -202,7 +254,7 @@ def render(request,node):
     expected=math.ceil(p['duration']*30)/30
     video=[s for s in info['streams'] if s['codec_type']=='video'];audio=[s for s in info['streams'] if s['codec_type']=='audio']
     width=1920 if p['aspect']=='16:9' else 1080;height=1920 if p['aspect']=='9:16' else 1080
-    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none' or p.get('soundEffects')=='soft'):raise ValueError('OUTPUT_FORMAT')
+    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none' or p.get('soundEffects') in ('soft','energetic')):raise ValueError('OUTPUT_FORMAT')
     return path
 def director_python():
     target=ROOT.parent/'madar-motion-director-gguf-v1';binary=target/'bin/python'
