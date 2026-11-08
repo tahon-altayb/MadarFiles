@@ -234,6 +234,8 @@ TOPICS={
  'location':re.compile(r'زورونا|فرعنا|عنوان|شارع|موقعنا'),
  # «شاي ساخن على الجمر» then «شاي ساخن على الفحم» (the 1.9.55 four-picture run): one scene about the coals.
  'coals':re.compile(r'جمر|فحم|الحطب|على النار'),
+ # «جلسات عائلية وأصدقاء» then «مقاعد مريحة تجمع العائلة والأصدقاء» (the 1.9.57 seven-picture run).
+ 'seating':re.compile(r'جلسات|جلسه|جلساتنا|مقاعد|طاولات|كراسي|العائله والاصدقاء|عائليه'),
 }
 def topic_of(shot,brand=''):
  t=key(' '.join([str(shot.get('title','')),str(shot.get('caption',''))]))
@@ -574,6 +576,14 @@ def tidy_copy(scenes,c=None):
    continues=bool(re.match(r'(?:في|من|على|الى|عن|مع|خلال|لكل|لجميع|و|ب|ل)(?:\s|$)',key(cap))) or key(cap).startswith('و')
    line=title+' '+cap if cap and continues else ('، '.join(dict.fromkeys(x for x in [title,cap] if x)) if i==len(scenes)-1 else cap or title)
    if line and not any(similar(line,w.get('narration','')) for w in scenes[:i]):z['narration']=line+'.';changed.append(i+1)
+  # The closing voice says the closing: a product line read there («نوفر ساعات ذكية بعمر ضمان سنتين»,
+  # «مرحباً بكم في نادي قوة») becomes the closing headline and who and where.
+ if len(scenes)>1:
+  last=scenes[-1];said=key(last.get('narration',''))
+  wanted=[key(x) for x in c.get('required',[]) if x and len(key(x))>=4]
+  if not any(r in said for r in wanted) and not is_cta(said,c):
+   line='، '.join(dict.fromkeys(x for x in [str(last.get('title','')).strip(' .،,'),re.sub(r'\s*·\s*','، ',str(last.get('caption',''))).strip(' .،,')] if x))
+   if line:last['narration']=line+'.';changed.append(len(scenes))
  if scenes:
   last=scenes[-1];cap=str(last.get('caption','')).strip()
   who=[x for x in [str(c.get('address') or ''),str(c.get('phone') or '')] if x and not x.startswith('http')]
