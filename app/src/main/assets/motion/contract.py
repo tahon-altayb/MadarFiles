@@ -79,10 +79,10 @@ def short_headline(text,limit=5):
  words=str(text).strip(' .،,!؟').split()
  if len(words)<=limit+1:return ' '.join(words)
  cut=words[:limit]
- while len(cut)>2 and WEAK_END.search(key(' '.join(cut))):cut=cut[:-1]
+ while len(cut)>2 and (WEAK_END.search(key(' '.join(cut))) or DANGLING.search(key(' '.join(cut)))):cut=cut[:-1]
  return ' '.join(cut)
 # A headline never ends on a verb or a link word waiting for its object: «شاي جمر وفطيرة الطيب تقدم».
-DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|(?:في\s+)?(?:قلب|وسط|عالم|مجال|مدينه)|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين)$')
+DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|(?:في\s+)?(?:قلب|وسط|عالم|مجال|مدينه)|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين|خلال|لكل|لجميع|جميع|كافه|لكافه|اصناف|انواع|افضل|اجود|احدث|اكثر|اقل|مختلف|منذ|بعد|قبل|عبر|داخل|طوال|حول|ضمن|نحو|لدي|عن|الى)$')
 def trim_title(text):
  """Drops dangling last words («… في قلب»، «… تقدم»), keeping at least one word."""
  words=str(text).strip(' .،,!؟:').split()
@@ -178,7 +178,7 @@ def craft_issues(copy):
  return issues
 
 # Calls to action belong to the closing scene only («زورونا», «اطلبه الآن عبر موقعنا», «حمّل التطبيق»…).
-CTA=re.compile(r'(?:^|\s)(?:[وف])?(?:زورونا|زوروا|زوروه|تفضلوا بزيار|بانتظاركم|ننتظركم|نستقبلكم|اطلب(?:ه|ها|وا|ي)?\s+(?:الان|الحين|من|عبر|اون)|اطلب(?:وا)?\s+اونلاين|عبر\s+موقعنا|من\s+موقعنا|حمل(?:وا)?\s+التطبيق|نزل(?:وا)?\s+التطبيق|حملوه|تواصل(?:وا)?\s+معنا|اتصل(?:وا)?\s+(?:بنا|الان|علي)|راسلونا|احجز(?:وا)?\s+(?:الان|الحين|طاولت|موعد)|سارع(?:وا)?|لا\s+تفوت(?:وا)?|اشتر(?:ي|وا)?\s+الان|تسوق(?:وا)?\s+الان|لا\s+تنس(?:وا|ي)?\s+زيار|بزيارتنا|زيارتنا|زيارتكم|زياره\s+فرع|ننتظر(?:كم)?\s+(?:زيار|في)|فرعنا|فروعنا|عنواننا|موقعنا\s+في)')
+CTA=re.compile(r'(?:^|\s)(?:[وف])?(?:زورونا|زوروا|زوروه|تفضلوا بزيار|بانتظاركم|ننتظركم|نستقبلكم|اطلب(?:ه|ها|وا|ي)?\s+(?:الان|الحين|من|عبر|اون)|اطلب(?:وا)?\s+اونلاين|عبر\s+موقعنا|من\s+موقعنا|حمل(?:وا)?\s+التطبيق|نزل(?:وا)?\s+التطبيق|حملوه|تواصل(?:وا)?\s+معنا|اتصل(?:وا)?\s+(?:بنا|الان|علي)|راسلونا|احجز(?:وا)?\s+(?:الان|الحين|طاولت|موعد)|سارع(?:وا)?|لا\s+تفوت(?:وا)?|اشتر(?:ي|وا)?\s+الان|تسوق(?:وا)?\s+الان|لا\s+تنس(?:وا|ي)?\s+زيار|بزيارتنا|زيارتنا|زيارتكم|زياره\s+فرع|ننتظر(?:كم)?\s+(?:زيار|في)|فرعنا|فروعنا|عنواننا|موقعنا|موقع\s+(?:ال)?فرع)')
 def is_cta(text,c=None):
  k=key(text);c=c or {}
  if CTA.search(k):return True
@@ -361,6 +361,53 @@ def unsupported_claims(copy,grounding):
     word=m.group().strip();stem=re.sub(r'^(?:[وب])?(?:ال)?','',word)[:5]
     if stem and stem not in ground:out.append({'scene':i+1,'field':field,'word':word})
  return out
+# Numbers on screen must be the client's: «علبة رز بسمتي خمسون كيلو» when the bag says «5 كيلو» (the 1.9.57 store run).
+NUMBER_WORDS={'واحد':1,'واحده':1,'اثنين':2,'اثنان':2,'اثنتين':2,'ثلاث':3,'ثلاثه':3,'اربع':4,'اربعه':4,'خمس':5,'خمسه':5,'سته':6,'سبع':7,'سبعه':7,'ثمان':8,'ثماني':8,'ثمانيه':8,'تسع':9,'تسعه':9,'عشر':10,'عشره':10,
+ 'عشرين':20,'عشرون':20,'ثلاثين':30,'ثلاثون':30,'اربعين':40,'اربعون':40,'خمسين':50,'خمسون':50,'ستين':60,'ستون':60,'سبعين':70,'سبعون':70,'ثمانين':80,'ثمانون':80,'تسعين':90,'تسعون':90,'مئه':100,'مايه':100,'الف':1000}
+def numbers_in(text):
+ """(value, the word after it) for each number written in digits or as an Arabic number word."""
+ words=re.findall(r'[0-9]+(?:[.,][0-9]+)?|[\u0621-\u064a]+',key(text));out=[]
+ for i,w in enumerate(words):
+  bare=re.sub(r'^و(?=..)','',w)
+  value=float(w.replace(',','.')) if w[0].isdigit() else NUMBER_WORDS.get(bare,NUMBER_WORDS.get(w))
+  # «رقم 3» names an item, it counts nothing (an unclaimed «رقم 1» is caught as a claim).
+  if value is None or i and words[i-1]=='رقم':continue
+  out.append((value,words[i+1] if i+1<len(words) else ''))
+ return out
+def _num(v):return str(int(v)) if float(v)==int(v) else str(v)
+def unsupported_numbers(scenes,grounding):
+ known={v for v,_ in numbers_in(grounding)}
+ out=[]
+ for i,z in enumerate(scenes):
+  for field in ['title','caption']:
+   for value,unit in numbers_in(z.get(field,'')):
+    if value not in known:out.append({'scene':i+1,'field':field,'value':value,'unit':unit})
+ return out
+def number_issues(copy,grounding):
+ return [{'scene':z['scene'],'kind':'unsupported_claim','unsupported_number':_num(z['value']),'fix':'This number is not in the brief, page or pictures. Use the exact number they give, or remove it.'} for z in unsupported_numbers(copy.get('scenes',[]),grounding)]
+def fix_numbers(scenes,grounding):
+ """A number with the client's unit takes the client's number («خمسون كيلو» → «5 كيلو»); any other
+ unknown number leaves with its clause. Returns the changed scene numbers."""
+ given=numbers_in(grounding);changed=[]
+ for z in unsupported_numbers(scenes,grounding):
+  shot=scenes[z['scene']-1];text=str(shot.get(z['field'],''));unit=z['unit'][:4]
+  match=[v for v,u in given if unit and len(unit)>=3 and u[:4]==unit]
+  if len(set(match))==1:
+   value=match[0];digits=_num(value)
+   new=[];done=False
+   for w in text.split():
+    bare=re.sub(r'[^\u0621-\u064a0-9.,]','',key(w)).strip('.,')
+    if not done and bare and (bare==_num(z['value']) or NUMBER_WORDS.get(re.sub(r'^و(?=..)','',bare))==z['value']):
+     new.append(digits);done=True;continue
+    new.append(w)
+   shot[z['field']]=' '.join(new)
+  else:
+   parts=[x for x in re.split(r'(?<=[.!؟،,;])\s*',text) if x.strip()]
+   kept=[x for x in parts if not any(v==z['value'] for v,_ in numbers_in(x))]
+   shot[z['field']]=' '.join(kept).strip(' ،,')
+  changed.append(z['scene'])
+ for i in set(changed):_fill(scenes[i-1])
+ return changed
 def claim_issues(copy,grounding):
  seen=set();issues=[]
  for z in unsupported_claims(copy,grounding):
@@ -511,6 +558,22 @@ def tidy_copy(scenes,c=None):
     clause=clause.strip(' .،,')
     if len(clause.split())>=3 and not key(clause).startswith(t) and not GREETING.search(key(clause)) and not is_cta(clause,c) and len(clause)<=95:
      z['caption']=clause;changed.append(i+1);break
+   else:
+    # A headline cut from its own caption («توصيل لكل مناطق المملكة» / «توصيل لكل مناطق المملكة خلال ثلاثة أيام…»):
+    # the caption continues the headline instead of saying it twice.
+    raw=str(z.get('caption','')).split();n=len(str(z.get('title','')).split())
+    rest=' '.join(raw[n:]).strip(' .،,')
+    if len(rest.split())>=2 and [key(w) for w in raw[:n]]==[key(w) for w in str(z.get('title','')).split()]:z['caption']=rest;changed.append(i+1)
+ # The same narration twice (the closing scene reading scene 2 again) says the scene's own words instead.
+ def similar(a,b):
+  x,y=set(_words(a)),set(_words(b));return bool(x and y) and len(x&y)/max(1,min(len(x),len(y)))>=.7
+ for i,z in enumerate(scenes):
+  if i and any(similar(z.get('narration',''),w.get('narration','')) for w in scenes[:i]):
+   title,cap=str(z.get('title','')).strip(' .،,'),str(z.get('caption','')).strip(' .،,')
+   # A caption that continues its headline («… / خلال ثلاثة أيام») is read together with it.
+   continues=bool(re.match(r'(?:في|من|على|الى|عن|مع|خلال|لكل|لجميع|و|ب|ل)(?:\s|$)',key(cap))) or key(cap).startswith('و')
+   line=title+' '+cap if cap and continues else ('، '.join(dict.fromkeys(x for x in [title,cap] if x)) if i==len(scenes)-1 else cap or title)
+   if line and not any(similar(line,w.get('narration','')) for w in scenes[:i]):z['narration']=line+'.';changed.append(i+1)
  if scenes:
   last=scenes[-1];cap=str(last.get('caption','')).strip()
   who=[x for x in [str(c.get('address') or ''),str(c.get('phone') or '')] if x and not x.startswith('http')]

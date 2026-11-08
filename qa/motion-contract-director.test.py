@@ -23,7 +23,7 @@ def scenes(n,bad,start=0):
  out=[]
  for i in range(n):
   # Each call words its scenes differently, as a real model does; one headline twice is dropped.
-  title='ورد الموسم %d'%(i+1);caption='تشكيلة رقم %d جديدة من المحل للموسم.'%(start+i+1)
+  title='ورد الموسم رقم %d'%(i+1);caption='تشكيلة رقم %d جديدة من المحل للموسم.'%(start+i+1)
   narration='نقدم لكم في هذا المشهد تشكيلة مميزة من منتجاتنا للموسم رقم %d.'%(i+1)
   if bad and i==1:caption='استمتع بنكهة الورد في كل منتج.'
   if bad and i==n-1:title='زوروا موقعنا';caption='اطلب أونلاين من موقعنا الإلكتروني.'
@@ -334,3 +334,20 @@ with tempfile.TemporaryDirectory(prefix='madar-contract-draft-') as tmp:
  assert len(scenes)>=6 and all(t in drafted for t in titles) and titles==sorted(titles,key=drafted.index),titles
  assert 'زورونا في فرعنا' in scenes[-1]['title'] and C.has_asset(scenes[0]['composition'],'asset_'+'b'*32+'.jpg')
 print("the owner's Groq draft is kept, pictured and closed with his words")
+
+# The 1.9.57 store run on the Colab writer: a cut headline, a wrong weight, the closing reading scene 1 again.
+grounding='رز بسمتي 5 كيلو. نوصل لكل مناطق المملكة خلال 3 أيام.'
+store=[{'title':'رز بسمتي فاخر','caption':'علبة رز بسمتي خمسون كيلو بتغليف آمن.','narration':'مرحباً بكم في بيت الحبوب، وجهتكم الأولى للحبوب.'},
+ {'title':C.trim_title(C.short_headline('توصيل لكل مناطق المملكة خلال ثلاثة أيام والدفع عند الاستلام')),'caption':'توصيل لكل مناطق المملكة خلال ثلاثة أيام، والدفع عند الاستلام متاح','narration':'توصيل لكل مناطق المملكة خلال ثلاثة أيام.'},
+ {'title':'عرض الافتتاح','caption':'خصم عشرين بالمية على كل الطلبات.','narration':'عرض خاص.'},
+ {'title':'اطلب الحين من متجرنا','caption':'بيت الحبوب','narration':'مرحباً بكم في بيت الحبوب، وجهتكم الأولى للحبوب.'}]
+assert store[1]['title']=='توصيل لكل مناطق المملكة',store[1]['title']
+assert C.trim_title('متجر إلكتروني متخصص في أصناف')=='متجر إلكتروني متخصص'
+assert {z['unsupported_number'] for z in C.number_issues({'scenes':store},grounding)}=={'50','20'}
+C.fix_numbers(store,grounding)
+assert store[0]['caption']=='علبة رز بسمتي 5 كيلو بتغليف آمن.' and 'عشرين' not in store[2]['caption'],store
+C.tidy_copy(store,{'required':['اطلب الحين من متجرنا'],'businessName':'بيت الحبوب'})
+assert store[1]['caption']=='خلال ثلاثة أيام، والدفع عند الاستلام متاح',store[1]
+assert store[3]['narration']=='اطلب الحين من متجرنا، بيت الحبوب.',store[3]
+assert C.is_cta('توقعوا طعم مميز في موقعنا الجديد') and C.is_cta('موقع الفرع') and not C.numbers_in('عرض رقم 3')
+print('numbers are the client\'s; cut headlines continue in the caption; no narration read twice')

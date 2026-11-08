@@ -380,6 +380,7 @@ for review in range(3):
  issues.extend(local_rules.quality_issues(copy,local_contract))
  issues.extend(local_rules.product_issues(copy,GROUNDING))
  issues.extend(local_rules.claim_issues(copy,GROUNDING))
+ issues.extend(local_rules.number_issues(copy,GROUNDING))
  if brief.get('appFacts') and 'مدار' not in json.dumps(copy,ensure_ascii=False):issues.append({'required_name':'مدار','fix':'Preserve the exact product name مدار in the film title or a scene. Do not replace the brand with a generic title.'})
  for index,shot in enumerate(copy['scenes']):
   issues.extend(dict(scene=index+1,**z) for z in unsupported_file_claims(shot,brief.get('appFacts','')))
@@ -421,7 +422,8 @@ for review in range(3):
  # one extra round; style, craft and proofreading notes get one repair round and are then fixed
  # deterministically below. Each round is three model calls, so this halves a typical film's time.
  issues=[z for z in issues if z.get('contract')!='missing']
- hard=[z for z in issues if hard_issue(z) and not (DRAFT and z.get('quality') in ('redundant','repeat'))]
+ # A number the owner's draft got wrong is set to his number deterministically (fix_numbers) instead of a rewrite.
+ hard=[z for z in issues if hard_issue(z) and not (DRAFT and (z.get('quality') in ('redundant','repeat') or 'unsupported_number' in z))]
  # An owner's draft goes back to the local editor only for hard problems; style notes are repaired below.
  if not issues or ((review>=1 or DRAFT) and not hard):break
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
@@ -436,6 +438,7 @@ for z in issues:
    if z['original'] in str(shot.get(field,'')):shot[field]=str(shot[field]).replace(z['original'],z['corrected'])
 local_rules.drop_products(copy['scenes'],GROUNDING)
 local_rules.drop_claims(copy['scenes'],GROUNDING)
+local_rules.fix_numbers(copy['scenes'],GROUNDING)
 local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
 local_rules.repair_quality(copy['scenes'],dict(local_contract,businessName=local_contract.get('businessName') or copy.get('title','')))
 # The shop's real name (the client's, or the name the link gave) replaces a misspelt one («مطبخ» for «وفطيرة»).

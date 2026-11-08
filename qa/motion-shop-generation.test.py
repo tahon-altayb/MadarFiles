@@ -130,8 +130,9 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
    subprocess.run(['ffmpeg','-v','error','-y','-ss',str(max(0,at)),'-i',str(video),'-frames:v','1','-vf','scale=600:-2',str(evidence/f'scene-{i+1:02d}{label}.jpg')],check=True)
  mids=[evidence/f'scene-{i+1:02d}b.jpg' for i in range(len(p['scenes']))]
  # Tiles keep the film's shape (vertical, wide or square) so the layout can be judged.
- inputs=[x for m in mids for x in ['-i',str(m)]];tw,th={'9:16':(200,356),'16:9':(400,225),'1:1':(300,300)}[ASPECT];cols={'9:16':5,'16:9':3,'1:1':4}[ASPECT]
- subprocess.run(['ffmpeg','-v','error','-y',*inputs,'-filter_complex',''.join(f'[{i}:v]scale={tw}:{th}[v{i}];' for i in range(len(mids)))+''.join(f'[v{i}]' for i in range(len(mids)))+f'xstack=inputs={len(mids)}:layout='+'|'.join(f'{(i%cols)*tw}_{(i//cols)*th}' for i in range(len(mids)))+':fill=black','-q:v','4',str(evidence/'contact.jpg')],check=True)
+ tw,th={'9:16':(200,356),'16:9':(400,225),'1:1':(300,300)}[ASPECT];cols={'9:16':5,'16:9':3,'1:1':4}[ASPECT];rows=-(-len(mids)//cols)
+ # One numbered image sequence through ffmpeg's tile filter (xstack with many inputs crashed ffmpeg on CI once).
+ subprocess.run(['ffmpeg','-v','error','-y','-framerate','1','-i',str(evidence/'scene-%02db.jpg'),'-vf',f'scale={tw}:{th},tile={cols}x{rows}','-frames:v','1','-q:v','4',str(evidence/'contact.jpg')],check=True)
  import base64;print('EVIDENCE_CONTACT_BEGIN');print(base64.b64encode((evidence/'contact.jpg').read_bytes()).decode());print('EVIDENCE_CONTACT_END',flush=True)
  print('EVIDENCE project',json.dumps({'verification':p.get('verification'),'scenes':[{k:z.get(k) for k in ['title','caption','seconds']} for z in p['scenes']]},ensure_ascii=False),flush=True)
  info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(video)]))
