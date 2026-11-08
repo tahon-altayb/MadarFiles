@@ -365,3 +365,7 @@ C.fix_brand(names,'شاي جمر وفطيرة الطيب');C.fix_brand(names,'ب
 assert names[0]['title']=='شاي جمر مميز' and names[0]['caption']=='أهلاً بكم في بيت الحبوب.' and names[0]['narration']=='تعالوا اليوم إلى فرعنا.' and names[1]['title']=='العبور للاتصالات · ضمان سنة',names
 assert not C.fix_brand([{'title':'شاي حليب','caption':'وشاي جمر','narration':'شاي'}],'شاي جمر وفطيرة الطيب')
 print('a name one letter off is the real name; no sentence stops on «في»; no colon in a headline')
+close=[{'title':'a','caption':'b','narration':'c'},{'title':'اطلب الحين من متجرنا','caption':'اطلب الآن عبر منصة زد','narration':'لا تتردد، اضغط الآن'}]
+C.tidy_copy(close,{'required':['اطلب الحين من متجرنا']});assert close[1]['narration']=='اطلب الحين من متجرنا عبر منصة زد.',close
+pro=[{'title':'مدربون','caption':'فريقنا يوجهك توجيها احترافيا لكل تمرين','narration':'n'}];C.drop_claims(pro,'مدربين معتمدين');assert pro[0]['caption']=='فريقنا يوجهك توجيها لكل تمرين',pro
+print('the closing voice never says «اطلب» twice; «احترافيا» needs the owner to say it')

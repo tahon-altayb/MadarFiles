@@ -373,7 +373,7 @@ def drop_products(scenes,grounding):
 
 # Credentials and superlatives the owner never claimed («أفضل أنواع الحبوب النظيفة والمعتمدة»، «المحضرة باحترافية»):
 # allowed only when the brief, the page or the pictures say them.
-CLAIM_WORDS=re.compile(r'(?:^|\s)(?:[وب]?(?:ال)?(?:معتمد(?:ه|ين|ون|ات)?|مرخص(?:ه|ين)?|حاصل(?:ه)?|حائز(?:ه)?|جوائز|عالمي(?:ه)?|باحترافيه|احترافي(?:ه)?|مضمون(?:ه)?|موثوق(?:ه)?|حصري(?:ه)?|ارخص|الارخص|رقم\s*(?:1|واحد)|100\s*%))(?=\s|$|[.،,!؟])')
+CLAIM_WORDS=re.compile(r'(?:^|\s)(?:[وب]?(?:ال)?(?:معتمد(?:ه|ين|ون|ات)?|مرخص(?:ه|ين)?|حاصل(?:ه)?|حائز(?:ه)?|جوائز|عالمي(?:ه)?|باحترافيه|احترافي(?:ه|ا)?|مضمون(?:ه|ا)?|موثوق(?:ه|ا)?|حصري(?:ه|ا)?|ارخص|الارخص|رقم\s*(?:1|واحد)|100\s*%))(?=\s|$|[.،,!؟])')
 def unsupported_claims(copy,grounding):
  ground=key(grounding)
  out=[]
@@ -644,7 +644,13 @@ def tidy_copy(scenes,c=None):
   last=scenes[-1];said=key(last.get('narration',''))
   wanted=[key(x) for x in c.get('required',[]) if x and len(key(x))>=4]
   if not any(r in said for r in wanted) and not is_cta(said,c):
-   line='، '.join(dict.fromkeys(x for x in [str(last.get('title','')).strip(' .،,'),re.sub(r'\s*·\s*','، ',str(last.get('caption',''))).strip(' .،,')] if x))
+   title=str(last.get('title','')).strip(' .،,');cap=re.sub(r'\s*·\s*','، ',str(last.get('caption',''))).strip(' .،,')
+   # «اطلب الحين من متجرنا» + «اطلب الآن عبر منصة زد» is read «اطلب الحين من متجرنا عبر منصة زد», not «اطلب» twice.
+   tw,cw=title.split(),cap.split()
+   if tw and cw and key(tw[0])==key(cw[0]):
+    k=next((n for n,w in enumerate(cw) if key(w) in ('عبر','من','في','على','مع')),None)
+    cap='' if k is None else ' '.join(cw[k:]);line=(title+' '+cap).strip()
+   else:line='، '.join(dict.fromkeys(x for x in [title,cap] if x))
    if line:last['narration']=line+'.';changed.append(len(scenes))
  if scenes:
   last=scenes[-1];cap=str(last.get('caption','')).strip()
