@@ -14,7 +14,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 final class MotionCopywriter {
  /** The writer's instructions live in an asset shared with the end-to-end test, so CI checks the very same words. */
- static String system(Context c)throws java.io.IOException{try(java.io.InputStream in=c.getAssets().open("agent-motion-copywriter.txt");java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){FilesUtil.copy(in,out);return out.toString("UTF-8");}}
+ static String instructions(Context c)throws java.io.IOException{try(java.io.InputStream in=c.getAssets().open("agent-motion-copywriter.txt");java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){FilesUtil.copy(in,out);return out.toString("UTF-8");}}
+ /** The copywriter's part; the chief editor's part (after «=== EDITOR ===») is used on Colab after Groq's draft. */
+ static String system(Context c)throws java.io.IOException{String all=instructions(c);int cut=all.indexOf("=== EDITOR ===");return (cut<0?all:all.substring(0,cut)).trim();}
 
  static String plain(String v){return v==null?"":v.replaceAll("[\\u064b-\\u065f\\u0670\\u0640]","").replaceAll("\\s+"," ").trim();}
 
@@ -36,7 +38,7 @@ final class MotionCopywriter {
  /** Groq writes on Colab for a first film of a brief with a contract (not a revision or a recorded voice). */
  static boolean colab(Context c,JSONObject project){JSONObject brief=project.optJSONObject("creativeRequest");return GroqClient.configured(c)&&brief!=null&&brief.optJSONObject("previous")==null&&brief.optJSONObject("contract")!=null&&!project.optString("voiceMode").equals("recording");}
  /** The owner's own key for his own Colab session, the model and the instructions. */
- static JSONObject writer(Context c)throws Exception{return new JSONObject().put("groq_key",GroqClient.key(c)).put("model",GroqClient.MODEL).put("system",system(c));}
+ static JSONObject writer(Context c)throws Exception{return new JSONObject().put("groq_key",GroqClient.key(c)).put("model",GroqClient.MODEL).put("system",instructions(c));}
 
  /** A usable draft, cleaned; null when the answer does not fit the plan (the Colab writer is used then). */
  static JSONObject validate(JSONObject answer,int count){
