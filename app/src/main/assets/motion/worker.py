@@ -65,7 +65,7 @@ def assemble(request):
     total=0;seen=set()
     for f in files:
         name=f['name']
-        if not re.fullmatch(r'(asset_[a-f0-9]{32}\.jpg|speech_[0-9]{1,2}\.wav|voice\.wav|recording\.media)',name) or name in seen:raise ValueError('INPUT_PATH')
+        if not re.fullmatch(r'(asset_[a-f0-9]{32}\.jpg|speech_[0-9]{1,2}\.wav|voice\.wav|recording\.media|brand-(?:heading|body)\.(?:otf|ttf))',name) or name in seen:raise ValueError('INPUT_PATH')
         seen.add(name);size=f['size'];chunks=f['chunks'];total+=size
         if not isinstance(size,int) or not 0<size<=32*1024*1024 or not isinstance(chunks,int) or chunks!=math.ceil(size/CHUNK) or total>96*1024*1024:raise ValueError('INPUT_SIZE')
         out=Path(name)
@@ -180,6 +180,12 @@ def render(request,node):
     public=ROOT/'public';public.mkdir(exist_ok=True)
     names=set(s['image'] for s in p['scenes'] if s.get('image'))
     names.update(e['asset'] for s in p['scenes'] for e in s.get('composition',{}).get('elements',[]) if e.get('kind') in ['image','device'])
+    # The owner's own font files, when this project uses them (otherwise Cairo only).
+    fonts=p.get('fonts') if isinstance(p.get('fonts'),dict) else None
+    if fonts:
+        for key in ['headingFile','bodyFile']:
+            if not re.fullmatch(r'brand-(?:heading|body)\.(?:otf|ttf)',str(fonts.get(key,''))):raise ValueError('FONT_PATH')
+        names.update([fonts['headingFile'],fonts['bodyFile']])
     for name in ['Cairo.ttf','voice.wav']+sorted(names):
         if not Path(name).is_file():
             if name=='voice.wav' and p['voiceMode']=='none':continue

@@ -46,6 +46,8 @@ jobs:
 
         node qa/motion-questions-flow.test.cjs
 
+        node qa/chat-threads.test.cjs
+
         node qa/upgrade.test.cjs
 
         node qa/workspace-plus.test.cjs
@@ -188,15 +190,15 @@ jobs:
         script: gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest
           -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.MotionTransferTest,com.madar.files.ColabAuthorizationTest,com.madar.files.ColabMusicTest,com.madar.files.MotionCheckpointTest,com.madar.files.MotionStartupTest,com.madar.files.ColabAllocationTest,com.madar.files.AgentExecutiveTest
     - name: Verify update package and signing certificate
-      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 90 --version-name 1.9.55 --firebase-config
+      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 91 --version-name 1.9.56 --firebase-config
         app/google-services.json
     - name: Prepare APK
-      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.55.apk
+      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.56.apk
     - name: Upload verified update APK
       uses: actions/upload-artifact@v4
       with:
-        name: MadarFiles-1.9.55-APK
-        path: MadarFiles-1.9.55.apk
+        name: MadarFiles-1.9.56-APK
+        path: MadarFiles-1.9.56.apk
         if-no-files-found: error
         retention-days: 30
     - name: Save validation reports

@@ -1,11 +1,13 @@
 'use strict';
 (function(root,factory){const api=factory();if(typeof module==='object')module.exports=api;else root.MadarConversation=api;})(globalThis,()=>{
- const normalize=t=>String(t||'').normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670]/g,'').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').trim();
+ // Dialect-tolerant form: no vowel marks or elongation, «ممتاااز» = «ممتاز», ٣٠ = 30.
+ const normalize=t=>String(t||'').normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/([\u0621-\u064a])\1{2,}/g,'$1').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').trim();
  const question=t=>/^(?:طيب\s*)?(?:هل|كيف|ليش|لماذا|وش|ايش|اش |يمدي|اقدر|تقدر|ممكن|كم |ما هي|ما هو)/.test(normalize(t));
  function facts(text,context){
   const t=normalize(text);if(!question(t))return null;
   if(/صور|صوره|مرفق/.test(t)&&/اكثر\s*من\s*(?:صوره|واحده)|عده\s*صور|صور\s*(?:متعدده|كثيره)|عدد\s*(?:الصور|المرفقات)|كم\s*(?:صوره|صور|مرفق)/.test(t))return 'نعم، تقدر تختار عدة صور معًا من زر +، أو تضيفها على دفعات في المحادثة نفسها. الموشن يدعم حتى 8 صور مرجعية. عندك الآن '+(context.attachments||[]).filter(a=>a.kind==='image').length+' صور محفوظة في هذه المحادثة؛ لن أستبدلها عند إضافة صورة جديدة.';
   if((/قدرات|ادوات/.test(t)&&/مدار|التطبيق|انت|عندك/.test(t)||/^(?:وش|ايش|اش)\s+(?:تسوي|تقدر\s*تسوي)(?:\s*لي)?[.!؟\s]*$/.test(t))&&!context.pending)return 'أقدر أنفّذ أدوات الصور والفيديو والصوت وPDF، وإنشاء QR وتنزيل الروابط وإنشاء الصور والموشن. أرفق الملفات هنا وقل المطلوب بطريقتك؛ إذا كان للطلب خيار مؤثر لم تحدده، أسألك داخل المحادثة قبل التنفيذ.';
+  if(/كيف|وش\s+اكتب|ايش\s+اكتب/.test(t)&&/(?:اعدل|اغير|تعديل|اصلح)/.test(t)&&/اعلان|موشن|فيديو|مشهد|العباره|النص/.test(t))return 'تقدر تعدّل الإعلان بكلامك مباشرة، مثل:\n• «غيّر العبارة … إلى …» يغيّر النص بس ويعيد التصدير بسرعة\n• «شيل كلمة …»\n• «خل الشعار في الأخير» أو «في البداية»\n• «أضف هذي الصور» بعد ما ترفقها\n• «خل المدة 30 ثانية» أو «بدون صوت»\nوإذا فيه شي ما تبيه يُذكر أبد اكتب: «ما نبيع …» أو «لا تذكر …».';
   if(/تصلح|اصلاح|تطور|تضيف ميزه/.test(t)&&/نفسك|نفسه|ذاتيا|التطبيق/.test(t))return 'أقدر أشخّص أعطال التشغيل المدعومة، وأستعيد الاتصال أو المحاولة المحفوظة عندما يكون ذلك آمنًا. إضافة قدرة غير موجودة أو تعديل كود أندرويد تحتاج تطويرًا واختبارات وتحديثًا موقّعًا؛ لن أدّعي أنني أضفت ميزة لم تُنفذ.';
   return null;
  }
@@ -17,6 +19,19 @@
   const edit=/خلي|خلها|غير|عدل|رتب|قدم|بدل|استبدل|احذف|اكتب|تكتب|حط|اضف|ضيف|ابيها|ابغاها/.test(t),target=/صور|صوره|شعار|لقطه|مشهد|عنوان|النص|الكتابه|المكتوب|البدايه|النهايه/.test(t);
   const points=t.match(/(?:^|[\s،؛])(?:اولا|ثانيا|ثالثا|رابعا|خامسا|سادسا|[1-6١-٦][).:-])(?=\s|[،:.-])/g)||[];
   return edit&&target&&(points.length>=2||/(?:اول شي|اول لقطه|في البدايه|بالبدايه|في النهايه|بالنهايه)/.test(t));
+ }
+
+ // Greetings, thanks and praise get a short friendly answer at once (no planner, no waiting).
+ // Only short messages: «شكرا سو لي إعلان…» is a request, not small talk.
+ function smallTalk(text,context={}){
+  const t=normalize(text).replace(/[!.؟?،,🌹👍❤️🙏😍🔥✨👌]+/gu,' ').replace(/\s+/g,' ').trim();if(!t||t.split(' ').length>7)return null;
+  const hint=context.motion?'إذا تبي تعديل على الإعلان قل لي وش أغيّر، مثل: «غيّر العبارة … إلى …» أو «خل الشعار في الأخير».':'أرفق ملفك أو صورك وقل وش تبي، مثل: «سوّ لي إعلان موشن لمحلي مدته 30 ثانية».';
+  if(/^(?:السلام عليكم|سلام عليكم|السلام عليكم ورحمه الله(?: وبركاته)?)(?: يا?\s*\S+)?$/.test(t))return 'وعليكم السلام ورحمة الله 👋 '+hint;
+  if(/^صباح (?:الخير|النور|الورد)/.test(t))return 'صباح النور ☀️ '+hint;
+  if(/^مساء (?:الخير|النور|الورد)/.test(t))return 'مساء النور 🌙 '+hint;
+  if(/^(?:هلا|هلا والله|اهلين|اهلا|مرحبا|مرحبتين|هاي)(?: (?:والله|مدار|فيك|بك|اخوي|حبيبي))?$/.test(t))return 'هلا والله 👋 '+hint;
+  if(/^(?:شكرا|شكرا لك|مشكور|مشكورين|يعطيك العافيه|الله يعطيك العافيه|تسلم|تسلم يدك|تسلم يمينك|جزاك الله خير|الله يجزاك خير|بيض الله وجهك|كفو|كفو والله|ابدعت|يا سلام|ممتاز|رهيب|خرافي|حلو|حلو مره|ما قصرت)(?: (?:جدا|مره|والله|ياخي|يا|اخوي|مدار|عليك|لك|كثير|الله|يعطيك|العافيه|ذيب|حبيبي|الف|شكر))*$/.test(t))return (/^(?:شكرا|مشكور|يعطيك|الله يعطيك|تسلم|جزاك|الله يجزاك|بيض|ما قصرت)/.test(t)?'العفو، تحت أمرك 🌹 ':'الله يسعدك 🌹 ')+hint;
+  return null;
  }
 
  // «عدّل العبارة X إلى Y» / «بدل "X" بـ "Y"» / «شيل كلمة X» on a finished advert: the exact on-screen
@@ -100,5 +115,5 @@
   if(e.geminiResting)notes.push('Gemini ما رد قبل دقائق، فأتخطاه ١٠ دقايق عشان ما تنتظر.');
   return 'آخر خطوات الفهم:\n'+rows.join('\n')+(notes.length?'\n\n'+notes.join('\n'):'')+'\n\nالبديل: '+(e.groq?'Groq مربوط ✓':'Groq غير مربوط');
  }
- return {normalize,question,facts,motionFeedback,textEdit,chipValue,options,render,reply,diagnostics};
+ return {normalize,question,facts,smallTalk,motionFeedback,textEdit,chipValue,options,render,reply,diagnostics};
 });

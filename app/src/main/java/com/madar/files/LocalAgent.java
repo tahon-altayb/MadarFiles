@@ -31,12 +31,14 @@ final class LocalAgent {
  JSONObject groq(Context c,String user,JSONObject source,JSONArray previous,AtomicBoolean cancel)throws Exception{
   status.update(-1,"Groq · فهم طلبك (بديل Gemini المجاني)");
   JSONObject plain=new JSONObject(source.toString());plain.remove("_visual");String kind=plain.optString("kind");
-  String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}
+  String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}prompt+=understanding(c);
   JSONArray all=history(previous),recent=new JSONArray();for(int i=Math.max(0,all.length()-8);i<all.length();i++)recent.put(all.get(i));
   JSONObject data=new JSONObject().put("source",plain).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",recent).put("userRequest",user);
   return provider(AgentTools.validate(GroqClient.json(c,prompt,data.toString(),AgentTools.schema(kind),2048,cancel),kind),"groq");
  }
 
+ /** How the online planners (Gemini, Groq) read dialect, ideas and vague requests; the small on-device model keeps its short prompt. */
+ static String understanding(Context c){try(InputStream in=c.getAssets().open("agent-understanding.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);return out.toString("UTF-8");}catch(IOException missing){return "";}}
  interface Progress {void update(int percent,String message);}
  static File model(Context c){return new File(c.getFilesDir(),"agent-qwen3-1.7b.litertlm");}
  static boolean ready(Context c){return model(c).isFile()&&model(c).length()==MODEL_BYTES;}
