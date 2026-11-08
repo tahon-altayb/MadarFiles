@@ -47,11 +47,22 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   files.append({'name':target,'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'chunks':math.ceil(len(data)/750000)})
   for n in range(files[-1]['chunks']):(job/f'{target}.part_{n}').write_bytes(data[n*750000:(n+1)*750000])
  logo=images[ORDER.index('logo.jpg')]
+ # The «inspired» case also renders with the owner's own font (a free Arabic font stands in for a licensed one).
+ fonts=None
+ if args.mode=='inspired':
+  source_font=next((Path(x) for x in ['/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf','/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf','/usr/share/fonts/truetype/noto/NotoKufiArabic-Bold.ttf'] if Path(x).is_file()),None)
+  if source_font:
+   for target in ['brand-heading.ttf','brand-body.ttf']:
+    data=source_font.read_bytes();files.append({'name':target,'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'chunks':math.ceil(len(data)/750000)})
+    for n in range(files[-1]['chunks']):(job/f'{target}.part_{n}').write_bytes(data[n*750000:(n+1)*750000])
+   fonts={'heading':'MadarHeading','body':'MadarBody','headingFile':'brand-heading.ttf','bodyFile':'brand-body.ttf'}
+   print('EVIDENCE font',source_font,flush=True)
  # MotionContract.java keeps these fields and resolves the chosen attachment to the owned asset.
  keep=['durationSec','durationSource','aspect','logoFirst','logoLast','visitBranch','noWebsite','askWhenMissing','musicRequested','address','phone','businessName','required','forbidden','notes','corrections','sceneCount','sceneSeconds']
  brief_contract={k:contract[k] for k in keep};brief_contract['version']=1;brief_contract['logoAsset']=logo
  project={'version':1,'id':'e'*32,'title':'إعلان المحل','theme':'night','aspect':'9:16','voiceMode':args.voice,'voice':'Charon','targetSeconds':50,
   'creativeRequest':{'text':TEXT,'images':images,'referenceMap':{},'contract':brief_contract,**({'referenceMode':'inspired'} if args.mode=='inspired' else {})},
+  **({'fonts':fonts} if fonts else {}),
   'scenes':[{'id':'f'*12,'title':'الموضوع','narration':'الموضوع قيد التخطيط','seconds':6,'graphic':'none','effect':'fade','transition':'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','highlights':[],'words':[]}]}
  request={'protocol':1,'mode':'compose','project':project,'files':files};(job/'request.json').write_text(json.dumps(request,ensure_ascii=False));(evidence/'input.json').write_text(json.dumps(request,ensure_ascii=False,indent=1))
  execution=subprocess.run(['python3','worker.py'],cwd=job,timeout=8400,env={**os.environ,'MADAR_MOTION_QA':'1','MADAR_MOTION_QA_CPU':'1','MADAR_MOTION_QA_CONTEXT':'8192','MADAR_MOTION_QA_DIRECTOR_SECONDS':'7200'})

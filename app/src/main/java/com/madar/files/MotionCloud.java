@@ -58,6 +58,8 @@ final class MotionCloud {
  }
  private static JSONObject execute(Context c,JSONObject project,String mode,ColabCredentials.Grant grant,AtomicBoolean cancel,Progress progress,ColabDiagnostics diagnostic)throws Exception{
   String id=project.getString("id");MotionProject.validate(project,mode.equals("render"));Map<String,File> files=new LinkedHashMap<>();
+  // The owner's own font (chosen in the setup, stored privately on the phone) travels only to his Colab session.
+  if(mode.equals("compose")||mode.equals("render")){MotionFonts.apply(c,project,project.optString("fontChoice").equals("custom"));files.putAll(MotionFonts.uploads(c,project));}
   if(mode.equals("align")&&project.getString("voiceMode").equals("google")){JSONArray scenes=project.getJSONArray("scenes");for(int i=0;i<scenes.length();i++){ColabProbe.check(cancel);progress.update(2+i*8/scenes.length(),"قوقل يولّد تعليق المشهد "+(i+1)+" / "+scenes.length());files.put("speech_"+i+".wav",MotionSpeech.synthesize(c,project,scenes.getJSONObject(i),cancel));}}
   if(mode.equals("align")&&project.getString("voiceMode").equals("recording"))files.put("recording.media",MotionProject.asset(c,id,"recording.media"));
   if(mode.equals("compose")){JSONObject brief=project.getJSONObject("creativeRequest");JSONArray images=brief.getJSONArray("images");for(int i=0;i<images.length();i++){String name=images.getString(i);files.put(name,MotionProject.asset(c,id,name));}if(project.getString("voiceMode").equals("recording"))files.put("recording.media",MotionProject.asset(c,id,"recording.media"));}

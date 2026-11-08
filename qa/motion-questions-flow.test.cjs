@@ -52,15 +52,22 @@ assert.match(C.facts('كيف اعدل الاعلان؟',{}),/غيّر العبا
  assert.ok(start.contract.forbidden.includes('لحوم'),JSON.stringify(start.contract.forbidden));assert.equal(start.setup.references,'inspired');
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),start);
 
+ // The owner's own font: once installed, the setup offers it and the film is made with it.
+ await page.evaluate(()=>receive({type:'motionFonts',installed:true,heading:'thmanyahsans-Bold.otf',body:''}));
+ await load('font',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات بدون أسئلة مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
+ assert.equal(await page.locator('[data-choice=font]').inputValue(),'custom');assert.match(await page.locator('[data-choice=font] option[value=custom]').innerText(),/thmanyahsans-Bold/);
+ if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();
+ const withFont=await last('agentMotionStart');assert.equal(withFont.setup.font,'custom');await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),withFont);
+ await page.evaluate(()=>receive({type:'motionFonts',installed:false,heading:'',body:''}));
  // Another kind of business replaces the questions with its own.
  await load('kind-switch',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
  if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();
  await page.locator('.agentChip[data-value=clinic]').click();assert.ok(await page.locator('.agentChip',{hasText:'أسنان'}).count()>=1,'clinic questions after choosing a clinic');assert.equal(await page.locator('.agentChip',{hasText:'شاي الجمر'}).count(),0);
  await page.locator('.agentChoiceActions button:not(.primary)').click();
  // «بكتب من عندي»: the owner's own text is added before the film starts.
- await load('facts-add',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
+ const startsBeforeAdd=await count('agentMotionStart');await load('facts-add',shots);await send('سوي اعلان موشن لمحلي صوري مع رسومات مدته 30 ثانية عمودي بدون تعليق صوتي مع حركات وانتقالات وبدون مؤثرات صوتية');
  await page.locator('[data-choice=info]').selectOption('add');if(await page.locator('[data-choice=logo]').count())await page.locator('[data-choice=logo]').selectOption(shots[0].attachmentId);await page.locator('.agentChoiceActions .primary').click();
- assert.equal(await count('agentMotionStart'),1);
+ assert.equal(await count('agentMotionStart'),startsBeforeAdd,'nothing starts before the owner writes his information');
  const before=await count('agentMotionStart');await send('نبيع شاي جمر وكرك وفطاير، ومفتوحين 24 ساعة، وما نبيع لحوم');const start2=await last('agentMotionStart');assert.equal(await count('agentMotionStart'),before+1);assert.match(start2.prompt,/معلومات من صاحب المحل/);assert.ok(start2.contract.forbidden.includes('لحوم'));
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),start2);
 

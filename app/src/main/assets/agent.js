@@ -39,10 +39,35 @@
  function clearJob(){if(current())delete current().task;job=null;progressSample=null;save(true);}
  function nextQueued(result=null){if(!queued.length||workflow.length||continuing)return;const next=queued.shift();if(result){queuedAfterResult=next;busy(true);task('تجهيز الملف الناتج لطلبك التالي…');setTimeout(()=>native('agentUseResult',{name:result.name}),200);}else setTimeout(()=>submit(next,false),200);}
 
- function history(){const list=$('agentThreadList');list.replaceChildren();for(const thread of threads){const row=document.createElement('div');row.className='agentThreadRow';const b=document.createElement('button');b.className=thread.id===active?'active':'';b.textContent=thread.title;b.onclick=()=>selectThread(thread.id);const remove=document.createElement('button');remove.className='text';remove.textContent='حذف';remove.setAttribute('aria-label','حذف المحادثة '+thread.title);remove.onclick=()=>{if(pending||state.busy||switching)return toast('انتظر اكتمال العمل');if(!confirm('حذف هذه المحادثة ونسخة مرفقها من مدار؟ تبقى الملفات الأصلية ونتائجك محفوظة.'))return;threads=threads.filter(t=>t.id!==thread.id);const ids=[...new Set((thread.attachments||[thread.attachment]).filter(Boolean).map(a=>a.attachmentId).filter(Boolean))].filter(id=>!threads.some(t=>(t.attachments||[t.attachment]).some(a=>a?.attachmentId===id)));if(ids.length)native('agentDeleteAttachments',{ids});if(active===thread.id){active=null;if(threads.length)selectThread(threads[0].id);else newThread();}history();save();};row.append(b,remove);list.append(row);}}
+ // Chats list: open, delete one, or select several (or all) and delete them together.
+ let selecting=false;const picked=new Set();
+ function dropThreads(ids){
+  const gone=threads.filter(t=>ids.includes(t.id));threads=threads.filter(t=>!ids.includes(t.id));
+  const files=[...new Set(gone.flatMap(t=>(t.attachments||[t.attachment]).filter(Boolean).map(a=>a.attachmentId)).filter(Boolean))].filter(id=>!threads.some(t=>(t.attachments||[t.attachment]).some(a=>a?.attachmentId===id)));
+  if(files.length)native('agentDeleteAttachments',{ids:files});
+  if(ids.includes(active)){active=null;if(threads.length)selectThread(threads[0].id);else newThread();}
+  selecting=false;picked.clear();history();save(true);
+ }
+ function history(){const list=$('agentThreadList');list.replaceChildren();
+  const bar=document.createElement('div');bar.className='agentThreadTools';
+  const tool=(label,cls,fn)=>{const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=label;b.onclick=fn;bar.append(b);return b;};
+  const blocked=()=>{if(pending||state.busy||switching){toast('انتظر اكتمال العمل أو أوقفه أولًا');return true;}return false;};
+  if(!selecting){
+   if(threads.length>1)tool('تحديد','secondary',()=>{selecting=true;picked.clear();history();});
+   if(threads.length)tool('حذف كل المحادثات','text danger',()=>{if(blocked())return;if(!confirm('حذف كل المحادثات ('+threads.length+') ونسخ مرفقاتها من مدار؟ تبقى ملفاتك الأصلية ونتائجك محفوظة.'))return;dropThreads(threads.map(t=>t.id));});
+  }else{
+   tool(picked.size===threads.length?'إلغاء تحديد الكل':'تحديد الكل','secondary',()=>{if(picked.size===threads.length)picked.clear();else threads.forEach(t=>picked.add(t.id));history();});
+   const del=tool('حذف المحدد ('+picked.size+')','text danger',()=>{if(blocked()||!picked.size)return;if(!confirm('حذف '+picked.size+' محادثة ونسخ مرفقاتها من مدار؟ تبقى ملفاتك الأصلية ونتائجك محفوظة.'))return;dropThreads([...picked]);});del.disabled=!picked.size;
+   tool('إلغاء','secondary',()=>{selecting=false;picked.clear();history();});
+  }
+  if(bar.children.length)list.append(bar);
+  for(const thread of threads){const row=document.createElement('div');row.className='agentThreadRow'+(selecting&&picked.has(thread.id)?' picked':'');const b=document.createElement('button');b.className=thread.id===active?'active':'';b.textContent=(selecting?(picked.has(thread.id)?'☑ ':'☐ '):'')+thread.title;b.setAttribute('aria-pressed',selecting?String(picked.has(thread.id)):'false');
+   b.onclick=()=>{if(selecting){if(picked.has(thread.id))picked.delete(thread.id);else picked.add(thread.id);history();return;}selectThread(thread.id);};row.append(b);
+   if(!selecting){const remove=document.createElement('button');remove.className='text';remove.textContent='حذف';remove.setAttribute('aria-label','حذف المحادثة '+thread.title);remove.onclick=()=>{if(blocked())return;if(!confirm('حذف هذه المحادثة ونسخة مرفقها من مدار؟ تبقى الملفات الأصلية ونتائجك محفوظة.'))return;dropThreads([thread.id]);};row.append(remove);}
+   list.append(row);}}
  function selectThread(id){if(pending||state.busy||switching)return toast('انتظر اكتمال العمل أو أوقفه أولًا');const thread=threads.find(t=>t.id===id);if(!thread)return;active=id;$('agentMotionVoice').value=restoreMotionVoice(thread);assets=(thread.assets||[]).map(a=>({...a,thumbnail:a.kind==='image'?mediaUrl('layer',a.name):null}));job=null;afterSilence=false;$('agentThreads').hidden=true;$('sheet').hidden=true;state.tool='convert';state.source=null;if(thread.attachment?.attachmentId){switching=true;busy(false);native('agentSelectAttachment',{id:thread.attachment.attachmentId});}else{native('agentDetach');render();}paint();save();}
- $('agentOpen').onclick=()=>{panel.hidden=false;if(!current())newThread(false);badge();native('agentStatus');};$('agentClose').onclick=()=>{panel.hidden=true;if(job){$('busy').hidden=true;task(lastTaskText||'جارٍ العمل على ملفك');}};
- $('agentThreadsOpen').onclick=()=>{history();$('agentThreads').hidden=false;};$('agentThreadsClose').onclick=()=>$('agentThreads').hidden=true;
+ $('agentOpen').onclick=()=>{panel.hidden=false;if(!current())newThread(false);badge();native('agentStatus');native('motionFontStatus');};$('agentClose').onclick=()=>{panel.hidden=true;if(job){$('busy').hidden=true;task(lastTaskText||'جارٍ العمل على ملفك');}};
+ $('agentThreadsOpen').onclick=()=>{history();$('agentThreads').hidden=false;};$('agentThreadsClose').onclick=()=>{$('agentThreads').hidden=true;selecting=false;picked.clear();};
  const closeSettings=()=>{$('agentSettings').hidden=true;};
  $('agentSettingsOpen').onclick=()=>$('agentSettings').hidden=false;$('agentSettingsClose').onclick=()=>$('agentSettings').hidden=true;
  $('agentInstall').onclick=()=>{busy(true);token++;task('تنزيل المساعد إلى جهازك…');native('agentInstall',{token});};
@@ -107,12 +132,13 @@
   if(!previous&&!options.configured){const setup=thread.motionSetup||{},hasImages=refs.some(a=>a.kind==='image'),hasLink=/https?:\/\//.test(text),words=motionWords(text);
    const needsLogo=(contract.logoFirst||contract.logoLast)&&imageRefs.length>0&&!answers.logo;const pictureMode=hasImages?MadarMotionBrief.pictureMode(words):'';
    const explicit={info:/(?:بدون|لا\s+تسال|ما\s+ابي)\s+(?:اي\s+)?اسئله/.test(words),logo:!needsLogo||!!logoGuess&&imageRefs.length===1,voice:!!options.voice||voiceRequests.length===1||thread.motionVoiceSelected&&!thread.motionVoiceFromCard,references:!!pictureMode||!hasImages&&/بدون\s+صور|دون\s+صور|ستايل\s+رسومي/.test(words),animation:/حركات|انتقالات|بدون\s+حركه|ثابت/.test(words),soundEffects:/بدون\s+(?:اي\s+)?مؤثرات\s+صوتيه|بدون\s+صوت\s+نهائيا|(?:مع|ب)مؤثرات\s+صوتيه/.test(words)};
-   const preset={info:/(?:بدون|لا\s+تسال|ما\s+ابي)\s+(?:اي\s+)?اسئله/.test(words)?'auto':'ask',logo:answers.logo||logoGuess?.attachmentId||(imageRefs.length===1?imageRefs[0].attachmentId:'auto'),voice:options.voice||voiceRequests[0]||$('agentMotionVoice').value,references:explicit.references&&!hasImages?'vector':hasImages?(pictureMode||setup.references&&['attached','photosOnly','inspired'].includes(setup.references)&&setup.references||'attached'):hasLink?'page':'vector',animation:/بدون\s+حركه|ثابت/.test(words)?'off':setup.animation||'on',soundEffects:/(?:مع|ب)مؤثرات\s+صوتيه/.test(words)&&!/بدون\s+مؤثرات\s+صوتيه/.test(words)?'soft':'none'};
+   const preset={font:window.madarMotionFonts?.installed&&!/(?:الخط|بخط)\s+(?:الافتراضي|العادي)/.test(words)?(setup.font||'custom'):'cairo',info:/(?:بدون|لا\s+تسال|ما\s+ابي)\s+(?:اي\s+)?اسئله/.test(words)?'auto':'ask',logo:answers.logo||logoGuess?.attachmentId||(imageRefs.length===1?imageRefs[0].attachmentId:'auto'),voice:options.voice||voiceRequests[0]||$('agentMotionVoice').value,references:explicit.references&&!hasImages?'vector':hasImages?(pictureMode||setup.references&&['attached','photosOnly','inspired'].includes(setup.references)&&setup.references||'attached'):hasLink?'page':'vector',animation:/بدون\s+حركه|ثابت/.test(words)?'off':setup.animation||'on',soundEffects:/(?:مع|ب)مؤثرات\s+صوتيه/.test(words)&&!/بدون\s+مؤثرات\s+صوتيه/.test(words)?'soft':'none'};
    const fields=[
     {name:'info',label:'قبل نبدأ: معلومات محلك',type:'select',value:preset.info,options:[['ask','اسألني أسئلة سريعة باختيارات'],['auto','سوّه على المعلومات الموجودة (طلبي والصور)'],['add','بكتب معلومات من عندي']]},
     {name:'logo',label:'أي صورة هي الشعار؟',type:'select',value:preset.logo,options:[...imageRefs.map((a,i)=>[a.attachmentId,a.name||('صورة '+(i+1))]),['auto','حدده أنت من الصور والرابط']]},
     {name:'voice',label:'تبيه بتعليق صوتي؟',type:'select',value:preset.voice,options:[['silma','الصوت الرجالي المعتمد'],['recording','تسجيلي المرفق'],['none','بدون تعليق صوتي']]},
     {name:'references',label:hasImages?'كيف أستخدم صورك؟':'تبي صورًا أو ستايلًا رسوميًا؟',type:'select',value:preset.references,options:[...(hasImages?[['attached','صوري + رسومات موشن من عندك'],['photosOnly','صوري فقط، بدون رسومات'],['inspired','افهم صوري وسوّ كل شي رسومات موشن (ما تعرض صوري)']]:[]),...(hasLink?[['page','اجمع صورًا مناسبة من الرابط إن أمكن']]:[]),['upload','عندي صور؛ سأرفقها هنا'],['vector','رسوم ونصوص بدون صور']]},
+    ...(window.madarMotionFonts?.installed?[{name:'font',label:'خط الكتابة في الموشن',type:'select',value:preset.font,options:[['custom','خطي الخاص («'+window.madarMotionFonts.heading+'»)'],['cairo','الخط الافتراضي']]}]:[]),
     {name:'animation',label:'حركة المشاهد',type:'select',value:preset.animation,options:[['on','حركات وانتقالات متنوعة'],['off','مشاهد هادئة ثابتة']]},
     {name:'soundEffects',label:'مؤثرات الانتقال الصوتية — بدون موسيقى',type:'select',value:preset.soundEffects,options:[['none','بدون مؤثرات صوتية'],['soft','حفيف وانتقالات خفيفة']]}
    ].filter(f=>!explicit[f.name]);if(fields.length){askChoices({kind:'motion',title:'خلّنا نضبط الموشن قبل البدء',text,options:{...options},preset,fields});return;}thread.motionSetup={...preset,confirmed:true};

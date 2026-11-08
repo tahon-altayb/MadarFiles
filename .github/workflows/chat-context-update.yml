@@ -46,6 +46,8 @@ jobs:
 
         node qa/motion-questions-flow.test.cjs
 
+        node qa/chat-threads.test.cjs
+
         node qa/upgrade.test.cjs
 
         node qa/workspace-plus.test.cjs

@@ -106,6 +106,7 @@
         <service android:name=".MotionStudioService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <activity android:name=".DriveAccessActivity" android:exported="false" />
         <service android:name=".FileProcessingService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".TransferService" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity android:name=".ColabActivity" android:exported="false" />
         <activity android:name=".SeparationPlayerActivity" android:exported="false"/><activity android:name=".PlayerActivity" android:exported="false" android:supportsPictureInPicture="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" />
