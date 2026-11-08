@@ -272,6 +272,26 @@ def fix_brand(scenes,name):
       tail=re.sub(r'^.*?([.،,!؟]*)$',r'\1',window[-1]);out.append(lead+' '.join(words)+tail);k+=n;hit=True;continue
      out.append(tokens[k]);k+=1
     if hit:shot[field]=' '.join(out);changed.append((i+1,field))
+ # One letter off inside the name («شاي جمبر» for «شاي جمر» copied from a misread menu, «بيت الحوب» for «بيت الحبوب»):
+ # a pair of words where one is the name's word and the next is one letter away from the name's next word.
+ def near(a,b):
+  if a==b or abs(len(a)-len(b))>1 or min(len(a),len(b))<3:return False
+  if len(a)==len(b):return sum(x!=y for x,y in zip(a,b))==1
+  s,l=(a,b) if len(a)<len(b) else (b,a)
+  return any(l[:k]+l[k+1:]==s for k in range(len(l)))
+ plainw=lambda w:key(re.sub(r'[^ء-ي]','',w))
+ for i,shot in enumerate(scenes):
+  for field in ['title','caption','narration']:
+   tokens=str(shot.get(field,'')).split();hit=False
+   for k in range(len(tokens)-1):
+    for j in range(len(words)-1):
+     a,b=plainw(tokens[k]),plainw(tokens[k+1])
+     if a==plainw(words[j]) and near(b,plainw(words[j+1])):
+      tail=re.sub(r'^.*?([.،,!؟]*)$',r'\1',tokens[k+1]);new=words[j+1]+tail;hit=hit or new!=tokens[k+1];tokens[k+1]=new
+     elif b==plainw(words[j+1]) and near(a,plainw(words[j])):
+      lead='و' if key(tokens[k]).startswith('و') and not key(words[j]).startswith('و') else ''
+      new=lead+words[j];hit=hit or new!=tokens[k];tokens[k]=new
+   if hit:shot[field]=' '.join(tokens);changed.append((i+1,field))
  if len(words)<3:return changed
  bare=lambda w:re.sub(r'^و(?=\S{3})','',key(w))
  target=[bare(w) for w in words]
@@ -597,6 +617,16 @@ def tidy_copy(scenes,c=None):
    continues=bool(re.match(r'(?:في|من|على|الى|عن|مع|خلال|لكل|لجميع|و|ب|ل)(?:\s|$)',key(cap))) or key(cap).startswith('و')
    line=title+' '+cap if cap and continues else ('، '.join(dict.fromkeys(x for x in [title,cap] if x)) if i==len(scenes)-1 else cap or title)
    if line and not any(similar(line,w.get('narration','')) for w in scenes[:i]):z['narration']=line+'.';changed.append(i+1)
+  # A sentence that stops on a link word («… تعالوا اليوم إلى فرعنا في») ends where it is complete.
+ for i,z in enumerate(scenes):
+  n=str(z.get('narration','')).strip()
+  if n and WEAK_END.search(key(n.rstrip(' .،,!؟'))):
+   words=n.rstrip(' .،,!؟').split()
+   while len(words)>2 and WEAK_END.search(key(' '.join(words))):words=words[:-1]
+   z['narration']=' '.join(words)+'.';changed.append(i+1)
+  # «العبور للاتصالات: ضمان سنة»: a headline has no colon.
+  t=str(z.get('title',''))
+  if ':' in t:z['title']=re.sub(r'\s*:\s*',' · ',t).strip(' ·');changed.append(i+1)
   # A caption is read in one glance: at most 14 words, cut at a clause and never on a dangling word.
  for i,z in enumerate(scenes[:-1]):
   cap=str(z.get('caption',''))

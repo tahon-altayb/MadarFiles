@@ -5,14 +5,17 @@ Structure:
 - Each middle scene tells ONE different fact from the brief, the most persuasive first. Never repeat a fact, never greet, never introduce the business again in the middle.
 - The last scene is the closing: its title is the owner's first requested closing phrase VERBATIM; its caption holds his other requested phrases and the address or phone VERBATIM, joined by « · ». If he requested none, close with a short call to visit or order that fits the business.
 Writing craft:
-- title: 2 to 5 words, a punchy complete headline that a viewer reads in one second. No trailing verb or preposition waiting for its object, no full stop, no colon. The business name only in scene 1.
+- title: 2 to 5 words, a punchy complete headline that a viewer reads in one second. No trailing verb or preposition waiting for its object, no full stop, no colon, no «لا مثيل» without its «له». The business name only in scene 1.
 - caption: one complete short sentence of 5 to 12 words that adds a concrete detail beyond its title. Never repeat the title's words as the caption's opening.
-- narration: one natural spoken sentence of the requested length, correct Modern Standard Arabic with a warm Saudi tone, correct grammar and spelling, no repeated words.
+- narration: one complete natural spoken sentence of the requested length (never ending on a preposition such as «في»), correct Modern Standard Arabic with a warm Saudi tone, correct grammar and spelling, no repeated words.
 - Plain Arabic letters only: no English or Latin words, no emojis, no hashtags, no quotation marks around the text, no optional vowel marks.
 Truth:
 - Use ONLY facts found in owner_brief, page_facts or picture_facts (products, menu items, services, hours, delivery apps, guarantees, places, names, numbers). The pictures are the business's own products and place: build scenes on what they show (a menu's items, a kettle on coals, a product box). When the facts are few, give each scene a different real item or detail from them rather than inventing a new topic. Never invent products, prices, numbers, years, awards, certifications or superlatives such as معتمد، الأول، رقم 1، الأفضل في المملكة، منذ سنوات.
 - Never write anything the owner said not to write, and apply his corrections exactly. A correction is an instruction for you, never a topic: when he says «الورد ليس نكهة» write nothing about roses at all, never «الورد للزينة فقط».
-- Never use generic filler a shop never claimed: جودة مضمونة، أسعار تنافسية، خدمة عملاء، دعم العملاء، فحص دقيق، لا مثيل لها، تجربة فريدة، أفضل المكونات، نضمن. Name the real thing instead.
+- picture_facts are notes about the photos, not copy: never describe a photo itself (its colours, background, frame, logo design or «صورة»). Say what it shows means to a customer: «أباريق شاي على الفحم» → «شاي يغلي على الجمر».
+- picture_facts may contain reading mistakes from a menu or a sign; spell the business name and its items exactly as owner_brief, business_name or page_facts spell them («شاي جمر», never «شاي جمبر»).
+- Never add details nobody gave: ingredients, textures, seasons, prices like «بأسعار مناسبة», sources like «مصادر موثوقة».
+- Never use generic filler a shop never claimed: جودة مضمونة، أسعار تنافسية، خدمة عملاء، دعم العملاء، فحص دقيق، لا مثيل لها، تجربة فريدة، أفضل المكونات، نضمن، يضمن، موثوقة، بأسعار مناسبة، عالية الجودة، أحدث التقنيات. Name the real thing instead.
 - When the owner has no website (no_website), never mention a website, an online store or ordering online unless he named a delivery app; then name that app.
 - Never use production words: مشهد، فيديو، لقطة، كاميرا، موشن، شعار، إعلان، تصميم.
 - Call the business by its name or its kind (مقهى، مطعم، نادي، محل)، never «متجرنا» for a café, restaurant or gym.

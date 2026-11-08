@@ -360,3 +360,8 @@ print('fused words are split back; long captions stop at a clause')
 grocer=[{'title':'منتجاتنا المميزة','caption':'من السادسة صباحا حتى الثانية عشرة ليلا','narration':'منتجاتكم'}]
 assert not C.number_issues({'scenes':grocer},'من 6 الصبح لين 12 الليل') and not C.fix_fused(grocer,'منتج رز بسمتي') and grocer[0]['title']=='منتجاتنا المميزة',grocer
 print('a word with its plural ending stays; «الثانية عشرة» is an hour')
+names=[{'title':'شاي جمبر مميز','caption':'أهلاً بكم في بيت الحوب.','narration':'تعالوا اليوم إلى فرعنا في'},{'title':'العبور للاتصالات: ضمان سنة','caption':'x y z','narration':'زورونا'}]
+C.fix_brand(names,'شاي جمر وفطيرة الطيب');C.fix_brand(names,'بيت الحبوب');C.tidy_copy(names,{'required':['زورونا']})
+assert names[0]['title']=='شاي جمر مميز' and names[0]['caption']=='أهلاً بكم في بيت الحبوب.' and names[0]['narration']=='تعالوا اليوم إلى فرعنا.' and names[1]['title']=='العبور للاتصالات · ضمان سنة',names
+assert not C.fix_brand([{'title':'شاي حليب','caption':'وشاي جمر','narration':'شاي'}],'شاي جمر وفطيرة الطيب')
+print('a name one letter off is the real name; no sentence stops on «في»; no colon in a headline')
