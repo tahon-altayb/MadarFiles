@@ -275,7 +275,8 @@ def fix_brand(scenes,name):
  # One letter off inside the name («شاي جمبر» for «شاي جمر» copied from a misread menu, «بيت الحوب» for «بيت الحبوب»):
  # a pair of words where one is the name's word and the next is one letter away from the name's next word.
  def near(a,b):
-  if a==b or abs(len(a)-len(b))>1 or min(len(a),len(b))<3:return False
+  # «فطيرة» and the name's «وفطيرة» are the same word: a joining «و» is never a spelling mistake.
+  if a==b or re.sub(r'^و(?=..)','',a)==re.sub(r'^و(?=..)','',b) or abs(len(a)-len(b))>1 or min(len(a),len(b))<3:return False
   if len(a)==len(b):return sum(x!=y for x,y in zip(a,b))==1
   s,l=(a,b) if len(a)<len(b) else (b,a)
   return any(l[:k]+l[k+1:]==s for k in range(len(l)))
