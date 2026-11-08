@@ -613,6 +613,34 @@ for i,z in enumerate(story['scenes']):
  if not unused or not reference_facts:break
  if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1 and not (_concepts(' '.join(str(z.get(k,'')) for k in ['title','caption','narration']))&PRODUCT_CONCEPTS):
   fit=unused.pop(0);z['reference']=fit;seen.add(fit)
+# Each of the client's photos goes to the scene it shows best, judged by the headline and caption (what the viewer
+# reads), not by a passing word in the narration: in the 1.9.57 café run the mint-tea photo sat under «فطائر الطيب»
+# because its narration said «لتكمل شايك», and the kettles on coals under the mint tea instead of «شاي على الفحم».
+if PICTURE_MODE!='inspired' and reference_facts and photos:
+ middle=[i for i in range(1,len(story['scenes'])-1) if i not in logo_targets]
+ def shown(i):return ' '.join(str(story['scenes'][i].get(k,'')) for k in ['title','caption'])
+ pairs=[]
+ for i in middle:
+  read=shown(i);said=str(story['scenes'][i].get('narration',''))
+  for n in photos:
+   fact=next((f for f in reference_facts if f.get('index')==n),None)
+   if not fact:continue
+   description=str(fact.get('description',''))
+   common=_concepts(read)&_concepts(description);words={w for w in _stems(read)&_stems(description) if not w.startswith('#')}
+   if not (common or words):continue
+   pairs.append((3*len(common)+len(words)+0.5*len(_concepts(said)&_concepts(description)),-i,i,n))
+ taken_scene,taken_photo={},set()
+ for score,_,i,n in sorted(pairs,reverse=True):
+  if i in taken_scene or n in taken_photo:continue
+  taken_scene[i]=n;taken_photo.add(n)
+ for i in middle:
+  if i in taken_scene:story['scenes'][i]['reference']=taken_scene[i]
+  elif story['scenes'][i].get('reference',-1) in taken_photo or (story['scenes'][i].get('reference',-1)!=-1 and _concepts(shown(i))&PRODUCT_CONCEPTS):story['scenes'][i]['reference']=-1
+ # A photo still free illustrates a scene that names no product (hours, the team, the place).
+ free=[n for n in photos if n not in {z.get('reference') for z in story['scenes']}]
+ for i in middle:
+  if not free:break
+  if story['scenes'][i].get('reference',-1)==-1 and not (_concepts(shown(i)+' '+str(story['scenes'][i].get('narration','')))&PRODUCT_CONCEPTS):story['scenes'][i]['reference']=free.pop(0)
 # The closing card signs off with the brand when it has no picture (also after repeats were removed).
 # A product photo left on the closing (the menu under «زورونا في فرعنا» in the 1.9.57 run) gives way to the logo too.
 if logo_index is not None and logo_name and len(story['scenes'])>1:story['scenes'][-1]['reference']=logo_index
