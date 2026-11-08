@@ -71,13 +71,14 @@ def setup_code(error):
 
 def install(kind):
  # A dropped or throttled download is retried with a fresh file before the job gives up.
- for attempt in range(3):
+ # GitHub's release server answered 504 for over a minute on 2026-11-08: five tries spread over about two minutes.
+ for attempt in range(5):
   try:return install_once(kind)
   except (OSError,http.client.HTTPException,tarfile.TarError,ValueError) as error:
    if isinstance(error,ValueError) and str(error) not in ('RUNTIME_HASH','RUNTIME_DOWNLOAD_TIMEOUT','RUNTIME_SIZE'):raise
    runtime_info(setup_error=setup_code(error),setup_attempts=attempt+1)
-   if attempt==2:raise
-   shutil.rmtree(ROOT.parent/('madar-llama-'+TAG+'-'+kind),ignore_errors=True);time.sleep(3*(attempt+1))
+   if attempt==4:raise
+   shutil.rmtree(ROOT.parent/('madar-llama-'+TAG+'-'+kind),ignore_errors=True);time.sleep(min(60,5*2**attempt))
 
 def install_once(kind):
  name,digest,maximum=ASSETS[kind];target=ROOT.parent/('madar-llama-'+TAG+'-'+kind);marker=target/'.verified'
