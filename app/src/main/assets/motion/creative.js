@@ -56,7 +56,7 @@ function illustrationFor(shot,used=[]){
  // («قهوة عربية دافئة … تملأ المكان» is coffee, not seating).
  // The hidden picture's description (a menu with prices) comes after the words: «فطائر دافئة» is pastries, not an offer.
  const title=normalize(shot.title),head=normalize([shot.title,shot.caption].filter(Boolean).join(' ')),hint=normalize(shot.artHint),full=normalize([shot.title,shot.caption,shot.narration,shot.artHint].filter(Boolean).join(' '));
- const rules=[['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|عايل|اصدقاء|اصدقا|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف|مدرب|فريق|طاقم|كادر/],['seating',/جلس|جلسات|اجواء|مكان|مساحه|مساحات|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/],['watch',/ساعه ذكيه|ساعات ذكيه|الساعات الذكيه|ساعتك الذكيه|سمارت ?واتش|smart ?watch/],['headphones',/سماع|ايربود|بلوتوث|airpods/],['smartphone',/جوال|جولات|هاتف|ايفون|سامسونج|شاحن|شواحن|كفر|كفرات|حمايه الشاشه|اكسسوار|اجهزه ذكيه|تقنيه/],['grains',/(?:^|\s)(?:وال|بال|ال|و)?(?:رز|ارز)(?:\s|$)|عدس|حمص|فاصوليا|برغل|حبوب|بقوليات|قمح|شوفان|بهارات|تمور/],['dumbbell',/نادي|رياضي|رياضه|تمارين|تمرين|لياقه|جيم|اوزان|حديد|اجهزه رياضيه|معدات|كمال اجسام/]];
+ const rules=[['cards',/بلوت|ورق اللعب|كوتشينه|بطوله|بطولات|طاوله لعب/],['screen',/شاشه|شاشات|مباريات|مباراه|الدوري|نقل مباشر|بلايستيشن|سوني/],['outdoor',/خارجي|خارجيه|الهواء الطلق|برا |في البر|حديقه|تراس|سطح/],['social',/سناب|تيك ?توك|انستقرام|انستا|تابعونا|حسابنا|حساباتنا|@/],['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|عايل|اصدقاء|اصدقا|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف|مدرب|فريق|طاقم|كادر/],['seating',/جلس|جلسات|اجواء|مكان|مساحه|مساحات|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/],['watch',/ساعه ذكيه|ساعات ذكيه|الساعات الذكيه|ساعتك الذكيه|سمارت ?واتش|smart ?watch/],['headphones',/سماع|ايربود|بلوتوث|airpods/],['smartphone',/جوال|جولات|هاتف|ايفون|سامسونج|شاحن|شواحن|كفر|كفرات|حمايه الشاشه|اكسسوار|اجهزه ذكيه|تقنيه/],['grains',/(?:^|\s)(?:وال|بال|ال|و)?(?:رز|ارز)(?:\s|$)|عدس|حمص|فاصوليا|برغل|حبوب|بقوليات|قمح|شوفان|بهارات|تمور/],['dumbbell',/نادي|رياضي|رياضه|تمارين|تمرين|لياقه|جيم|اوزان|حديد|اجهزه رياضيه|معدات|كمال اجسام/]];
  const match=t=>rules.filter(([,re])=>re.test(t)).map(([id])=>id);
  if(used==='all')return [...new Set([...match(head),...match(hint),...match(full)])];
  // The headline alone first («فريقنا يخدمك» is people even when its caption mentions chairs), then with its caption.
@@ -178,7 +178,7 @@ function text(ctx,value,x,y,w,h,size,color,weight=700,reveal=1,marker=0,markerCo
   shown-=ws.length;});}
 // Vector illustrations for scenes without a client picture: drawn shapes (never photos or generated
 // images) in the film's palette with a few natural accents, gently animated. Unit square -1..1.
-const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell'];
+const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell','outdoor','screen','cards','social'];
 function illustration(ctx,id,x,y,w,h,pal,t=0){
  const s=Math.min(w,h)/2;ctx.save();ctx.translate(x+w/2,y+h/2);ctx.scale(s,s);ctx.lineCap='round';ctx.lineJoin='round';
  const ink=pal.ink,accent=pal.accent,card=pal.card,muted=pal.muted,amber='#c8692a',green='#5aa364',flame='#f08a3c',glow='#ffd27a';
@@ -208,6 +208,38 @@ function illustration(ctx,id,x,y,w,h,pal,t=0){
   line(accent,.06,()=>{ctx.moveTo(-.33,-.3);ctx.bezierCurveTo(-.7,-.25,-.7,.3,-.36,.35);});
   fill(card,()=>ctx.ellipse(-.1,-.6,.2,.07,0,0,Math.PI*2));fill(accent,()=>ctx.arc(-.1,-.7,.06,0,Math.PI*2));
   fill('#f4ede1',()=>{ctx.moveTo(.42,.2);ctx.lineTo(.82,.2);ctx.lineTo(.74,.55);ctx.lineTo(.5,.55);ctx.closePath();});fill(amber,()=>ctx.ellipse(.62,.23,.18,.04,0,0,Math.PI*2));steam(.62,.05,2);
+ }else if(id==='outdoor'){
+  // Outdoor seating: a palm, a round table with two chairs and a string of lights under a moon.
+  fill(glow,()=>ctx.arc(.62,-.72,.12,0,Math.PI*2));
+  line(muted,.02,()=>{ctx.moveTo(-.95,-.62);ctx.quadraticCurveTo(-.2,-.38,.5,-.62);});
+  for(let i=0;i<6;i++){const lx=-.85+i*.25,ly=-.6+Math.sin(i/5*Math.PI)*.17;ctx.globalAlpha=.55+.45*Math.abs(Math.sin(t*2+i));fill(glow,()=>ctx.arc(lx,ly,.035,0,Math.PI*2));}ctx.globalAlpha=1;
+  line('#8a5a33',.07,()=>{ctx.moveTo(-.72,.68);ctx.quadraticCurveTo(-.78,.1,-.66,-.32);});
+  for(const a of [-2.6,-2.1,-1.6,-1.1,-.6]){ctx.save();ctx.translate(-.66,-.32);ctx.rotate(a+Math.sin(t*1.2)*.04);fill(green,()=>ctx.ellipse(.22,0,.26,.06,0,0,Math.PI*2));ctx.restore();}
+  fill(card,()=>ctx.ellipse(.15,.12,.34,.09,0,0,Math.PI*2));line(muted,.05,()=>{ctx.moveTo(.15,.15);ctx.lineTo(.15,.62);ctx.moveTo(-.02,.64);ctx.lineTo(.32,.64);});
+  for(const side of [-1,1]){const cx=.15+side*.5;fill(accent,()=>ctx.roundRect(cx-.13,.02,.26,.36,.06));line(muted,.04,()=>{ctx.moveTo(cx-.1,.38);ctx.lineTo(cx-.1,.62);ctx.moveTo(cx+.1,.38);ctx.lineTo(cx+.1,.62);});}
+  fill('#f4ede1',()=>ctx.roundRect(.08,-.02,.14,.12,.03));steam(.15,-.12,2);
+  line(muted,.03,()=>{ctx.moveTo(-.95,.68);ctx.lineTo(.95,.68);});
+ }else if(id==='screen'){
+  // A big screen showing a match: pitch lines, a ball and a live dot.
+  fill(ink,()=>ctx.roundRect(-.9,-.62,1.8,1.06,.06));fill(green,()=>ctx.roundRect(-.82,-.55,1.64,.92,.03));
+  line('#ffffff',.02,()=>{ctx.rect(-.74,-.47,1.48,.76);ctx.moveTo(0,-.47);ctx.lineTo(0,.29);});line('#ffffff',.02,()=>ctx.arc(0,-.09,.14,0,Math.PI*2));
+  const bx=Math.sin(t*1.4)*.42,by=-.09+Math.cos(t*2.1)*.18;fill('#ffffff',()=>ctx.arc(bx,by,.06,0,Math.PI*2));
+  ctx.globalAlpha=.5+.5*Math.abs(Math.sin(t*3));fill('#e53935',()=>ctx.arc(.66,-.41,.04,0,Math.PI*2));ctx.globalAlpha=1;label('LIVE',.5,-.41,.07,'#ffffff');
+  line(muted,.05,()=>{ctx.moveTo(0,.44);ctx.lineTo(0,.62);ctx.moveTo(-.3,.64);ctx.lineTo(.3,.64);});
+ }else if(id==='cards'){
+  // Baloot: a fan of four playing cards over a table, a suit on each.
+  fill(card,()=>ctx.ellipse(0,.5,.92,.2,0,0,Math.PI*2));line(accent,.03,()=>ctx.ellipse(0,.5,.92,.2,0,0,Math.PI*2));
+  const suits=[['♠',ink],['♥','#d64545'],['♦','#d64545'],['♣',ink]];
+  suits.forEach(([suit,c],i)=>{ctx.save();ctx.translate(0,.32);ctx.rotate((i-1.5)*.26+Math.sin(t*1.3+i)*.015);fill('#ffffff',()=>ctx.roundRect(-.2,-.82,.4,.6,.05));line(muted,.02,()=>ctx.roundRect(-.2,-.82,.4,.6,.05));label(suit,0,-.52,.26,c);label(['A','K','Q','J'][i],-.12,-.72,.09,c);ctx.restore();});
+ }else if(id==='social'){
+  // A phone with generic social bubbles (no brand logos): a heart, a play button and a camera.
+  fill(ink,()=>ctx.roundRect(-.34,-.72,.68,1.38,.1));fill(card,()=>ctx.roundRect(-.29,-.62,.58,1.16,.06));
+  for(const [bx,by,k] of [[-.62,-.35,0],[.64,-.1,1],[-.58,.32,2]]){const bob=Math.sin(t*1.6+k)*.04;fill(accent,()=>ctx.arc(bx,by+bob,.17,0,Math.PI*2));ctx.save();ctx.translate(bx,by+bob);
+   if(k===0)fill('#ffffff',()=>{ctx.moveTo(0,.07);ctx.bezierCurveTo(-.13,-.02,-.07,-.12,0,-.05);ctx.bezierCurveTo(.07,-.12,.13,-.02,0,.07);});
+   else if(k===1)fill('#ffffff',()=>{ctx.moveTo(-.05,-.07);ctx.lineTo(.08,0);ctx.lineTo(-.05,.07);ctx.closePath();});
+   else{line('#ffffff',.025,()=>ctx.roundRect(-.08,-.06,.16,.12,.03));line('#ffffff',.025,()=>ctx.arc(0,0,.035,0,Math.PI*2));}
+   ctx.restore();}
+  for(let i=0;i<3;i++)fill(muted,()=>ctx.roundRect(-.22,-.45+i*.3,.44,.2,.04));
  }else if(id==='seating'){
   for(const side of [-1,1]){ctx.save();ctx.scale(side,1);fill(accent,()=>ctx.roundRect(.38,-.2,.5,.7,.12));fill(card,()=>ctx.roundRect(.32,.2,.62,.28,.08));line(muted,.05,()=>{ctx.moveTo(.42,.48);ctx.lineTo(.42,.68);ctx.moveTo(.86,.48);ctx.lineTo(.86,.68);});ctx.restore();}
   fill(card,()=>ctx.ellipse(0,.12,.28,.08,0,0,Math.PI*2));line(muted,.05,()=>{ctx.moveTo(0,.14);ctx.lineTo(0,.66);ctx.moveTo(-.16,.68);ctx.lineTo(.16,.68);});
@@ -326,12 +358,13 @@ function draw(ctx,p,s,time,images){
  // Energetic style (the default; «soft» keeps the calm one): each cut is a whip with motion blur and a zoom punch,
  // the headline slams in with a small camera shake, and a short flash marks the cut. The sound track
  // (worker.py) puts a whoosh on every cut and a hit where the headline lands, on the same clock.
- const energy=p.motionEnabled!==false&&p.soundEffects!=='soft'&&order>=0,head=c.elements.find(e=>e.kind==='text'&&(e.textRole==='heading'||e.text===s.title)),land=head?head.delay*Math.min(span,2)+.22:.3;
- if(energy){const q=order>0?clamp(local/.36):1,enter=1-(1-q)**4,lq=order<p.scenes.length-1?clamp((local-(span-.22))/.22):0,leave=lq**3,dx=(((1-enter)**2)*.2-leave*.24)*W*side,zoom=1+.13*(1-enter)+.09*leave,blur=(18*(1-q)**2+22*leave)*W/1080,hit=local-land,shake=hit>0&&hit<.32?W*.007*(1-hit/.32)*Math.sin(hit*95):0;
+ // Three styles the owner picks: «حماسي» (energetic), «متوازن» (balanced, the default) and «هادئ» (soft, the calm one).
+ const level=p.motionEnabled===false||order<0?0:p.soundEffects==='energetic'?1:p.soundEffects==='soft'?0:.45,energy=level>0,head=c.elements.find(e=>e.kind==='text'&&(e.textRole==='heading'||e.text===s.title)),land=head?head.delay*Math.min(span,2)+.22:.3;
+ if(energy){const q=order>0?clamp(local/(.36+.12*(1-level))):1,enter=1-(1-q)**4,lq=order<p.scenes.length-1?clamp((local-(span-.22))/.22):0,leave=lq**3,dx=(((1-enter)**2)*.2-leave*.24)*W*side*level,zoom=1+(.13*(1-enter)+.09*leave)*level,blur=(18*(1-q)**2+22*leave)*W/1080*level,hit=local-land,shake=level>.9&&hit>0&&hit<.32?W*.007*(1-hit/.32)*Math.sin(hit*95):0;
   if(blur>.4)ctx.filter=`blur(${blur.toFixed(1)}px)`;ctx.translate(W/2+dx+shake,H/2+shake*.6);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);}
  else if(p.motionEnabled!==false&&order>=0){const enter=order>0?1-(1-clamp(local/.45))**3:1,leave=order<p.scenes.length-1?clamp((local-(span-.32))/.32)**3:0,dx=((1-enter)-leave)*W*.09*side,zoom=1+.035*(1-enter)+.02*leave;ctx.translate(W/2+dx,H/2);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);}
  for(const e of c.elements){const t=local-e.delay*Math.min(span,2);if(t<0)continue;const q=clamp(t/(energy?.42:.65)),ease=1-(1-q)**3,back=energy?1+2.70158*(q-1)**3+1.70158*(q-1)**2:ease;let x=e.x*W,y=e.y*H,w=e.w*W,h=e.h*H;ctx.save();ctx.globalAlpha=p.motionEnabled===false?1:Math.min(1,ease*(energy?1.6:1))*Math.min(1,(s.end-time)/.2);if(e.motion==='rise')y+=H*(energy?.06:.035)*(1-back);if(e.motion==='left')x+=W*(energy?.14:.08)*(1-back);if(e.motion==='right')x-=W*(energy?.14:.08)*(1-back);
-  if(energy&&e===head){const slam=1.32-.32*back;ctx.translate(x+w/2,y+h/2);ctx.scale(slam,slam);ctx.translate(-x-w/2,-y-h/2);}
+  if(energy&&e===head){const slam=1+.32*level-.32*level*back;ctx.translate(x+w/2,y+h/2);ctx.scale(slam,slam);ctx.translate(-x-w/2,-y-h/2);}
   else if(energy&&e.kind!=='line'&&e.motion!=='scale'&&['image','device','icon','metric','shape'].includes(e.kind)){const pop=.86+.14*back;ctx.translate(x+w/2,y+h/2);ctx.scale(pop,pop);ctx.translate(-x-w/2,-y-h/2);}if(p.motionEnabled!==false&&['image','device'].includes(e.kind)){ctx.translate(x+w/2,y+h/2);const push=1+progress*.035;ctx.scale(push,push);ctx.translate(-x-w/2,-y-h/2);}
  if(e.motion==='scale'){const k=.82+.18*(energy?back:ease);ctx.translate(x+w/2,y+h/2);ctx.scale(k,k);ctx.translate(-x-w/2,-y-h/2);}const color=palette[e.color];if(p.motionEnabled!==false&&['image','device','icon'].includes(e.kind))y+=Math.sin(local*1.1+e.x*4)*H*.004;
  if(e.kind==='text'||e.kind==='metric'){const counted=e.kind==='metric'&&p.motionEnabled!==false?String(e.text).replace(/\d+(?:[.,]\d+)?/,v=>{const n=parseFloat(v.replace(',','.')),k=1-(1-clamp(t/.9))**3;return Number.isInteger(n)?String(Math.round(n*k)):(n*k).toFixed(1);}):e.text;const words=String(counted).split(/\s+/).length,reveal=p.motionEnabled===false||e.kind!=='text'||e.size<90?1:clamp(t/(.18+.11*words));text(ctx,counted,x,y,w,h,e.size*W/1080,color,e.kind==='metric'?900:700,reveal,e.kind==='text'&&(e.textRole==='heading'||e.text===s.title)&&e.size>=90&&p.motionEnabled!==false?1-(1-clamp((t-(.18+.11*words)-.15)/.45))**3:0,accent,p.fonts?(e.kind==='metric'||(e.textRole==='heading'||e.text===s.title)?'MadarHeading, Cairo':'MadarBody, Cairo'):'Cairo');}
@@ -344,7 +377,7 @@ function draw(ctx,p,s,time,images){
  ctx.restore();
  ctx.filter='none';
  // The cut's flash, brightest on the first frames of the new scene.
- if(energy&&order>0&&local<.16){ctx.save();ctx.globalAlpha=.25*(1-local/.16);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);ctx.restore();}
+ if(level>.9&&order>0&&local<.16){ctx.save();ctx.globalAlpha=.25*(1-local/.16);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);ctx.restore();}
  ctx.fillStyle=accent;ctx.fillRect(W*.06,H*.955,W*.88*progress,Math.max(2,H*.002));
  ctx.restore();
 }

@@ -360,7 +360,10 @@ def groq_story(count):
     note='HTTPError:'+str(failed.code)
     # The free tier allows about 8000 tokens a minute: wait as long as Groq asks (at most 30 s).
     wait=failed.headers.get('retry-after') if failed.code==429 else None
-    time.sleep(min(30,float(wait))+1 if wait and re.fullmatch(r'[0-9.]+',wait) else 3)
+    seconds=float(wait) if wait and re.fullmatch(r'[0-9.]+',wait) else 3
+    # The day's free tokens for the big model are gone: the smaller model (its own limits) writes instead.
+    if failed.code==429 and seconds>30 and payload['model']!='openai/gpt-oss-20b':payload['model']='openai/gpt-oss-20b';continue
+    time.sleep(min(30,seconds)+1)
    except Exception as failed:note=type(failed).__name__;time.sleep(3)
   with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':0,'usable':False,'error':note,'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
   return None
@@ -559,6 +562,11 @@ if not chunks and not (isinstance(asked_scenes,int) and not isinstance(asked_sce
  scene_count=len(story['scenes'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 local_rules.tidy_copy(story['scenes'],closing)
+# The scenes the owner chose in the questions are all in the film, in his words (never the logo scene or the closing).
+REQUIRED=local_rules.required_scenes(brief.get('text',''))
+placed=local_rules.place_required(story['scenes'],REQUIRED,keep={0})
+if placed:
+ with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'required scenes','placed':placed,'wanted':len(REQUIRED)},ensure_ascii=False)+'\n')
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
 for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
@@ -664,6 +672,9 @@ if local_contract and not chunks:
  pacing['opening_logo']=bool(contract.get('opening_logo') or (local_contract.get('logoFirst') and logo_name))
  pacing['physical_visit']=bool(contract.get('physical_visit') or local_contract.get('visitBranch') or local_contract.get('required') or local_contract.get('address'))
 for shot,seconds in zip(story['scenes'],scene_durations(total_seconds,scene_count,pacing)):shot['seconds']=seconds
+# An @handle reads left to right inside the Arabic line.
+for z in story['scenes']:
+ for field in ['title','caption']:z[field]=re.sub(r'(?<!\u2066)(@[A-Za-z0-9_.]{2,30})',lambda m:'\u2066'+m.group(1)+'\u2069',str(z.get(field,'')))
 Path('story.json').write_text(json.dumps(story,ensure_ascii=False))
 # The full shot is synthesized from freely positioned primitives, not the product-template renderer.
 SCHEMA='''Output {"backdrop":"plain|orbit|grid|radial|split","elements":[...]}. Every element has kind, x,y,w,h (normalized 0..1), color (ink|accent|card|muted|background), motion (rise|left|right|scale|draw|fade), delay (0..0.7 fraction of initial 5 sec). Bounds x+w<=1,y+h<=1. Keep a .06 outer safe margin, use y=.08.. .91. Between 4 and 8 elements. Kind text/metric: text <=75 chars, size 20..110 in a 1080px wide canvas. Text blocks must NOT overlap. Allocate h >= size/1080*1.6*expectedLines / aspectHeightRatio. Short 1-5 word headlines, not narration paragraphs. kind image/device: asset must be an EXACT provided filename. Show screenshots inside device frames; do not crop. kind shape is a rounded color panel. kind icon: icon=play|file|audio|check|spark|arrow|grain|book|shield|image|phone|chat. kind line is a horizontal accent line. Draw order follows array. Background panels precede text and icons. Always visible text contrast ink over background/card or background over ink. At least two text elements (a striking heading and a brief supporting statement), and one purposeful visual. Use large whitespace, aligned groups, staggered entries. No text outside safe area. Do not put large empty boxes, tiny unreadable text, overlapping screenshots, extraneous counters, or unrelated decorative shapes. Do not repeat the same geometry for every scene.'''

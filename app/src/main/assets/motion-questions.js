@@ -16,10 +16,33 @@
  const TONE=[o('energetic','حماسية وشبابية'),o('warm','دافية وقريبة من القلب'),o('premium','فخمة وراقية'),o('fun','خفيفة دم ومرحة'),o('simple','بسيطة ومباشرة'),o('local','بلهجة سعودية عفوية')];
  const PACE=[o('fast','سريع ونقلات قوية'),o('medium','متوسط ومتوازن'),o('calm','هادي وسينمائي')];
  const COLORS=[o('brand','ألوان شعاري'),o('warmc','دافية (بني، برتقالي، ذهبي)'),o('dark','فخمة (أسود وذهبي)'),o('bright','مشرقة ومبهجة'),o('cool','هادية (أخضر، أزرق)')];
- const NEWS=[o('opening','افتتاح جديد',/افتتاح|افتتحنا|جديد/),o('branch','فرع جديد',/فرع جديد/),o('product','منتج أو صنف جديد',null),o('season','عرض موسمي (رمضان، العيد، الصيف، الشتاء)',/رمضان|العيد|الصيف|الشتا/),o('none','ما فيه جديد',null)];
+ const NEWS=[o('opening','افتتاح جديد',/افتتاح|افتتحنا/),o('branch','فرع جديد',/فرع جديد/),o('product','منتج أو صنف جديد',null),o('event','فعالية أو بطولة (مثل بطولة بلوت)',/بطوله|فعاليه|بلوت/),o('season','عرض موسمي (رمضان، العيد، الصيف، الشتاء)',/رمضان|العيد|الصيف|الشتا/),o('none','ما فيه جديد',null)];
  const OFFER=[o('none','ما فيه عرض حاليًا'),o('discount','خصم بنسبة'),o('bundle','عرض كومبو أو باقة'),o('free','هدية أو شي مجاني مع الطلب'),o('first','خصم أول طلب')];
- const EXTRAS=[o('address','العنوان',/عنوان|شارع|حي /),o('phone','رقم التواصل',/رقم|جوال|واتس/),o('hours','أوقات العمل',/24|ساعه|نفتح/),o('apps','شعارات تطبيقات التوصيل',/هنقر|كيتا|جاهز|مرسول/),o('account','حسابنا في السوشال',/سناب|تيك|انستا|حساب/),o('map','نص «ابحث عنا في خرائط قوقل»',/خرائط|قوقل ماب|لوكيشن/)];
+ const EXTRAS=[o('address','العنوان',/عنوان|شارع|حي /),o('phone','رقم التواصل',/رقم|جوال|واتس/),o('hours','أوقات العمل',/24|ساعه|نفتح/),o('apps','أسماء تطبيقات التوصيل',/هنقر|كيتا|جاهز|مرسول/),o('account','حساباتنا في السوشال',/سناب|تيك|انستا|حساب/),o('map','نص «ابحث عنا في خرائط قوقل»',/خرائط|قوقل ماب|لوكيشن/)];
 
+ // Answers that become their own scene, in finished advert words (never the raw chip label: «مفتوحين 24 ساعة»
+ // reads «شغالين على مدار الساعة»). [headline, caption, drawing, words the film must show].
+ const SCENES={
+  h24:['شغالين على مدار الساعة','ليل نهار، طلبك جاهز متى ما جيت','clock24',['الساعه']],
+  late:['سهرتك عندنا لين آخر الليل','نفتح لك لين آخر الليل','clock24',['الليل']],
+  early:['نفتح لك من الصبح بدري','بداية يومك تحلى عندنا','clock24',['الصبح']],
+  weekend:['معك في الويكند والإجازات','أبوابنا مفتوحة في أيام راحتك','clock24',['الويكند']],
+  outdoor:['جلسات خارجية تفتح النفس','قعدة في الهواء الطلق مع أحلى الأجواء','outdoor',['خارجي']],
+  indoor:['جلسات داخلية مكيفة','قعدة مريحة وهادية بعيد عن الحر','seating',['داخلي']],
+  screens:['المباريات على الشاشة الكبيرة','تابع مبارياتك مع الربع على شاشات كبيرة','screen',['شاش']],
+  cards:['طاولات بلوت جاهزة','جيب ربعك وخل السهرة تحلى','cards',['بلوت']],
+  console:['تحدّ ربعك على البلايستيشن','أجهزة جاهزة وشاشات كبيرة للعب','screen',['بلايستيشن']],
+  lights:['أجواء وإضاءة تفتح النفس','زينة وإضاءة تخلي قعدتك أحلى','outdoor',['اضاء']],
+  parking:['مواقف قريبة وسهلة','الوصول لنا سهل وبدون لف','location',['مواقف']],
+  drive:['طلبك يوصلك وأنت بسيارتك','بدون ما تنزل، نجيب طلبك للسيارة','delivery',['سيار']],
+  quiet:['مكان هادي لقعدتك','ركن مريح تريّح فيه بالك','seating',['هادي']],
+  family:['قسم خاص للعوائل','خصوصية وراحة لك ولأهلك','people',['عوائل']],
+  kids:['ركن خاص للأطفال','يلعبون ويستانسون وأنت مرتاح','people',['اطفال']],
+  opening:['افتتحنا!','تعال احتفل معنا بالافتتاح','stars',['افتتح']],
+  branch:['فرعنا الجديد صار قريب منك','تعال زورنا في الفرع الجديد','location',['فرع']]
+ };
+ const SOCIAL=[o('snap','سناب شات',/سناب/),o('tiktok','تيك توك',/تيك/),o('insta','انستقرام',/انستا|انستقرام/),o('x','إكس (تويتر)',/تويتر|اكس/),o('whatsapp','واتساب',/واتس/)];
+ const NAME_LABEL={app:'وش اسم التطبيق؟',education:'وش اسم الجهة أو المعهد؟',realestate:'وش اسم المكتب أو المشروع؟',clinic:'وش اسم العيادة؟',gym:'وش اسم النادي؟',events:'وش اسم الفعالية أو الجهة؟',retail:'وش اسم المتجر؟'};
  // Each kind: label, how it is recognised, and its own suggestions per section.
  const KINDS={
   cafe:{label:'كافيه أو مقهى (شاي، قهوة، فطائر)',detect:/شاي|شاهي|قهوه|كافيه|كوفي|مقهي|كرك|فطير|فطاير|معجنات|سناك|مشروبات/,
@@ -138,6 +161,7 @@
  // The full card: the kind first, then the story sections with several questions each.
  function build(kind,text){
   const k=KINDS[kind]||KINDS.general,f=[kindField(kind)];const q=(name,label,section,list,multi,placeholder)=>f.push(chips(name,label,section,list,multi,placeholder,text));
+  q('name',NAME_LABEL[kind]||'وش اسم المحل؟','نشاطك',[],false,'اكتب الاسم بالضبط مثل ما تبيه يظهر');
   const opening='الافتتاح: أول ما يشوفه الناس';
   q('hook','وش أقوى شي تبيه يعلق في بال الناس من أول ثانية؟',opening,k.hook,false,'أخرى: اكتب فكرتك للبداية');
   q('feeling','وش الإحساس اللي تبي الناس تطلع فيه؟',opening,[o('crave','نفسي أروح الحين'),o('trust','أثق فيهم'),o('wow','واو! ما توقعت'),o('belong','هذا مكاننا'),o('smart','قرار ذكي وموفر')],false);
@@ -155,10 +179,11 @@
   q('proof','وش يثبت للناس إنكم الأفضل؟',trust,[o('years','خبرة سنين',/سنين|سنه|منذ/),o('customers','عدد كبير من العملاء'),o('ratings','تقييمات عالية في قوقل والتطبيقات',/تقييم/),o('branches','أكثر من فرع',/فروع/),o('famous','معروفين في المنطقة')],true,'أخرى: مثلًا من 2015، أو 4.8 في قوقل');
   const offer='العروض والجديد';
   q('offer','عندكم عرض حالي؟',offer,OFFER,false,'اكتب العرض بالضبط: مثلًا الشاي بريالين');
-  q('news','عندكم شي جديد؟',offer,NEWS,false,'أخرى: اكتب الجديد');
+  q('news','عندكم شي جديد؟',offer,NEWS,false,'اكتب الجديد بالضبط: مثلًا بيتزا، أو بطولة بلوت يوم الخميس');
   const closing='الختام';
   q('cta','وش تبي الناس تسوي بعد الإعلان؟',closing,k.cta,false,'أخرى: اكتب جملة الختام اللي تبيها');
   q('extras','وش يظهر في المشهد الأخير؟',closing,EXTRAS,true);
+  q('social','حساباتكم في التواصل الاجتماعي؟ (اختياري)',closing,SOCIAL,true,'اكتب المعرّف: مثلًا ‎@shahijamr');
   const style='الشكل والأسلوب';
   q('audience','مين تبي يوصله الإعلان؟',style,k.audience,true,'أخرى: مثلًا سواق المشاوير');
   q('tone','وش روح الإعلان؟',style,TONE,false,'أخرى: اكتب الأسلوب اللي تبيه');
@@ -173,20 +198,48 @@
  // The answers as a story plan for the director, grouped by section; empty answers add nothing.
  // «اكتب X في آخر مشهد» and «لا تذكر X» lines are read by the brief contract as required and forbidden copy.
  function plan(fields,text=''){
-  const get=n=>(fields||[]).find(f=>f.name===n),v=n=>labels(get(n)),lines=[];
-  const kind=get('business');const kindLabel=v('business')[0];
+  const get=n=>(fields||[]).find(f=>f.name===n),v=n=>labels(get(n)),sel=n=>(get(n)?.selected||[]).filter(x=>x!=='none'),typed=n=>String(get(n)?.other||'').trim(),lines=[],scenes=[],tail=[];
+  const kind=(get('business')?.selected||[])[0];const kindLabel=v('business')[0];
   const add=(label,n)=>{const x=v(n);if(x.length)lines.push('• '+label+': '+x.join('، '));};
+  const scene=(title,caption,art,must)=>{if(title&&scenes.length<6)scenes.push('مشهد مطلوب: «'+title+'» | «'+caption+'»'+(art?' | رسمة: '+art:'')+(must&&must.length?' | لازم: '+must.join('، '):''));};
+  const fromBank=id=>{const x=SCENES[id];if(x)scene(x[0],x[1],x[2],x[3]);};
   if(kindLabel)lines.push('نوع النشاط: '+kindLabel);
-  add('الافتتاح (أول مشهد بعد الشعار يكون عن هذا)','hook');add('الإحساس المطلوب','feeling');
-  add('نبيع ونقدم','sells');add('أفخر شي عندنا (يأخذ مشهد خاص)','star');add('مميزاتنا','quality');
-  add('المكان والتجربة','place');add('أحلى وقت للزيارة','moment');add('أوقات العمل','hours');add('تطبيقات التوصيل','apps');add('طرق الدفع','pay');add('إثبات الثقة','proof');
-  const offer=get('offer');const offerText=String(offer?.other||'').trim();if(offerText)lines.push('• العرض الحالي (اكتبه كما هو): '+offerText);else if((offer?.selected||[]).includes('none'))lines.push('• لا يوجد عرض حالي؛ لا تخترع خصمًا');else add('نوع العرض','offer');
-  const news=v('news');if(news.length)lines.push('• الجديد: '+news.join('، '));
-  add('يظهر في المشهد الأخير','extras');add('الجمهور','audience');add('روح الإعلان','tone');add('سرعة الإعلان','pace');add('الألوان','colors');
-  const tail=[];const cta=v('cta')[0];const said=key(text);if(cta&&!said.includes(key(cta)))tail.push('اكتب «'+cta+'» في آخر مشهد');
+  // The name the owner typed is the one the film writes (never a reading of the logo).
+  const name=typed('name').replace(/^[«"']+|[»"']+$/g,'').trim();
+  if(name)lines.push((kind==='app'?'اسم التطبيق':'اسم المحل')+': «'+name+'»');
+  // The opening idea in finished words («مفتوحين 24 ساعة» reads «شغالين على مدار الساعة»).
+  {const hook=sel('hook')[0],own=typed('hook');const said=own||(SCENES[hook]?SCENES[hook][0]:v('hook')[0]);if(said)lines.push('• الافتتاح (أول مشهد بعد الشعار يكون عن هذا): '+said);}add('الإحساس المطلوب','feeling');
+  add('نبيع ونقدم','sells');add('أفخر شي عندنا (يأخذ مشهد خاص)','star');add('مميزاتنا','quality');add('أحلى وقت للزيارة','moment');
+  // What is new comes first: a new item, an event («بطولة بلوت»), an opening.
+  const news=sel('news'),newsText=typed('news');
+  if(newsText&&news.includes('event'))scene(newsText.slice(0,40),/بطول/.test(key(newsText))?'سجّل فريقك وخلك جاهز للتحدي':'لا تفوتها، الكل مدعو','',[newsText.split(/\s+/).slice(0,2).join(' ')]);
+  else if(newsText)scene(newsText.slice(0,40),'جديد عندنا، تعال جرّبه','',[newsText.split(/\s+/)[0]]);
+  for(const id of news)if(SCENES[id])fromBank(id);
+  const offer=get('offer');const offerText=String(offer?.other||'').trim();
+  if(offerText){lines.push('• العرض الحالي (اكتبه كما هو): '+offerText);scene('عرض خاص',offerText.slice(0,90),'offer',[offerText.split(/\s+/).slice(0,2).join(' ')]);}
+  else if((offer?.selected||[]).includes('none'))lines.push('• لا يوجد عرض حالي؛ لا تخترع خصمًا');else add('نوع العرض','offer');
+  // The place, the hours and the delivery apps the owner ticked each get a scene.
+  for(const id of sel('place'))fromBank(id);
+  for(const id of sel('hours').slice(0,1))fromBank(id);
+  const apps=sel('apps').filter(id=>id!=='own').map(id=>(get('apps').options.find(([x])=>x===id)||[])[1]).filter(Boolean).concat(typed('apps')?typed('apps').split(/[،,]+/).map(x=>x.trim()).filter(Boolean):[]);
+  if(apps.length)scene('اطلبنا من جوالك','موجودين في '+apps.slice(0,-1).join('، ')+(apps.length>1?' و':'')+apps[apps.length-1],'delivery',apps);
+  else if(sel('apps').includes('own'))scene('نوصل لك لين بابك','توصيلنا الخاص يجيب طلبك وهو حار','delivery',['نوصل']);
+  add('المكان والتجربة','place');add('أوقات العمل','hours');if(apps.length)lines.push('• تطبيقات التوصيل اللي نتعامل معها: '+apps.join('، '));add('طرق الدفع','pay');add('إثبات الثقة','proof');
+  add('الجمهور','audience');add('روح الإعلان','tone');add('سرعة الإعلان','pace');add('الألوان','colors');
+  // The closing card: the call to action, then what the owner ticked for it.
+  const cta=v('cta')[0];const said=key(text);if(cta&&!said.includes(key(cta)))tail.push('اكتب «'+cta+'» في آخر مشهد');
+  const extras=sel('extras');
+  if(extras.includes('hours')&&sel('hours').includes('h24'))tail.push('اكتب «على مدار الساعة» في آخر مشهد');
+  if(extras.includes('apps')&&apps.length)tail.push('اكتب «'+apps.join(' - ')+'» في آخر مشهد');
+  const handles=(typed('social').match(/@?[A-Za-z0-9_.]{3,30}/g)||[]).map(h=>h.startsWith('@')?h:'@'+h);
+  const platforms=sel('social').map(id=>(SOCIAL.find(([x])=>x===id)||[])[1]).filter(Boolean);
+  if(handles.length)tail.push('اكتب «تابعونا '+handles[0]+'» في آخر مشهد');
+  else if(platforms.length&&(extras.includes('account')||sel('social').length))tail.push('اكتب «تابعونا على '+platforms.slice(0,3).join(' و')+'» في آخر مشهد');
   for(const item of v('never'))tail.push('لا تذكر '+item.replace(/^(?:ما|لا)\s*(?:نبيع|نقدم)\s+/,'').replace(/^لا\s+تذكر\s+/,''));
-  if(!lines.length&&!tail.length)return '';
-  return ['خطة الإعلان من صاحب المحل (موثوقة؛ لا تضف منتجات أو خدمات غيرها):',...lines,'وزّع هذه المعلومات على المشاهد: كل مشهد فكرة واحدة، وابدأ بالافتتاح المختار، ولا تكرر معلومة في مشهدين.',...tail].join('\n');
+  if(!lines.length&&!tail.length&&!scenes.length)return '';
+  return ['خطة الإعلان من صاحب المحل (موثوقة؛ لا تضف منتجات أو خدمات غيرها):',...lines,
+   ...(scenes.length?['مشاهد اختارها صاحب المحل (كل سطر مشهد كامل في الإعلان بنفس الأسماء؛ يجوز تحسين الصياغة):',...scenes]:[]),
+   'وزّع هذه المعلومات على المشاهد: كل مشهد فكرة واحدة، وابدأ بالافتتاح المختار، ولا تكرر معلومة في مشهدين.',...tail].join('\n');
  }
  return {KINDS,ORDER,detect,build,plan,labels,key};
 });

@@ -193,26 +193,28 @@ def energetic_track(p,rate):
     def shimmer():
         n=int(.9*rate);return [sum(math.sin(2*math.pi*f*i/rate)/(k+1) for k,f in enumerate([2637,3951,5274]))*math.exp(-i/rate*4.2)*.5 for i in range(n)]
     scenes=p['scenes'];last=len(scenes)-1
+    # «متوازن» (balanced, the default) keeps the whoosh and a lighter hit; «حماسي» adds pops, a riser and shimmer.
+    full=p.get('soundEffects')=='energetic'
     for order,scene in enumerate(scenes):
         start,span=scene['start'],scene['end']-scene['start']
         elements=(scene.get('composition') or {}).get('elements',[])
-        if order>0:put(start-.26,sweep(.44,350,3400,.62,700),.5)
-        if order==last and last>0:put(start-.95,sweep(.95,250,5200,.97),.32);put(start+.9,shimmer(),.12)
+        if order>0:put(start-.26,sweep(.44,350,3400,.62,700),.5 if full else .32)
+        if full and order==last and last>0:put(start-.95,sweep(.95,250,5200,.97),.32);put(start+.9,shimmer(),.12)
         head=next((e for e in elements if e.get('kind')=='text' and (e.get('textRole')=='heading' or e.get('text')==scene.get('title'))),None)
         land=start+(head['delay']*min(span,2) if head else 0)+.2
-        put(land,hit(.5 if order in (0,last) else .42,140 if order in (0,last) else 125),.9 if order in (0,last) else .7)
-        for e in elements:
+        put(land,hit(.5 if order in (0,last) else .42,140 if order in (0,last) else 125),(.9 if order in (0,last) else .7)*(1 if full else .45))
+        for e in elements if full else []:
             if e is head or e.get('kind') not in ('text','metric','image','device','icon'):continue
             at=start+e.get('delay',0)*min(span,2)
             if at<scene['end']-.2 and abs(at-land)>.12:put(at+.05,pop(700 if e.get('kind') in ('image','device') else 980),.16)
-    peak=max(1e-6,max(abs(v) for v in mix));scale=.70/peak
+    peak=max(1e-6,max(abs(v) for v in mix));scale=(.70 if full else .45)/peak
     return [int(max(-1,min(1,v*scale))*32767) for v in mix]
 
 def sound_effects(p,path):
-    if p.get('soundEffects','none') not in ('soft','energetic'):return
+    if p.get('soundEffects','none') not in ('soft','energetic','balanced'):return
     import array,random
     rate=24000;length=math.ceil(p['duration']*30)/30;data=array.array('h',[0])*int(math.ceil(length*rate));rng=random.Random(7341)
-    if p['soundEffects']=='energetic':
+    if p['soundEffects'] in ('energetic','balanced'):
         data=array.array('h',energetic_track(p,rate))
     else:
      for scene in p['scenes']:
@@ -222,7 +224,7 @@ def sound_effects(p,path):
     if sys.byteorder!='little':data.byteswap()
     with wave.open('motion-effects.wav','wb') as out:out.setparams((1,2,rate,0,'NONE',''));out.writeframes(data.tobytes())
     args=['ffmpeg','-v','error','-y','-i',str(path),'-i','motion-effects.wav']
-    if p['voiceMode']!='none':args+=['-filter_complex','[1:a]volume=%s[f];[0:a][f]amix=inputs=2:normalize=0:duration=first[a]'%('0.45' if p['soundEffects']=='energetic' else '1'),'-map','0:v:0','-map','[a]']
+    if p['voiceMode']!='none':args+=['-filter_complex','[1:a]volume=%s[f];[0:a][f]amix=inputs=2:normalize=0:duration=first[a]'%('0.45' if p['soundEffects'] in ('energetic','balanced') else '1'),'-map','0:v:0','-map','[a]']
     else:args+=['-map','0:v:0','-map','1:a:0']
     args+=['-c:v','copy','-c:a','aac','-b:a','192k','-t',str(length),'-movflags','+faststart','output-effects.mp4'];run(args,120);Path('output-effects.mp4').replace(path)
 
@@ -254,7 +256,7 @@ def render(request,node):
     expected=math.ceil(p['duration']*30)/30
     video=[s for s in info['streams'] if s['codec_type']=='video'];audio=[s for s in info['streams'] if s['codec_type']=='audio']
     width=1920 if p['aspect']=='16:9' else 1080;height=1920 if p['aspect']=='9:16' else 1080
-    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none' or p.get('soundEffects') in ('soft','energetic')):raise ValueError('OUTPUT_FORMAT')
+    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none' or p.get('soundEffects') in ('soft','energetic','balanced')):raise ValueError('OUTPUT_FORMAT')
     return path
 def director_python():
     target=ROOT.parent/'madar-motion-director-gguf-v1';binary=target/'bin/python'

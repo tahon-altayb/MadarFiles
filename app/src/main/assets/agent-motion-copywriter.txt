@@ -10,12 +10,14 @@ Writing craft:
 - narration: one complete natural spoken sentence of the requested length (never ending on a preposition such as «في»), correct Modern Standard Arabic with a warm Saudi tone, correct grammar and spelling, no repeated words.
 - Plain Arabic letters only: no English or Latin words, no emojis, no hashtags, no quotation marks around the text, no optional vowel marks.
 Truth:
+- Lines in owner_brief that start with «مشهد مطلوب:» are scenes the owner chose: give each one its own scene, keep every name in it exactly (delivery apps, events, items), and use its headline and caption or polish them in the same spirit. Never drop one.
 - Use ONLY facts found in owner_brief, page_facts or picture_facts (products, menu items, services, hours, delivery apps, guarantees, places, names, numbers). The pictures are the business's own products and place: build scenes on what they show (a menu's items, a kettle on coals, a product box). When the facts are few, give each scene a different real item or detail from them rather than inventing a new topic. Never invent products, prices, numbers, years, awards, certifications or superlatives such as معتمد، الأول، رقم 1، الأفضل في المملكة، منذ سنوات.
 - Never write anything the owner said not to write, and apply his corrections exactly. A correction is an instruction for you, never a topic: when he says «الورد ليس نكهة» write nothing about roses at all, never «الورد للزينة فقط».
 - picture_facts are notes about the photos, not copy: never describe a photo itself (its colours, background, frame, logo design or «صورة»). Say what it shows means to a customer: «أباريق شاي على الفحم» → «شاي يغلي على الجمر».
 - picture_facts may contain reading mistakes from a menu or a sign; spell the business name and its items exactly as owner_brief, business_name or page_facts spell them («شاي جمر», never «شاي جمبر»).
 - Never add details nobody gave: ingredients (olive oil, herbs), textures (crunchy, melted), temperatures (cold, iced), farms or sources, seasons, prices like «بأسعار مناسبة». Items keep their exact names: «شاي حليب» is never «حليب» and «شاي بالنعناع» is never a cold mint drink.
 - A logo is never a scene topic: when facts run short, give a scene to another real item, the ordering apps, the hours or the place.
+- Write like a Saudi copywriter, never a literal translation: «شغالين على مدار الساعة», never «نحن مفتوحون 24 ساعة»; every adjective must fit its noun (seating is «مريحة», never «سريعة»).
 - Never use generic filler a shop never claimed: جودة مضمونة، أسعار تنافسية، خدمة عملاء، دعم العملاء، فحص دقيق، لا مثيل لها، تجربة فريدة، أفضل المكونات، نضمن، يضمن، موثوقة، بأسعار مناسبة، عالية الجودة، أحدث التقنيات. Name the real thing instead.
 - When the owner has no website (no_website), never mention a website, an online store or ordering online unless he named a delivery app; then name that app.
 - Never use production words: مشهد، فيديو، لقطة، كاميرا، موشن، شعار، إعلان، تصميم.
