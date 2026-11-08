@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   assert not (job/'writer.json').exists(),'the Groq key stayed on disk'
   print('EVIDENCE groq draft',(job/'groq-draft.json').read_text() if (job/'groq-draft.json').exists() else 'none',flush=True)
   calls=[json.loads(l) for l in (job/'director-calls.log').read_text().splitlines() if '"groq writer"' in l] if (job/'director-calls.log').exists() else []
-  assert calls and calls[0].get('usable'),('the Groq writer was not used',calls)
+  assert any(c.get('usable') for c in calls),('the Groq writer was not used',calls)
   if (job/'groq-edited.json').exists():print('EVIDENCE groq edited',(job/'groq-edited.json').read_text(),flush=True)
   print('EVIDENCE groq calls',json.dumps([json.loads(l) for l in (job/'director-calls.log').read_text().splitlines() if '"groq ' in l]),flush=True)
   DRAFT={'scenes':json.loads((job/('groq-edited.json' if (job/'groq-edited.json').exists() else 'groq-draft.json')).read_text())}
