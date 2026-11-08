@@ -460,7 +460,9 @@ for review in range(3):
  # A number the owner's draft got wrong is set to his number deterministically (fix_numbers) instead of a rewrite.
  hard=[z for z in issues if hard_issue(z) and not (DRAFT and (z.get('quality') in ('redundant','repeat') or 'unsupported_number' in z))]
  # An owner's draft goes back to the local editor only for hard problems; style notes are repaired below.
- if not issues or ((review>=1 or DRAFT) and not hard):break
+ # The owner's Groq draft never goes to the small local editor: it rewrote a clean draft into «بيت الحوب» and
+ # «متنوع الأناقة» (the 1.9.57 store run). Its claims, numbers, repeats and forbidden words are repaired below.
+ if not issues or DRAFT or (review>=1 and not hard):break
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
 # Finish without inventing anything: confirmed proofreading corrections, removal of forbidden or
