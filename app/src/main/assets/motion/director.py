@@ -342,9 +342,9 @@ def groq_story(count):
  schema={'type':'object','properties':{'title':{'type':'string'},'scenes':{'type':'array','items':{'type':'object','properties':{'title':{'type':'string'},'caption':{'type':'string'},'narration':{'type':'string'}},'required':['title','caption','narration']}}},'required':['title','scenes']}
  body={'model':str(WRITER.get('model') or 'openai/gpt-oss-120b'),'temperature':0,'max_completion_tokens':4000,'reasoning_effort':'medium','response_format':{'type':'json_object'}}
  def call(system,user,label):
-  started=time.monotonic();note=''
+  started=time.monotonic();note='';asked=0
   payload=dict(body,messages=[{'role':'system','content':system+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(user,ensure_ascii=False)}])
-  for attempt in range(4):
+  for attempt in range(5):
    try:
     req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
     text=json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'] or ''
@@ -353,15 +353,16 @@ def groq_story(count):
     scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[]) if isinstance(z,dict)]
     # Six scenes where eight were asked (the owner chose six scenes in the questions): the chosen scenes it
     # left out go in before the closing, in the owner's polished words.
-    if 4<=len(scenes)<count:
+    if 3<=len(scenes)<count:
      for item in local_rules.required_scenes(brief.get('text','')):
       if len(scenes)>=count:break
       if not any(local_rules.covers(z,item) for z in scenes):scenes.insert(len(scenes)-1,{'title':item['title'],'caption':item['caption'],'narration':(item['title']+'، '+item['caption']).strip('، ')+'.'})
     usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
     with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':len(scenes),'usable':usable,'error':'','seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
     if usable:return {'title':plain(answer.get('title'))[:80],'scenes':scenes}
-    # An answer with the wrong number of scenes (one scene in the 1.9.57 seven-picture run) is asked again once.
-    if attempt>=1:return None
+    # An answer with the wrong number of scenes (one scene in the 1.9.57 seven-picture run) is asked again, twice at most.
+    if asked>=2:return None
+    asked+=1
     payload['messages'].append({'role':'user','content':f'Return all {count} scenes, each with a unique Arabic title, a caption of at most 12 words and a complete narration.'})
    except urllib.error.HTTPError as failed:
     note='HTTPError:'+str(failed.code)

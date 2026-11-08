@@ -252,8 +252,10 @@
   // The closing card: the call to action, then what the owner ticked for it.
   const cta=v('cta')[0];const said=key(text);if(cta&&!said.includes(key(cta)))tail.push('اكتب «'+cta+'» في آخر مشهد');
   const extras=sel('extras');
-  if(extras.includes('hours')&&sel('hours').includes('h24'))tail.push('اكتب «على مدار الساعة» في آخر مشهد');
-  if(extras.includes('apps')&&apps.length)tail.push('اكتب «'+apps.join(' - ')+'» في آخر مشهد');
+  // Hours and apps that already have their own scene are not repeated on the closing card (four phrases did not fit it).
+  const hoursScene=sel('hours').some(id=>SCENES[id]);
+  if(extras.includes('hours')&&sel('hours').includes('h24')&&!hoursScene)tail.push('اكتب «على مدار الساعة» في آخر مشهد');
+  if(extras.includes('apps')&&apps.length&&!scenes.some(x=>x.includes('اطلبنا من جوالك')))tail.push('اكتب «'+apps.join(' - ')+'» في آخر مشهد');
   const handles=(typed('social').match(/@?[A-Za-z0-9_.]{3,30}/g)||[]).map(h=>h.startsWith('@')?h:'@'+h);
   const platforms=sel('social').map(id=>(SOCIAL.find(([x])=>x===id)||[])[1]).filter(Boolean);
   if(handles.length)tail.push('اكتب «تابعونا '+handles[0]+'» في آخر مشهد');
