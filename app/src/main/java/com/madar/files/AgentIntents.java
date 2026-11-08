@@ -9,6 +9,18 @@ final class AgentIntents {
  static String normalize(String s){StringBuilder out=new StringBuilder();for(char c:java.text.Normalizer.normalize(s,java.text.Normalizer.Form.NFKC).toCharArray()){int digit=Character.digit(c,10);out.append(digit>=0?(char)('0'+digit):c);}return out.toString().toLowerCase(Locale.ROOT).replaceAll("[\\u064b-\\u065f\\u0670]","").replaceAll("[أإآ]","ا").replace('ة','ه').replace('ى','ي').trim();}
  static JSONObject plan(String tool,String... pairs)throws Exception{JSONArray fields=new JSONArray();for(int i=0;i<pairs.length;i+=2)fields.put(new JSONObject().put("name",pairs[i]).put("value",pairs[i+1]));return new JSONObject().put("tool",tool).put("fields",fields).put("message","");}
  static boolean has(String s,String pattern){return Pattern.compile(pattern).matcher(s).find();}
+ /** «ولّد/ارسم/اصنع لي صورة أو مقطع …» from scratch: SDXL on T4 for pictures, Wan 2.2 on L4 for clips. */
+ static JSONObject generation(String user,String t,String kind)throws Exception{
+  boolean verb=has(t,"(?:^|\\s)(?:ولد|ولدي|ولد لي|توليد|ارسم|ارسملي|اصنع|انشئ|انشي|تخيل|generate|create|draw)(?:\\s|$)|(?:سوي|سو|ابي|ابغي|ابغى|ابغا|اريد|ودي)\\s+(?:لي\\s+)?(?:صوره|فيديو|مقطع|كليب|انمي|رسمه|لقطه)\\s+(?:انمي|كرتون|واقعي|سينمائي|بالذكاء|من الصفر|من خيالك|ل|عن|فيه|فيها|يكون|تكون)");
+  boolean video=has(t,"فيديو|مقطع|كليب|فديو|video|clip|متحرك|متحركه|animation"),image=has(t,"صوره|رسمه|لوحه|بوستر|خلفيه|image|picture|wallpaper|لقطه")||has(t,"انمي|كرتون")&&!video;
+  if(!verb||!(video||image)||has(t,"موشن|motion|اعلان لمحل|اعلان لمتجر"))return null;
+  // Editing the attached picture stays with the image tools; a selected video means montage, not generation.
+  if(kind.equals("image")&&has(t,"هذي|هذه|الصوره المرفقه|صورتي|عليها|فيها نفس"))return null;
+  if(kind.equals("video")&&!has(t,"من الصفر|جديد|بالذكاء|ولد"))return null;
+  String style=has(t,"انمي|انيمي|anime|مانجا")?"anime":has(t,"كرتون|كرتوني|بيكسار|pixar|ثري دي|3d")?"cartoon":has(t,"سينمائي|سينما|فلم|cinematic")?"cinematic":"realistic";
+  String aspect=has(t,"يوتيوب|عرضي|افقي|16:9|youtube")?"16:9":has(t,"مربع|بوست|1:1")?"1:1":"9:16";
+  return plan("colabGenerate","genMode",video?"video":"image","genIdea",user,"genStyle",style,"genAspect",aspect);
+ }
  static JSONObject resolve(String user,JSONObject source,JSONArray previous)throws Exception{
   String t=normalize(user),kind=source.optString("kind");
   // An answer about the whole file inherits the last concrete request, not model errors.
@@ -16,6 +28,7 @@ final class AgentIntents {
   if(t.matches("(?:السلام عليكم(?: ورحمه الله(?: وبركاته)?)?|سلام|مرحبا|هلا)[.!؟ ]*"))return plan("chat").put("message","وعليكم السلام، أرفق ملفك وقل لي وش تبي أعدّل عليه.");
   if(has(t,"^(كيف|ليش|لماذا|هل|اشرح|وش|ما هو|ماهي|ما هي|ماذا)|(?:^|\\s)(لا|مو|ليس|not|don't)(?:\\s|$)|ما\\s*(ابي|ابغي|ابغى|اريد)|^(لات|لا ت)"))return null;
   if(has(t,"موشن|motion graphics|استوديو الفيديو|استديو الفيديو")&&has(t,"سوي|سو |انش|اصنع|جهز|ابغ|ابي|اريد|create|make"))return plan("motionStudio","motionPrompt",user);
+  JSONObject generated=generation(user,t,kind);if(generated!=null)return generated;
   // Leave multi-step edits to the structured planner, instead of silently dropping steps.
   if(has(t,"وبعد|بعدين|بعدها|\\bthen\\b|ثم|(?:و|\\s)(حسن|حسّن|قص|اضغط|حول|اكتب|حط|اضف|ضف|ترجم)"))return null;
   if(kind.equals("video")){

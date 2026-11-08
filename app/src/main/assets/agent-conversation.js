@@ -61,7 +61,7 @@
 
  const excluded=new Set(['onlineAudioConsent','onlineTextConsent','onlineDocumentConsent','geminiPlanApproved','documentPlanApproved','pdfPassword','pdfPasswordConfirm','seek']);
  function options(plan,form,kind){
-  if(['ask','chat','history','deleteRecent','qr','player','preview','mute','audio','editor','generateImage','motionStudio','imageBatch','mergePdf','imagesPdf','protectPdf'].includes(plan.tool))return [];
+  if(['ask','chat','history','deleteRecent','qr','player','preview','mute','audio','editor','generateImage','colabGenerate','motionStudio','imageBatch','mergePdf','imagesPdf','protectPdf'].includes(plan.tool))return [];
   const explicit=new Set((plan.fields||[]).map(f=>f.name));
   if(kind==='image'&&plan.tool==='convert'&&(plan.fields||[]).some(f=>f.name==='format'&&f.value==='pdf'))return [];
   const labels={pageOrder:'ترتيب الصفحات، مثل 3,1,2',pageRotation:'تدوير الصفحات المختارة',musicPipeline:'تبي إبقاء الحوار والمؤثرات المحيطية، أم الصوت البشري؟',musicMode:'مكان المعالجة',musicOutput:'نوع الملف الناتج',format:'صيغة الملف',quality:'الجودة',height:'دقة الفيديو',bitrate:'معدل البت',translationMode:'طريقة الترجمة',target:'لغة النتيجة',ocrLanguage:'لغة النص',ocrOutput:'شكل النص الناتج',compression:'مستوى الضغط',pdfWidth:'دقة الصفحة',first:'من صفحة',last:'إلى صفحة',width:'العرض بالبكسل',angle:'زاوية التدوير',ratio:'نسبة القص',cutModel:'نموذج العزل',cutBackground:'الخلفية الناتجة',documentMode:'طريقة قراءة المستند'};
