@@ -90,6 +90,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  for name in ['director-calls.log','progress.json','project.json','story.json','director-runtime.log','director-response.txt','story-candidate.json','copy-review.json','reference-facts.json','brief-contract.json']:
   if (job/name).exists():shutil.copyfile(job/name,evidence/name)
  # Artifacts are not always downloadable by reviewers, so the essentials go to the log as well.
+ if (job/'worker-error.log').exists():print('EVIDENCE worker error',(job/'worker-error.log').read_text(errors='replace')[-3000:],flush=True)
  log=(job/'director-runtime.log').read_text(errors='replace') if (job/'director-runtime.log').exists() else ''
  calls=[l for l in log.splitlines() if l.startswith('DIRECTOR_GENERATED')]
  tokens=sum(int(l.split()[1]) for l in calls if l.split()[1].isdigit());seconds=sum(float(l.split()[2]) for l in calls)
@@ -166,7 +167,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')
  # Copy craft, on every film: one headline per idea, complete headlines, words not cut on screen,
  # no production language, no Latin words in an Arabic advert, a caption that adds to its headline.
- if DRAFT:drafted=[rules.key(z['title']) for z in DRAFT['scenes']];check(all(rules.key(s.get('title','')) in drafted for s in scenes[:-1]),'the phone draft was not kept: '+str([s.get('title') for s in scenes]))
+ if DRAFT:drafted=[rules.key(re.sub(r'\s*:\s*',' · ',z['title'])) for z in DRAFT['scenes']];check(all(rules.key(s.get('title','')) in drafted for s in scenes[:-1]),'the phone draft was not kept: '+str([s.get('title') for s in scenes]))
  titles=[rules.key(s.get('title','')) for s in scenes];check(len(set(titles))==len(titles),'a headline is repeated: '+str([s.get('title') for s in scenes]))
  for i,s in enumerate(scenes):
   t=s.get('title','');check(rules.trim_title(t)==t.strip(' .،,!؟:'),f'scene {i+1} headline ends on a dangling word: {t}')

@@ -348,10 +348,14 @@ def groq_story(count):
    try:
     req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
     answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'])
+    if not isinstance(answer,dict):answer={}
     scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[]) if isinstance(z,dict)]
     usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
     with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':len(scenes),'usable':usable,'error':'','seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
-    return {'title':plain(answer.get('title'))[:80],'scenes':scenes} if usable else None
+    if usable:return {'title':plain(answer.get('title'))[:80],'scenes':scenes}
+    # An answer with the wrong number of scenes (one scene in the 1.9.57 seven-picture run) is asked again once.
+    if attempt>=1:return None
+    payload['messages'].append({'role':'user','content':f'Return all {count} scenes, each with a unique Arabic title, a caption of at most 12 words and a complete narration.'})
    except urllib.error.HTTPError as failed:
     note='HTTPError:'+str(failed.code)
     # The free tier allows about 8000 tokens a minute: wait as long as Groq asks (at most 30 s).
