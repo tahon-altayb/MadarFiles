@@ -109,7 +109,9 @@ variants=[obj(dict(kind={'enum':['text','metric']},**base,text=string(65),size={
 if images:variants.append(obj(dict(kind={'enum':['image','device']},**base,asset={'enum':images})))
 COMPOSITION=obj({'backdrop':{'enum':['plain','orbit','grid','radial','split']},'elements':{'type':'array','minItems':4,'maxItems':8,'items':{'anyOf':variants}}})
 def hard_issue(z):
- return z.get('contract')=='forbidden' or any(k in z for k in ['required_name','required_topic','unsupported_phrase','invented_product']) or z.get('kind')=='unsupported_claim'
+ # A scene that repeats another one's fact or headline is hard too: dropping it later leaves a slow film
+ # (two 20-second scenes about pastries in the 1.9.57 four-picture run).
+ return z.get('contract')=='forbidden' or any(k in z for k in ['required_name','required_topic','unsupported_phrase','invented_product']) or z.get('kind')=='unsupported_claim' or z.get('quality') in ('redundant','repeat')
 def actionable_copy_issue(issue,copy):
  # Ordinary Arabic may omit optional vowel marks. Adding them is not a reason
  # to reject a complete movie, unlike a changed word, meaning or factual claim.
@@ -307,25 +309,39 @@ def story_problems(story,count):
  if brief.get('appFacts') and 'مدار' not in json.dumps(story,ensure_ascii=False):problems.append('the app name مدار is missing')
  if not all(re.search('[ء-ي]',z['title']) and re.search('[ء-ي]',z['narration']) and 0<len(z['title'])<=60 and 3<len(z['narration'])<=400 for z in scenes):problems.append('a scene lacks an Arabic headline or narration')
  return problems
-feedback=''
-for attempt in range(4):
- stage('director_plan')
- try:
-  story=generate(SYSTEM,f"Create {scene_count} distinct Arabic scenes about the client's specific topic. Return title (film title) and scenes. Each scene has title (short meaningful audience headline), narration (one natural Arabic sentence, {narration_range} words, so it fits a {round(total_seconds/scene_count,1)}-second scene), caption (a short complete Arabic sentence adding information beyond the headline), visual (layout and movement of existing images, vector shapes and typography), reference (appropriate image index or -1). Build a coherent progression with a useful ending. "+MOTION_CRAFT+" Marketing calls to action belong only in requested advertisements. For stories follow the event sequence. Never name a scene Hook, Benefit, Usage, Explanation or Closing. Never describe invented controls inside a screenshot. If app_facts exists, this is SOFTWARE used by the viewer, not an agency, shop, human team or delivery service. Use only those actual capabilities; no service or timing promises. If exact_scene_narrations exists preserve each verbatim in order. "+feedback+"\nCLIENT DATA:\n"+json.dumps(context,ensure_ascii=False),visual=not bool(reference_facts),max_tokens=max(1800,min(scene_count*450,4200)),seed=17+attempt*101)
- except ValueError as failed:
-  feedback='The previous response was invalid JSON. Return a complete object.'
-  # A story that cannot fit the model context is planned with fewer, longer scenes instead of failing.
-  if str(failed) in ('DIRECTOR_CONTEXT','DIRECTOR_INCOMPLETE') and attempt>=1 and not chunks and scene_count>4:
-   scene_count=max(4,scene_count-2)
-   if local_contract:_,_,_,(narration_low,narration_high)=local_rules.plan(dict(local_contract,sceneCount=scene_count,explicitScenes=True),brief['text'],chunks,None,0)
-   narration_range=f'{narration_low}-{narration_high}';scene_seconds=total_seconds/scene_count;STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
-  continue
- Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False))
- # Repair what can be repaired without inventing words; retry (with another seed) only for the rest.
- problems=story_problems(story,4 if chunks else scene_count)
- if not problems:break
- feedback='The previous plan was rejected: '+'; '.join(problems)+'. أعد الالتزام بموضوع طلب العميل نفسه وبالمزايا المذكورة فقط، واكتب رسالة مختلفة ومفيدة في كل مشهد.'
-else:raise ValueError('STORY_INVALID')
+# The owner's own Groq model (a much larger text model, reached from his phone) may have written the
+# scene copy already; it is used as the story when it has the planned number of complete scenes, and
+# the local model then only picks pictures, designs the frames and repairs what the checks reject.
+def draft_story(value,count):
+ if not isinstance(value,dict) or not isinstance(value.get('scenes'),list) or len(value['scenes'])!=count:return None
+ out={'title':str(value.get('title') or '')[:80],'scenes':[]}
+ for z in value['scenes']:
+  if not isinstance(z,dict):return None
+  out['scenes'].append({'title':str(z.get('title') or '')[:60],'caption':str(z.get('caption') or '')[:95],'narration':str(z.get('narration') or '')[:400],'visual':'','reference':-1})
+ return None if story_problems(out,count) else out
+DRAFT=None if chunks else draft_story(brief.get('draftStory'),scene_count)
+if DRAFT:
+ story=DRAFT;Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False));print('DIRECTOR_DRAFT groq',len(story['scenes']),file=sys.stderr,flush=True)
+else:
+ feedback=''
+ for attempt in range(4):
+  stage('director_plan')
+  try:
+   story=generate(SYSTEM,f"Create {scene_count} distinct Arabic scenes about the client's specific topic. Return title (film title) and scenes. Each scene has title (short meaningful audience headline), narration (one natural Arabic sentence, {narration_range} words, so it fits a {round(total_seconds/scene_count,1)}-second scene), caption (a short complete Arabic sentence adding information beyond the headline), visual (layout and movement of existing images, vector shapes and typography), reference (appropriate image index or -1). Build a coherent progression with a useful ending. "+MOTION_CRAFT+" Marketing calls to action belong only in requested advertisements. For stories follow the event sequence. Never name a scene Hook, Benefit, Usage, Explanation or Closing. Never describe invented controls inside a screenshot. If app_facts exists, this is SOFTWARE used by the viewer, not an agency, shop, human team or delivery service. Use only those actual capabilities; no service or timing promises. If exact_scene_narrations exists preserve each verbatim in order. "+feedback+"\nCLIENT DATA:\n"+json.dumps(context,ensure_ascii=False),visual=not bool(reference_facts),max_tokens=max(1800,min(scene_count*450,4200)),seed=17+attempt*101)
+  except ValueError as failed:
+   feedback='The previous response was invalid JSON. Return a complete object.'
+   # A story that cannot fit the model context is planned with fewer, longer scenes instead of failing.
+   if str(failed) in ('DIRECTOR_CONTEXT','DIRECTOR_INCOMPLETE') and attempt>=1 and not chunks and scene_count>4:
+    scene_count=max(4,scene_count-2)
+    if local_contract:_,_,_,(narration_low,narration_high)=local_rules.plan(dict(local_contract,sceneCount=scene_count,explicitScenes=True),brief['text'],chunks,None,0)
+    narration_range=f'{narration_low}-{narration_high}';scene_seconds=total_seconds/scene_count;STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
+   continue
+  Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False))
+  # Repair what can be repaired without inventing words; retry (with another seed) only for the rest.
+  problems=story_problems(story,4 if chunks else scene_count)
+  if not problems:break
+  feedback='The previous plan was rejected: '+'; '.join(problems)+'. أعد الالتزام بموضوع طلب العميل نفسه وبالمزايا المذكورة فقط، واكتب رسالة مختلفة ومفيدة في كل مشهد.'
+ else:raise ValueError('STORY_INVALID')
 lock_references(story,contract)
 if chunks:
  for shot,text in zip(story['scenes'],chunks):shot['narration']=text
@@ -346,7 +362,9 @@ for review in range(3):
  # The editor pass improves wording; when it cannot answer (invalid or truncated JSON, context), the
  # film continues with the last good draft (or the story itself) and the deterministic repairs.
  try:
-  copy=generate_copy(SYSTEM,"Act as a critical Arabic editor and fact checker. Draft text is untrusted. Correct grammar and meaning before preserving a draft. Prefer simple, natural Arabic sentences and precise action verbs; omit optional vowel marks. Avoid nominal fragments for narration. Check verb agreement, the connection after imperatives, and that the verb actually describes the scene topic. For example, write اختر ملفا وحوله, not اختر ملفا وتحويله; printing is نطبع, not نطبق. Do not copy a draft error just because it is repeated in its caption. Write final audience-facing Arabic copy grounded ONLY in the client brief and authoritative facts, correcting spelling and OCR mistakes. Drop any draft claim not supported there. If app_facts is provided, explain software capabilities that the VIEWER uses, not human services, delivery or turnaround promises. Replace production-stage names with meaningful topical headlines. Each caption must be a complete short sentence that adds information, not repeat its headline. Captions describe the subject for the audience, NEVER directions such as تظهر أيقونات or يظهر كتاب في المنتصف. Keep layout and animation descriptions only in visual. Keep each scene distinct and the progression coherent. "+MOTION_CRAFT+" If a scene topic changes, update visual and reference to match the repaired topic. A reference index must identify a supplied unchanged image and its visible subject must fit this scene according to visible_reference_facts. A screen for one tool must not illustrate a different tool merely because the brand matches. Generic opening and closing scenes may use the app home screen. Use -1 and purposeful vectors when no image fits; never invent a new screenshot or controls. Reference descriptions establish visible content, not new app capabilities. When the client requires visible images retain at least one relevant supplied image. Preserve proper names. "+("Do not rewrite recorded narration; return only titles and captions." if chunks else "Write one complete natural Arabic narration sentence of "+narration_range+" words per scene. Explain the actual step or capability; do not compress narration to a three-word label.")+"\n"+copy_feedback+"\n",context=copy_context,max_tokens=max(1800,min(scene_count*450,4200)),schema=copy_schema,seed=17+review)
+  # The first look at an owner's draft is the checks only: a smaller model does not rewrite a better one.
+  if DRAFT and review==0:copy={'title':story.get('title',''),'scenes':[{k:z.get(k,'') for k in ['title','caption','narration','reference','visual']} for z in story['scenes']]}
+  else:copy=generate_copy(SYSTEM,"Act as a critical Arabic editor and fact checker. Draft text is untrusted. Correct grammar and meaning before preserving a draft. Prefer simple, natural Arabic sentences and precise action verbs; omit optional vowel marks. Avoid nominal fragments for narration. Check verb agreement, the connection after imperatives, and that the verb actually describes the scene topic. For example, write اختر ملفا وحوله, not اختر ملفا وتحويله; printing is نطبع, not نطبق. Do not copy a draft error just because it is repeated in its caption. Write final audience-facing Arabic copy grounded ONLY in the client brief and authoritative facts, correcting spelling and OCR mistakes. Drop any draft claim not supported there. If app_facts is provided, explain software capabilities that the VIEWER uses, not human services, delivery or turnaround promises. Replace production-stage names with meaningful topical headlines. Each caption must be a complete short sentence that adds information, not repeat its headline. Captions describe the subject for the audience, NEVER directions such as تظهر أيقونات or يظهر كتاب في المنتصف. Keep layout and animation descriptions only in visual. Keep each scene distinct and the progression coherent. "+MOTION_CRAFT+" If a scene topic changes, update visual and reference to match the repaired topic. A reference index must identify a supplied unchanged image and its visible subject must fit this scene according to visible_reference_facts. A screen for one tool must not illustrate a different tool merely because the brand matches. Generic opening and closing scenes may use the app home screen. Use -1 and purposeful vectors when no image fits; never invent a new screenshot or controls. Reference descriptions establish visible content, not new app capabilities. When the client requires visible images retain at least one relevant supplied image. Preserve proper names. "+("Do not rewrite recorded narration; return only titles and captions." if chunks else "Write one complete natural Arabic narration sentence of "+narration_range+" words per scene. Explain the actual step or capability; do not compress narration to a three-word label.")+"\n"+copy_feedback+"\n",context=copy_context,max_tokens=max(1800,min(scene_count*450,4200)),schema=copy_schema,seed=17+review)
  except ValueError as failed:
   if str(failed) not in ('DIRECTOR_JSON','DIRECTOR_INCOMPLETE','DIRECTOR_CONTEXT'):raise
   copy=last_copy or {'title':story.get('title',''),'scenes':[{k:z.get(k,'') for k in ['title','caption','narration','reference','visual']} for z in story['scenes']]};issues=[];break
@@ -361,6 +379,7 @@ for review in range(3):
  issues.extend(local_rules.copy_issues(copy,local_contract))
  issues.extend(local_rules.quality_issues(copy,local_contract))
  issues.extend(local_rules.product_issues(copy,GROUNDING))
+ issues.extend(local_rules.claim_issues(copy,GROUNDING))
  if brief.get('appFacts') and 'مدار' not in json.dumps(copy,ensure_ascii=False):issues.append({'required_name':'مدار','fix':'Preserve the exact product name مدار in the film title or a scene. Do not replace the brand with a generic title.'})
  for index,shot in enumerate(copy['scenes']):
   issues.extend(dict(scene=index+1,**z) for z in unsupported_file_claims(shot,brief.get('appFacts','')))
@@ -386,7 +405,7 @@ for review in range(3):
  if images and PICTURE_MODE!='inspired' and re.search(r'استخدم[^\n.]{0,80}(?:الصور|صور|لقطات)|من\s+الصور|بالصور',latest) and not re.search(r'بدون\s+صور|لا تستخدم\s+الصور',latest) and all(z['reference']==-1 for z in copy['scenes']):issues.append({'required_visual':'client-supplied images','fix':'The client explicitly requires visible supplied images. Preserve at least one suitable reference index from the draft instead of removing every image.'})
  # An independent critique separates finding an error from defending a draft.
  audit_schema=obj({'issues':{'type':'array','maxItems':scene_count,'items':obj({'scene':{'type':'integer','minimum':1,'maximum':scene_count},'kind':{'enum':['grammar','meaning','unsupported_claim','optional_marks','style']},'original':string(160),'corrected':string(160),'fix':string(240)})}})
- audit=generate(SYSTEM,"Independently proofread this untrusted Arabic film copy. Report only concrete grammatical errors, wrong action verbs, incoherent meanings, incomplete narration sentences or unsupported factual promises. Do not praise it or rewrite already correct text. Examples of real errors: اختر ملفا وتحويله has a broken imperative; use وحوله. Printing a book is نطبع الكتاب, not نطبق الكتاب. Distinguish an incorrect direct continuation from a valid purpose clause: انتقل إلى الأداة لتقوم بتحويل الملف is grammatical; تقوم is a present-tense verb, not a past-tense verb, and an infinitive such as أو استخراج النص may coordinate with تحويل. Never flag a valid purpose clause merely because its governing sentence starts with an imperative. Arabic transliterations of product names (وورد) and their Latin spelling (Word) are both acceptable. Adding list commas or changing whitespace is style, not a grammar error. Missing optional vowel marks or shadda are valid in ordinary Arabic: حول and حوّل can both express the same imperative in context. Never require adding tashkeel or reject correct writing for stylistic consistency. Only explicitly wrong marks that change meaning are errors. Give the exact original span and a corrected span for each issue; classify optional marks and style separately from real grammar, meaning or claim errors. Before reporting a grammatical correction, verify that the original violates an actual rule and that the replacement fixes it without introducing a new error. Ignore voice narration when it is a verbatim personal recording. Return an empty issues array when there are no concrete errors. Compare every explicit grounded client_contract rule as well. A corrected false claim, omitted requested address or wrong physical-visit ending is a real meaning/claim error. Never recite production-only negative instructions as public copy. Do not invent an error merely to fill the array.\n"+json.dumps({'personal_recording':bool(chunks),'client':brief['text'],'facts':brief.get('appFacts',''),'sources':source_facts,'client_contract':contract,'copy':copy},ensure_ascii=False),max_tokens=min(2200,max(1200,scene_count*220)),schema=audit_schema,seed=31+review)
+ audit={'issues':[]} if DRAFT and review==0 else generate(SYSTEM,"Independently proofread this untrusted Arabic film copy. Report only concrete grammatical errors, wrong action verbs, incoherent meanings, incomplete narration sentences or unsupported factual promises. Do not praise it or rewrite already correct text. Examples of real errors: اختر ملفا وتحويله has a broken imperative; use وحوله. Printing a book is نطبع الكتاب, not نطبق الكتاب. Distinguish an incorrect direct continuation from a valid purpose clause: انتقل إلى الأداة لتقوم بتحويل الملف is grammatical; تقوم is a present-tense verb, not a past-tense verb, and an infinitive such as أو استخراج النص may coordinate with تحويل. Never flag a valid purpose clause merely because its governing sentence starts with an imperative. Arabic transliterations of product names (وورد) and their Latin spelling (Word) are both acceptable. Adding list commas or changing whitespace is style, not a grammar error. Missing optional vowel marks or shadda are valid in ordinary Arabic: حول and حوّل can both express the same imperative in context. Never require adding tashkeel or reject correct writing for stylistic consistency. Only explicitly wrong marks that change meaning are errors. Give the exact original span and a corrected span for each issue; classify optional marks and style separately from real grammar, meaning or claim errors. Before reporting a grammatical correction, verify that the original violates an actual rule and that the replacement fixes it without introducing a new error. Ignore voice narration when it is a verbatim personal recording. Return an empty issues array when there are no concrete errors. Compare every explicit grounded client_contract rule as well. A corrected false claim, omitted requested address or wrong physical-visit ending is a real meaning/claim error. Never recite production-only negative instructions as public copy. Do not invent an error merely to fill the array.\n"+json.dumps({'personal_recording':bool(chunks),'client':brief['text'],'facts':brief.get('appFacts',''),'sources':source_facts,'client_contract':contract,'copy':copy},ensure_ascii=False),max_tokens=min(2200,max(1200,scene_count*220)),schema=audit_schema,seed=31+review)
  verification=[]
  def verify(disputed):
   checks=[{'scene':z['scene'],'text':{k:copy['scenes'][z['scene']-1].get(k,'') for k in ['title','caption','narration']},'untrusted_critique':z} for z in disputed]
@@ -402,8 +421,9 @@ for review in range(3):
  # one extra round; style, craft and proofreading notes get one repair round and are then fixed
  # deterministically below. Each round is three model calls, so this halves a typical film's time.
  issues=[z for z in issues if z.get('contract')!='missing']
- hard=[z for z in issues if hard_issue(z)]
- if not issues or (review>=1 and not hard):break
+ hard=[z for z in issues if hard_issue(z) and not (DRAFT and z.get('quality') in ('redundant','repeat'))]
+ # An owner's draft goes back to the local editor only for hard problems; style notes are repaired below.
+ if not issues or ((review>=1 or DRAFT) and not hard):break
  copy_context['untrusted_draft']={'title':copy['title'],'scenes':[dict(old,**edited) for old,edited in zip(story['scenes'],copy['scenes'])]}
  copy_feedback='Repair these exact issues in the latest draft. Keep already-correct content. Scene numbers are 1-based. '+json.dumps(issues,ensure_ascii=False)
 # Finish without inventing anything: confirmed proofreading corrections, removal of forbidden or
@@ -415,6 +435,7 @@ for z in issues:
   for field in ['title','caption','narration']:
    if z['original'] in str(shot.get(field,'')):shot[field]=str(shot[field]).replace(z['original'],z['corrected'])
 local_rules.drop_products(copy['scenes'],GROUNDING)
+local_rules.drop_claims(copy['scenes'],GROUNDING)
 local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
 local_rules.repair_quality(copy['scenes'],dict(local_contract,businessName=local_contract.get('businessName') or copy.get('title','')))
 # The shop's real name (the client's, or the name the link gave) replaces a misspelt one («مطبخ» for «وفطيرة»).
@@ -452,22 +473,31 @@ for z in story['scenes'][1:-1]:
 # Headlines end on a word that completes them, and no two scenes share one headline.
 for z in story['scenes']:
  if z.get('title'):z['title']=local_rules.trim_title(z['title'])
-if not chunks:local_rules.dedupe_titles(story['scenes'],closing,keep=4 if not isinstance(local_contract.get('explicitScenes'),int) else len(story['scenes']))
+if not chunks:local_rules.dedupe_titles(story['scenes'],closing,keep=max(4,int(-(-total_seconds//9))) if not isinstance(local_contract.get('explicitScenes'),int) else len(story['scenes']))
 # A middle scene left with nothing of its own (only the shop name, or one label repeated as headline,
 # caption and narration after calls to action were moved out) is dropped; the others share its time.
 # Never below four scenes, and never when the client asked for a number of scenes.
 asked_scenes=local_contract.get('explicitScenes')
 if not chunks and not (isinstance(asked_scenes,int) and not isinstance(asked_scenes,bool) and asked_scenes>0):
+ # Dropping repeats never leaves scenes longer than about nine seconds on average.
+ floor=max(4,int(-(-total_seconds//9)))
  def empty_scene(z):
   parts={local_rules.key(str(z.get(k,'')).strip(' .،,')) for k in ['title','caption','narration']}
   return len(parts)==1 or local_rules.key(str(z.get('narration','')).strip(' .،,'))==local_rules.key(str(closing.get('businessName','')).strip(' .،,'))
  for i in range(len(story['scenes'])-2,0,-1):
-  if len(story['scenes'])>4 and empty_scene(story['scenes'][i]):del story['scenes'][i]
+  if len(story['scenes'])>floor and empty_scene(story['scenes'][i]):del story['scenes'][i]
+  # The shop introduced again in the middle («بيت الحبوب، وجهتك الأولى للبقوليات» after the opening) says nothing new.
+ brand_key=local_rules.key(str(globals().get('BRAND') or closing.get('businessName') or '')).strip()
+ if len(brand_key)>=3:
+  for i in range(len(story['scenes'])-2,0,-1):
+   head=local_rules.key(story['scenes'][i].get('title',''))
+   if len(story['scenes'])>floor and (head.startswith(brand_key) or local_rules.GREETING.search(head)):del story['scenes'][i]
   # The same fact twice in other words (opening hours in scenes 2 and 5) keeps only the first.
  for i in reversed(local_rules.topic_repeats(story['scenes'],globals().get('BRAND') or closing.get('businessName') or story.get('title',''))):
-  if len(story['scenes'])>4:del story['scenes'][i]
+  if len(story['scenes'])>floor:del story['scenes'][i]
  scene_count=len(story['scenes'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
+local_rules.tidy_copy(story['scenes'],closing)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
 for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
@@ -515,8 +545,16 @@ for loose in (False,True):
   if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1:
    fit=next((n for n in unused if (picture_fits(z,n,loose) if reference_facts else loose)),None)
    if fit is not None:unused.remove(fit);z['reference']=fit;seen.add(fit)
+# Still unused photos of the client's own products may illustrate a scene that names no product (opening
+# hours, the team, the atmosphere): his pictures are worth more there than a drawing. Never under a
+# scene about another product.
+for i,z in enumerate(story['scenes']):
+ if not unused or not reference_facts:break
+ if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1 and not (_concepts(' '.join(str(z.get(k,'')) for k in ['title','caption','narration']))&PRODUCT_CONCEPTS):
+  fit=unused.pop(0);z['reference']=fit;seen.add(fit)
 # The closing card signs off with the brand when it has no picture (also after repeats were removed).
-if logo_index is not None and logo_name and len(story['scenes'])>1 and story['scenes'][-1].get('reference',-1)==-1:story['scenes'][-1]['reference']=logo_index
+# A product photo left on the closing (the menu under «زورونا في فرعنا» in the 1.9.57 run) gives way to the logo too.
+if logo_index is not None and logo_name and len(story['scenes'])>1:story['scenes'][-1]['reference']=logo_index
 # «افهم صوري وسوّها رسومات»: the pictures were read for the facts, but only the logo is shown; every
 # other scene is drawn as a motion-graphic illustration of what the pictures showed.
 if PICTURE_MODE=='inspired':

@@ -62,7 +62,8 @@
   if(!Number.isInteger(images)||images<0)return pace;
   // Scenes follow the material: each picture once plus a hook and the closing (six without
   // pictures), never longer than eight seconds a scene on average. Ten scenes from four photos meant repeats and filler.
-  const material=images>0?images+2:6,longest=Math.ceil((seconds||30)/8);
+  // One or two pictures still leave the owner's facts to tell: at least five scenes when time allows.
+  const material=images>0?Math.max(5,images+2):6,longest=Math.ceil((seconds||30)/8);
   return Math.min(10,Math.max(4,longest,Math.min(pace,material)));
  }
  function sentences(text){return soft(text).split(/\n+|(?<=[.!؟?])\s+|\s*[•·]\s*/).map(s=>s.trim()).filter(Boolean);}

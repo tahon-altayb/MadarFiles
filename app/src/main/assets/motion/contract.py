@@ -82,7 +82,7 @@ def short_headline(text,limit=5):
  while len(cut)>2 and WEAK_END.search(key(' '.join(cut))):cut=cut[:-1]
  return ' '.join(cut)
 # A headline never ends on a verb or a link word waiting for its object: «شاي جمر وفطيرة الطيب تقدم».
-DANGLING=re.compile(r'(?:^|\s)(?:[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين)$')
+DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين)$')
 def trim_title(text):
  """Drops dangling last words; keeps at least two words."""
  words=str(text).strip(' .،,!؟:').split()
@@ -254,9 +254,25 @@ def fix_brand(scenes,name):
  """A misspelt shop name («شاي جمر مطبخ الطيب» for «شاي جمر وفطيرة الطيب») becomes the real one:
  a run of words that matches the name in all but one word is replaced by the name."""
  words=str(name or '').split()
- if len(words)<3:return []
+ if not words:return []
+ changed=[]
+ # «عبور للاتصالات» / «عبور الاتصالات» for «العبور للاتصالات»: the same words without or with another «ال/لل».
+ root=lambda w:re.sub(r'^(?:و)?(?:لل|ال|ل)(?=\S{2})','',key(re.sub(r'[^ء-ي\w]','',w)))
+ want=[root(w) for w in words];n=len(words)
+ if n>=2 and all(len(w)>=2 for w in want):
+  for i,shot in enumerate(scenes):
+   for field in ['title','caption','narration']:
+    tokens=str(shot.get(field,'')).split();out=[];k=0;hit=False
+    while k<len(tokens):
+     window=tokens[k:k+n]
+     if len(window)==n and [root(w) for w in window]==want and [key(re.sub(r'[^ء-ي\w]','',w)) for w in window]!=[key(w) for w in words]:
+      lead='و' if key(window[0]).startswith('و') and not key(words[0]).startswith('و') else ''
+      tail=re.sub(r'^.*?([.،,!؟]*)$',r'\1',window[-1]);out.append(lead+' '.join(words)+tail);k+=n;hit=True;continue
+     out.append(tokens[k]);k+=1
+    if hit:shot[field]=' '.join(out);changed.append((i+1,field))
+ if len(words)<3:return changed
  bare=lambda w:re.sub(r'^و(?=\S{3})','',key(w))
- target=[bare(w) for w in words];changed=[]
+ target=[bare(w) for w in words]
  for i,shot in enumerate(scenes):
   for field in ['title','caption','narration']:
    tokens=str(shot.get(field,'')).split();n=len(target);out=[];k=0;hit=False
@@ -333,6 +349,37 @@ def drop_products(scenes,grounding):
   _fill(shot)
  return changed
 
+# Credentials and superlatives the owner never claimed («أفضل أنواع الحبوب النظيفة والمعتمدة»، «المحضرة باحترافية»):
+# allowed only when the brief, the page or the pictures say them.
+CLAIM_WORDS=re.compile(r'(?:^|\s)(?:[وب]?(?:ال)?(?:معتمد(?:ه|ين|ون|ات)?|مرخص(?:ه|ين)?|حاصل(?:ه)?|حائز(?:ه)?|جوائز|عالمي(?:ه)?|باحترافيه|احترافي(?:ه)?|مضمون(?:ه)?|ارخص|الارخص|رقم\s*(?:1|واحد)|100\s*%))(?=\s|$|[.،,!؟])')
+def unsupported_claims(copy,grounding):
+ ground=key(grounding)
+ out=[]
+ for i,z in enumerate(copy.get('scenes',[])):
+  for field in ['title','caption','narration']:
+   for m in CLAIM_WORDS.finditer(key(str(z.get(field,'')))):
+    word=m.group().strip();stem=re.sub(r'^(?:[وب])?(?:ال)?','',word)[:5]
+    if stem and stem not in ground:out.append({'scene':i+1,'field':field,'word':word})
+ return out
+def claim_issues(copy,grounding):
+ seen=set();issues=[]
+ for z in unsupported_claims(copy,grounding):
+  if (z['scene'],z['word']) in seen:continue
+  seen.add((z['scene'],z['word']));issues.append({'scene':z['scene'],'unsupported_phrase':z['word'],'fix':'«'+z['word']+'» is a claim the client never made. Remove it and say only what the brief, page or pictures support.'})
+ return issues
+def drop_claims(scenes,grounding):
+ """Removes an unsupported claim word with its joining «و» («النظيفة والمعتمدة» → «النظيفة»)."""
+ changed=[]
+ for z in unsupported_claims({'scenes':scenes},grounding):
+  shot=scenes[z['scene']-1];words=str(shot.get(z['field'],'')).split();out=[]
+  for w in words:
+   if key(re.sub(r'[^ء-ي0-9%]','',w))==re.sub(r'[^ء-ي0-9%]','',z['word']) or key(w).strip('.،,!؟')==z['word']:
+    if out and key(out[-1]) in ('و','او'):out.pop()
+    changed.append((z['scene'],z['field']));continue
+   out.append(w)
+  text=re.sub(r'^(?:و\s+)+|(?:\s+و)+$','',' '.join(out)).strip(' ،,');text=re.sub(r'\s+([.،,!؟])',r'\1',text)
+  shot[z['field']]=text;_fill(shot)
+ return changed
 def quality_issues(copy,c=None):
  """Production language, glitched letters and repeated headlines: audience copy problems
  the model must rewrite, found deterministically (the real run repeated scenes 1-4 as 5-8)."""
@@ -426,7 +473,15 @@ def enforce_closing(scenes,c):
  if phone and phone not in everything.replace(' ',''):extras.append(phone)
  if not missing and not extras:return []
  changed=[]
- if missing and len(missing[0])<=45:last['title']=missing.pop(0);changed.append('title')
+ # Rebuild the closing in the owner's order: his first phrase is the headline, the other phrases and the
+ # address follow in the caption. A phrase already in the headline is never overwritten
+ # («زورونا في فرعنا» lost to «سجّل الحين» in the 1.9.57 gym run).
+ required=[p for p in c.get('required',[]) if p]
+ if missing:
+  head=required[0] if required and len(required[0])<=45 else (missing[0] if len(missing[0])<=45 else '')
+  if head and key(head)!=key(last.get('title','')):last['title']=head;changed.append('title')
+  missing=[p for p in required if key(p) not in key(last.get('title',''))]
+  extras=[x for x in ([address] if address and not address.startswith('http') else [])+([phone] if phone else []) if key(x) not in key(last.get('title',''))]
  parts=[]
  for item in missing+extras:
   if len(' · '.join(parts+[item]))<=95:parts.append(item)
@@ -436,6 +491,30 @@ def enforce_closing(scenes,c):
   last['caption']=caption;changed.append('caption')
  return changed
 
+def tidy_copy(scenes,c=None):
+ """Last copy guards on the finished story (the 1.9.57 store run):
+ - a caption that only repeats its headline («بيت الحبوب، وجهتك الأولى» / «بيت الحبوب، وجهتك الأولى للبقوليات …»)
+   takes a sentence of the scene's narration instead;
+ - the closing caption says who and where (the address, the phone or the shop's name), never a product
+   sentence left there by the model («رز بسمتي خالص الوزن …» under «اطلب الحين من متجرنا»).
+ Returns the changed scene numbers."""
+ c=c or {};changed=[]
+ for i,z in enumerate(scenes[:-1]):
+  t,cap=key(z.get('title','')).strip(' .،,'),key(z.get('caption','')).strip(' .،,')
+  if t and cap.startswith(t):
+   for clause in re.split(r'(?<=[.!؟])\s*',str(z.get('narration',''))):
+    clause=clause.strip(' .،,')
+    if len(clause.split())>=3 and not key(clause).startswith(t) and not GREETING.search(key(clause)) and not is_cta(clause,c) and len(clause)<=95:
+     z['caption']=clause;changed.append(i+1);break
+ if scenes:
+  last=scenes[-1];cap=str(last.get('caption','')).strip()
+  who=[x for x in [str(c.get('address') or ''),str(c.get('phone') or '')] if x and not x.startswith('http')]
+  name=str(c.get('businessName') or '').strip()
+  known=[*c.get('required',[]),*who,name]
+  if cap and not is_cta(cap,c) and not any(key(x) and key(x) in key(cap) for x in known):
+   fallback=' · '.join(who) or name
+   if fallback and key(fallback)!=key(last.get('title','')):last['caption']=fallback;changed.append(len(scenes))
+ return changed
 def logo_index(c,images,facts):
  if c.get('logoAsset') in images:return images.index(c['logoAsset'])
  for z in facts or []:

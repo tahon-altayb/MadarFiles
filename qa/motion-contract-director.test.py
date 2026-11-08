@@ -303,3 +303,34 @@ again=[dict(z) for z in film];again[3]={'title':'فطائر متنوعة وطا�
 assert C.dedupe_titles(again)==[4] and len({z['title'] for z in again})==len(again),[z['title'] for z in again]
 assert not C.same_title('عرض 1','عرض 2')
 print('headlines end complete and are never repeated')
+# The 1.9.57 store run: a credential the owner never claimed, the shop introduced again mid-film, and a
+# product sentence left under the closing call to action.
+store='نبيع رز بسمتي وعدس، معبأة بأكياس محكمة ونظيفة.'
+assert [z['unsupported_phrase'] for z in C.claim_issues({'scenes':[{'title':'الحبوب النظيفة والمعتمدة','caption':'','narration':''}]},store)]==['والمعتمده']
+assert C.claim_issues({'scenes':[{'title':'مدربين معتمدين','caption':'','narration':''}]},'نادي قوة: مدربين معتمدين')==[]
+film=[{'title':'الحبوب النظيفة والمعتمدة','caption':'x','narration':'y'}];C.drop_claims(film,store);assert film[0]['title']=='الحبوب النظيفة',film
+end=[{'title':'أ ب','caption':'c'},{'title':'اطلب الحين من متجرنا','caption':'رز بسمتي خالص الوزن خمسة كيلو جرامات في علبة نظيفة.'}]
+C.tidy_copy(end,{'required':['اطلب الحين من متجرنا'],'businessName':'بيت الحبوب'});assert end[-1]['caption']=='بيت الحبوب',end
+gym=[{'title':'أ ب'},{'title':'زورونا في فرعنا','caption':'الرياض – حي النخيل'}]
+C.enforce_closing(gym,{'required':['سجل الحين','زورونا في فرعنا'],'address':'الرياض – حي النخيل'});assert (gym[-1]['title'],gym[-1]['caption'])==('سجل الحين','زورونا في فرعنا · الرياض – حي النخيل'),gym
+print('no unclaimed credentials; the closing keeps every phrase the owner asked for and says who and where')
+# The owner's Groq model wrote the copy on the phone: the director keeps it (no local story or editor
+# rewrite when the checks pass), picks pictures for it and closes with the owner's words.
+draft={'title':'إعلان الموسم','scenes':[
+ {'title':'ورد الموسم وصل','caption':'تشكيلة الموسم صارت جاهزة في المحل.','narration':'وصلت تشكيلة الموسم الجديدة، وصارت جاهزة لكم في المحل.'},
+ {'title':'تغليف يليق بالهدية','caption':'نغلف طلبك بعناية قبل ما تستلمه.','narration':'نغلف كل طلب بعناية عشان يوصل هدية تفرّح.'},
+ {'title':'ألوان تناسب كل مناسبة','caption':'اختر اللون اللي يعبر عن مناسبتك.','narration':'عندنا ألوان كثيرة تناسب كل مناسبة وكل ذوق.'},
+ {'title':'تنسيق على ذوقك','caption':'قل لنا فكرتك ونرتبها لك.','narration':'قل لنا فكرتك، ونرتب لك الباقة على ذوقك.'},
+ {'title':'جاهز بنفس اليوم','caption':'اطلب الصبح واستلم قبل المغرب.','narration':'تقدر تطلب الصبح وتستلم طلبك بنفس اليوم.'},
+ {'title':'هدية تبقى في البال','caption':'لمسة بسيطة تفرق في يوم أحبابك.','narration':'هدية بسيطة منك تفرق كثير في يوم أحبابك.'},
+ {'title':'زورونا في فرعنا','caption':'الرياض – حي النرجس – طريق أبي بكر','narration':'زورونا في فرعنا بحي النرجس على طريق أبي بكر.'}]}
+with tempfile.TemporaryDirectory(prefix='madar-contract-draft-') as tmp:
+ EXTRA={'draftStory':draft};r,job=run(brief,text,tmp);EXTRA={}
+ assert r.returncode==0,(r.stdout[-1500:],r.stderr[-3000:])
+ assert 'DIRECTOR_DRAFT groq 7' in r.stderr and not (job/'story-prompt.txt').exists(),'the local model must not write its own story'
+ scenes=json.loads((job/'project.json').read_text())['scenes']
+ titles=[z['title'] for z in scenes];drafted=[z['title'] for z in draft['scenes']]
+ # Kept word for word, in order; a scene that repeats a topic (receiving the order, twice) may be dropped.
+ assert len(scenes)>=6 and all(t in drafted for t in titles) and titles==sorted(titles,key=drafted.index),titles
+ assert 'زورونا في فرعنا' in scenes[-1]['title'] and C.has_asset(scenes[0]['composition'],'asset_'+'b'*32+'.jpg')
+print("the owner's Groq draft is kept, pictured and closed with his words")

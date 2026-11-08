@@ -105,10 +105,11 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  # Evidence first: three frames per scene (entry, middle, exit) so motion and layout can be reviewed.
  for i,scene in enumerate(p['scenes']):
   for label,at in [('a',scene['start']+.4),('b',(scene['start']+scene['end'])/2),('c',scene['end']-.3)]:
-   subprocess.run(['ffmpeg','-v','error','-y','-ss',str(max(0,at)),'-i',str(video),'-frames:v','1','-vf','scale=360:-2',str(evidence/f'scene-{i+1:02d}{label}.jpg')],check=True)
+   subprocess.run(['ffmpeg','-v','error','-y','-ss',str(max(0,at)),'-i',str(video),'-frames:v','1','-vf','scale=600:-2',str(evidence/f'scene-{i+1:02d}{label}.jpg')],check=True)
  mids=[evidence/f'scene-{i+1:02d}b.jpg' for i in range(len(p['scenes']))]
- inputs=[x for m in mids for x in ['-i',str(m)]];cols=5;rows=math.ceil(len(mids)/cols)
- subprocess.run(['ffmpeg','-v','error','-y',*inputs,'-filter_complex',''.join(f'[{i}:v]scale=200:-2[v{i}];' for i in range(len(mids)))+''.join(f'[v{i}]' for i in range(len(mids)))+f'xstack=inputs={len(mids)}:layout='+'|'.join(f'{(i%cols)*200}_{(i//cols)*356}' for i in range(len(mids)))+':fill=black','-q:v','5',str(evidence/'contact.jpg')],check=True)
+ # Tiles keep the film's shape (vertical, wide or square) so the layout can be judged.
+ inputs=[x for m in mids for x in ['-i',str(m)]];tw,th={'9:16':(200,356),'16:9':(400,225),'1:1':(300,300)}[ASPECT];cols={'9:16':5,'16:9':3,'1:1':4}[ASPECT]
+ subprocess.run(['ffmpeg','-v','error','-y',*inputs,'-filter_complex',''.join(f'[{i}:v]scale={tw}:{th}[v{i}];' for i in range(len(mids)))+''.join(f'[v{i}]' for i in range(len(mids)))+f'xstack=inputs={len(mids)}:layout='+'|'.join(f'{(i%cols)*tw}_{(i//cols)*th}' for i in range(len(mids)))+':fill=black','-q:v','4',str(evidence/'contact.jpg')],check=True)
  import base64;print('EVIDENCE_CONTACT_BEGIN');print(base64.b64encode((evidence/'contact.jpg').read_bytes()).decode());print('EVIDENCE_CONTACT_END',flush=True)
  print('EVIDENCE project',json.dumps({'verification':p.get('verification'),'scenes':[{k:z.get(k) for k in ['title','caption','seconds']} for z in p['scenes']]},ensure_ascii=False),flush=True)
  info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(video)]))
@@ -157,7 +158,7 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
   shown_text=[e.get('text','') for e in s['composition']['elements'] if e.get('kind')=='text']
   caption=str(s.get('caption') or '').strip()
   if caption:check(any(rules.key(caption)==rules.key(x) for x in shown_text),f'scene {i+1} caption is cut or missing on screen: {caption}')
-  check(rules.key(caption)!=rules.key(t),f'scene {i+1} caption only repeats its headline: {t}')
+  check(not (caption and rules.key(caption).strip(' .،,').startswith(rules.key(t).strip(' .،,'))),f'scene {i+1} caption only repeats its headline: {t} / {caption}')
  failed=[c for c in p.get('verification',[]) if not c['ok'] and c['id']!='source'];check(not failed,'verification failures: '+json.dumps(failed,ensure_ascii=False))
  (evidence/'findings.json').write_text(json.dumps({'findings':findings,'verification':p.get('verification',[]),'duration':duration,'scenes':[{k:s.get(k) for k in ['title','caption','narration','seconds']} for s in scenes]},ensure_ascii=False,indent=1))
  assert not findings,'\n'.join(findings)
