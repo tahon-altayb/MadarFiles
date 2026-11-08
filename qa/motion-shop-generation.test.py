@@ -7,7 +7,7 @@ assertions so a failed run can be inspected.
 """
 from pathlib import Path
 import argparse,json,subprocess,tempfile,shutil,hashlib,math,os,re,sys
-args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven','telecom','grocery','gym'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args.add_argument('--draft',action='store_true');args.add_argument('--groq',action='store_true');args=args.parse_args()
+args=argparse.ArgumentParser();args.add_argument('--voice',choices=['none','silma'],default='none');args.add_argument('--case',choices=['four','seven','telecom','grocery','gym','answers'],default='four');args.add_argument('--mode',choices=['attached','inspired'],default='attached');args.add_argument('--draft',action='store_true');args.add_argument('--groq',action='store_true');args=args.parse_args()
 repo=Path(__file__).resolve().parents[1];source=repo/'app/src/main/assets/motion';evidence=repo/'qa/evidence/shop'/(args.voice+'-'+args.case+('' if args.mode=='attached' else '-'+args.mode)+('-draft' if args.draft else '')+('-groq' if args.groq else ''));evidence.mkdir(parents=True,exist_ok=True)
 sys.path.insert(0,str(source));import contract as rules
 
@@ -26,8 +26,17 @@ https://share.google/gqr792aGPFX7jVCXY
 خلي الشعار يكون اولا 👍
 ماعندنا موقع إلكتروني فقط عبر تطبيقات التوصيل هنقرستيشن و كيتا وعندنا محل اكتب زورونا في فرعنا واكتب مكان الموقع'''
  ADDRESS='شارع الجال - بجانب الزينة الجديده'
+if args.case=='answers':
+ # The café answered through the questions (1.9.58 review): name typed, outdoor and indoor seating, the big screen,
+ # baloot, open all day and night, Hungerstation and Keeta, a baloot tournament, Snapchat and TikTok.
+ node=r'''const Q=require(process.argv[1]);const f=Q.build('cafe','');const set=(n,sel,other)=>{const x=f.find(z=>z.name===n);x.selected=sel;if(other)x.other=other;};
+ set('name',[],'شاهي جمر الطيب');set('hook',['h24']);set('sells',['coalTea','milkTea','zaatar']);set('place',['outdoor','indoor','screens']);set('hours',['h24']);set('apps',['hunger','keeta']);
+ set('news',['event'],'بطولة بلوت كل خميس');set('cta',['visit']);set('extras',['hours','apps']);set('social',['snap','tiktok']);set('pace',['medium']);process.stdout.write(Q.plan(f,''));'''
+ PLAN=subprocess.check_output(['node','-e',node,str(repo/'app/src/main/assets/motion-questions.js')]).decode()
+ REQUEST='سوّ لي إعلان موشن لمحلي من الصور المرفقة، مدته 45 ثانية، عمودي، وبدون موسيقى. خلي الشعار أولا.\n'+PLAN
+ ADDRESS=''
 ORDER=['menu.jpg','mint.jpg','logo.jpg','kettles.jpg']+(['kettles2.jpg','mint2.jpg','menu2.jpg'] if args.case=='seven' else [])
-LOGO='logo.jpg';CAFE=args.case in ('four','seven');THEME='night'
+LOGO='logo.jpg';CAFE=args.case in ('four','seven','answers');THEME='night'
 # Other kinds of business, other shapes and lengths, written the way owners write.
 if args.case=='telecom':
  REQUEST='سوي لي إعلان موشن لمحلي «العبور للاتصالات»، نبيع ساعات ذكية وسماعات بلوتوث وشواحن سريعة وكفرات جوالات. عندنا ضمان سنة على الساعات، وتركيب حماية الشاشة مجانًا مع كل كفر. مدته 30 ثانية ستوري. الشعار يكون أول شي. لا تكتب أسعار. اكتب زورونا في فرعنا واكتب العنوان.'
@@ -143,6 +152,10 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  check(abs(duration-TARGET)<=(2 if args.voice=='none' else 5),f'duration {duration:.1f}s, requested {TARGET}s')
  video_stream=next(s for s in info['streams'] if s['codec_type']=='video');w,h=video_stream['width'],video_stream['height']
  check({'9:16':h>w,'16:9':w>h,'1:1':w==h}[ASPECT],f'frame {w}x{h} is not {ASPECT}')
+ # Every scene the owner chose in the questions is in the film with its names.
+ chosen=rules.required_scenes(REQUEST);missing=[x['title'] for x in chosen if not any(rules.covers(z,x) for z in scenes)]
+ print('EVIDENCE chosen scenes',len(chosen),'missing',missing,flush=True)
+ check(not missing,'chosen scenes missing: '+str(missing))
  check(any(s['codec_type']=='audio' for s in info['streams']),'the energetic effects track is missing')
  # Every cut has its whoosh: the sound around each scene start is clearly louder than the quiet middle of a scene.
  subprocess.run(['ffmpeg','-v','error','-y','-i',str(video),'-vn','-ac','1','-ar','8000','-c:a','pcm_s16le',str(evidence/'effects.wav')],check=True)

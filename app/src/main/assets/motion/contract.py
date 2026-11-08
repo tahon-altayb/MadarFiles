@@ -452,6 +452,31 @@ def fix_fused(scenes,grounding):
     out.append(w)
    if hit:z[field]=' '.join(out);changed.append(i+1)
  return changed
+# Scenes the owner chose in the questions («جلسات خارجية»، «المباريات على الشاشة الكبيرة»، «هنقرستيشن وكيتا»،
+# «على مدار الساعة»): the plan writes one line per scene, the film must show each one.
+SCENE_LINE=re.compile(r'مشهد مطلوب:\s*«([^»\n]{2,45})»\s*\|\s*«([^»\n]{0,95})»(?:\s*\|\s*رسمة:\s*([a-z0-9]+))?(?:\s*\|\s*لازم:\s*([^\n|]+))?')
+def required_scenes(text):
+ out=[]
+ for m in SCENE_LINE.finditer(str(text or '')):
+  must=[w.strip(' «»') for w in re.split(r'[،,]',m.group(4) or '') if w.strip(' «»')] or [m.group(1)]
+  out.append({'title':m.group(1).strip(),'caption':m.group(2).strip(),'art':m.group(3) or '','must':must})
+ return out
+def covers(shot,item):
+ seen=key(str(shot.get('title',''))+' '+str(shot.get('caption','')))
+ return all(key(w) in seen for w in item['must'])
+def place_required(scenes,items,keep=()):
+ """Each chosen scene is in the film: a missing one takes the place of a middle scene that carries none of the
+ chosen ones (the last such scene first), with the owner's polished words. Returns the scene numbers replaced."""
+ changed=[]
+ for item in items:
+  if any(covers(z,item) for z in scenes):continue
+  free=[i for i in range(1,len(scenes)-1) if i not in keep and i+1 not in changed and not any(covers(scenes[i],x) for x in items)]
+  if not free:continue
+  i=free[-1];z=scenes[i]
+  z.update(title=item['title'],caption=item['caption'],narration=(item['title']+'، '+item['caption']).strip('، ')+'.',reference=-1)
+  if item['art']:z['artHint']=item['title']+' '+item['art']
+  changed.append(i+1)
+ return changed
 def claim_issues(copy,grounding):
  seen=set();issues=[]
  for z in unsupported_claims(copy,grounding):
@@ -593,7 +618,7 @@ def tidy_copy(scenes,c=None):
  # An English word in an Arabic advert («توصيل سريع nationwide» in the 1.9.57 store run) is dropped.
  for i,z in enumerate(scenes):
   for field in ['title','caption']:
-   v=str(z.get(field,''));w=re.sub(r'\s*\b[A-Za-z][A-Za-z\-]{2,}\b','',v).strip(' ،,')
+   v=str(z.get(field,''));w=re.sub(r'\s*(?<!@)\b[A-Za-z][A-Za-z\-]{2,}\b','',v).strip(' ،,')
    if w!=v and re.search('[ء-ي]',w):z[field]=re.sub(r'\s{2,}',' ',w);changed.append(i+1)
  for i,z in enumerate(scenes[:-1]):
   t,cap=key(z.get('title','')).strip(' .،,'),key(z.get('caption','')).strip(' .،,')
@@ -628,6 +653,10 @@ def tidy_copy(scenes,c=None):
   # «العبور للاتصالات: ضمان سنة»: a headline has no colon.
   t=str(z.get('title',''))
   if ':' in t:z['title']=re.sub(r'\s*:\s*',' · ',t).strip(' ·');changed.append(i+1)
+  # «نحن مفتوحون 24 ساعة» is a translation, not an advert: «شغالين على مدار الساعة».
+  for field in ['title','caption','narration']:
+   v=str(z.get(field,''));w=re.sub(r'(?:(?:نحن|احنا|إحنا|حنا)\s+)?مفتوح(?:ون|ين)?\s+(?:لكم\s+)?(?:على\s+مدار\s+)?(?:24|٢٤)\s*ساع[ةه]','شغالين على مدار الساعة',v)
+   if w!=v:z[field]=w;changed.append(i+1)
   # A caption is read in one glance: at most 14 words, cut at a clause and never on a dangling word.
  for i,z in enumerate(scenes[:-1]):
   cap=str(z.get('caption',''))
