@@ -1,6 +1,7 @@
 'use strict';
 (function(root,factory){const api=factory();if(typeof module==='object')module.exports=api;else root.MadarConversation=api;})(globalThis,()=>{
- const normalize=t=>String(t||'').normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670]/g,'').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').trim();
+ // Dialect-tolerant form: no vowel marks or elongation, «ممتاااز» = «ممتاز», ٣٠ = 30.
+ const normalize=t=>String(t||'').normalize('NFKC').toLowerCase().replace(/[\u064b-\u065f\u0670\u0640]/g,'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/([\u0621-\u064a])\1{2,}/g,'$1').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').trim();
  const question=t=>/^(?:طيب\s*)?(?:هل|كيف|ليش|لماذا|وش|ايش|اش |يمدي|اقدر|تقدر|ممكن|كم |ما هي|ما هو)/.test(normalize(t));
  function facts(text,context){
   const t=normalize(text);if(!question(t))return null;
