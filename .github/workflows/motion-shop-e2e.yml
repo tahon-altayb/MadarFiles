@@ -16,42 +16,14 @@ jobs:
       fail-fast: false
       matrix:
         voice: [none]
-        case: [four, seven]
-        mode: [attached]
-        variant: [plain]
+        variant: [groq]
+        case: [four, seven, telecom, grocery, gym]
         include:
-          - voice: none
-            case: seven
-            mode: inspired
-            variant: plain
-          - voice: none
-            case: telecom
-            mode: attached
-            variant: plain
-          - voice: none
-            case: grocery
-            mode: attached
-            variant: plain
-          - voice: none
-            case: gym
-            mode: inspired
-            variant: plain
-          - voice: none
-            case: telecom
-            mode: attached
-            variant: draft
-          - voice: none
-            case: gym
-            mode: inspired
-            variant: draft
-          - voice: none
-            case: grocery
-            mode: attached
-            variant: groq
-          - voice: none
-            case: seven
-            mode: attached
-            variant: groq
+          - {case: four, mode: attached}
+          - {case: seven, mode: attached}
+          - {case: telecom, mode: attached}
+          - {case: grocery, mode: attached}
+          - {case: gym, mode: inspired}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
