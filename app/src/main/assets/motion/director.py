@@ -351,6 +351,12 @@ def groq_story(count):
     found=re.search(r'\{.*\}',text,re.S);answer=json.loads(found.group(0) if found else text)
     if not isinstance(answer,dict):answer={}
     scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[]) if isinstance(z,dict)]
+    # Six scenes where eight were asked (the owner chose six scenes in the questions): the chosen scenes it
+    # left out go in before the closing, in the owner's polished words.
+    if 4<=len(scenes)<count:
+     for item in local_rules.required_scenes(brief.get('text','')):
+      if len(scenes)>=count:break
+      if not any(local_rules.covers(z,item) for z in scenes):scenes.insert(len(scenes)-1,{'title':item['title'],'caption':item['caption'],'narration':(item['title']+'، '+item['caption']).strip('، ')+'.'})
     usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
     with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':len(scenes),'usable':usable,'error':'','seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
     if usable:return {'title':plain(answer.get('title'))[:80],'scenes':scenes}
