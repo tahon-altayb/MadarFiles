@@ -351,3 +351,9 @@ assert store[1]['caption']=='خلال ثلاثة أيام، والدفع عند 
 assert store[3]['narration']=='اطلب الحين من متجرنا، بيت الحبوب.',store[3]
 assert C.is_cta('توقعوا طعم مميز في موقعنا الجديد') and C.is_cta('موقع الفرع') and not C.numbers_in('عرض رقم 3')
 print('numbers are the client\'s; cut headlines continue in the caption; no narration read twice')
+fused=[{'title':'حماية مجانية','caption':'كل شراء لكفراتفصل يعطيك حماية شاشة مجانية.','narration':'ساعاتنا الذكية معك.'}]
+C.fix_fused(fused,'حماية شاشة مجانية مع كل كفرات جوال. ساعات ذكية')
+assert fused[0]['caption']=='كل شراء لكفرات يعطيك حماية شاشة مجانية.' and fused[0]['narration']=='ساعاتنا الذكية معك.',fused
+long=[{'title':'فطائر','caption':'لا تكتمل وجبتك دون فطيرتي الزعتر والجبن الطازجتين اللتين ستشعر بهما في كل لقمه','narration':'n'},{'title':'زورونا','caption':'c','narration':'زورونا'}]
+C.tidy_copy(long,{'required':['زورونا']});assert long[0]['caption']=='لا تكتمل وجبتك دون فطيرتي الزعتر والجبن الطازجتين',long
+print('fused words are split back; long captions stop at a clause')

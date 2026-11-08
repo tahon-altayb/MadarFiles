@@ -410,6 +410,24 @@ def fix_numbers(scenes,grounding):
   changed.append(z['scene'])
  for i in set(changed):_fill(scenes[i-1])
  return changed
+# Two words fused by the model («كفراتفصل» for «كفرات» in the 1.9.57 telecom run): a long word the client never
+# wrote that starts with one of his words and goes on with three or more letters becomes his word.
+def fix_fused(scenes,grounding):
+ known=set(re.findall(r'[\u0621-\u064a]+',key(grounding)));changed=[]
+ for i,z in enumerate(scenes):
+  for field in ['title','caption','narration']:
+   words=str(z.get(field,'')).split();out=[];hit=False
+   for w in words:
+    core=re.sub(r'[^\u0621-\u064a]','',key(w))
+    lead=re.match(r'(?:وال|بال|لل|ال|و|ب|ل)?',core).group() if len(core)>=8 and core not in known else ''
+    rest=core[len(lead):]
+    if len(core)>=8 and core not in known and rest not in known:
+     heads=[k for k in known if len(k)>=4 and rest.startswith(k) and len(rest)-len(k)>=3 and rest[len(k):] not in ('هما','كما','تين','تان')]
+     if heads:
+      head=max(heads,key=len);bare=w.strip('.،,!؟:');out.append(w.replace(bare,lead+head));hit=True;continue
+    out.append(w)
+   if hit:z[field]=' '.join(out);changed.append(i+1)
+ return changed
 def claim_issues(copy,grounding):
  seen=set();issues=[]
  for z in unsupported_claims(copy,grounding):
@@ -576,6 +594,17 @@ def tidy_copy(scenes,c=None):
    continues=bool(re.match(r'(?:في|من|على|الى|عن|مع|خلال|لكل|لجميع|و|ب|ل)(?:\s|$)',key(cap))) or key(cap).startswith('و')
    line=title+' '+cap if cap and continues else ('، '.join(dict.fromkeys(x for x in [title,cap] if x)) if i==len(scenes)-1 else cap or title)
    if line and not any(similar(line,w.get('narration','')) for w in scenes[:i]):z['narration']=line+'.';changed.append(i+1)
+  # A caption is read in one glance: at most 14 words, cut at a clause and never on a dangling word.
+ for i,z in enumerate(scenes[:-1]):
+  cap=str(z.get('caption',''))
+  if len(cap.split())>12:
+   first=re.split(r'(?<=[.!؟،,;])\s*',cap)[0].strip(' .،,')
+   words=first.split()
+   # A relative clause is where a long sentence can stop («… الطازجتين | اللتين ستشعر بهما في كل لقمه»).
+   cut=next((k for k,w in enumerate(words) if k>=4 and key(w) in ('الذي','التي','اللتين','اللذين','الذين','اللي','حيث')),None)
+   if cut:words=words[:cut]
+   short=' '.join(words) if 3<=len(words)<=12 else trim_title(' '.join(words[:12]))
+   if short and short!=cap:z['caption']=short;changed.append(i+1)
   # The closing voice says the closing: a product line read there («نوفر ساعات ذكية بعمر ضمان سنتين»,
   # «مرحباً بكم في نادي قوة») becomes the closing headline and who and where.
  if len(scenes)>1:

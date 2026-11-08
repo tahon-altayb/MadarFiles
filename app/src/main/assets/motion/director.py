@@ -439,6 +439,7 @@ for z in issues:
 local_rules.drop_products(copy['scenes'],GROUNDING)
 local_rules.drop_claims(copy['scenes'],GROUNDING)
 local_rules.fix_numbers(copy['scenes'],GROUNDING)
+local_rules.fix_fused(copy['scenes'],GROUNDING)
 local_rules.scrub(copy['scenes'],local_contract,[r.get('text','') for r in contract.get('omit_from_copy',[])],[(r.get('subject',''),r.get('claim','')) for r in contract.get('forbidden_claims',[])])
 local_rules.repair_quality(copy['scenes'],dict(local_contract,businessName=local_contract.get('businessName') or copy.get('title','')))
 # The shop's real name (the client's, or the name the link gave) replaces a misspelt one («مطبخ» for «وفطيرة»).
