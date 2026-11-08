@@ -51,7 +51,7 @@ if args.case=='gym':
 TEXT=REQUEST+('\nعنوان الفرع: '+ADDRESS if ADDRESS else '')
 contract=json.loads(subprocess.check_output(['node','-e',"const B=require(process.argv[1]);process.stdout.write(JSON.stringify(B.parse(process.argv[2],{images:+process.argv[4],answers:process.argv[3]?{address:process.argv[3]}:{}})))",str(repo/'app/src/main/assets/motion-brief.js'),REQUEST,ADDRESS,str(len(ORDER))]))
 assert not contract['missing'] and contract['logoFirst'],contract
-if CAFE:assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
+if args.case in ('four','seven'):assert contract['sceneCount']==(7 if args.case=='four' else 9),contract
 SCENES=contract['sceneCount'];TARGET=contract['durationSec'];ASPECT=contract.get('aspect') or '9:16'
 DRAFT=json.loads((repo/'qa/motion-drafts'/(args.case+'.json')).read_text()) if args.draft else None
 # «--groq»: the owner's Groq model writes the words on Colab exactly as the app sends it (writer.json with his

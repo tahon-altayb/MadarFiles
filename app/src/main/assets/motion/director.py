@@ -344,10 +344,11 @@ def groq_story(count):
  def call(system,user,label):
   started=time.monotonic();note=''
   payload=dict(body,messages=[{'role':'system','content':system+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(user,ensure_ascii=False)}])
-  for attempt in range(3):
+  for attempt in range(4):
    try:
     req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
-    answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'])
+    text=json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'] or ''
+    found=re.search(r'\{.*\}',text,re.S);answer=json.loads(found.group(0) if found else text)
     if not isinstance(answer,dict):answer={}
     scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[]) if isinstance(z,dict)]
     usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
@@ -358,6 +359,12 @@ def groq_story(count):
     payload['messages'].append({'role':'user','content':f'Return all {count} scenes, each with a unique Arabic title, a caption of at most 12 words and a complete narration.'})
    except urllib.error.HTTPError as failed:
     note='HTTPError:'+str(failed.code)
+    # 400 is Groq's JSON check failing on the model's answer (the same answer again at temperature 0):
+    # ask again a little warmer, then without the JSON mode and read the object out of the text.
+    if failed.code==400:
+     if payload.get('temperature',0)==0:payload['temperature']=.5
+     else:payload.pop('response_format',None)
+     continue
     # The free tier allows about 8000 tokens a minute: wait as long as Groq asks (at most 30 s).
     wait=failed.headers.get('retry-after') if failed.code==429 else None
     seconds=float(wait) if wait and re.fullmatch(r'[0-9.]+',wait) else 3
