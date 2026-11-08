@@ -30,7 +30,7 @@ if args.case=='answers':
  # The café answered through the questions (1.9.58 review): name typed, outdoor and indoor seating, the big screen,
  # baloot, open all day and night, Hungerstation and Keeta, a baloot tournament, Snapchat and TikTok.
  node=r'''const Q=require(process.argv[1]);const f=Q.build('cafe','');const set=(n,sel,other)=>{const x=f.find(z=>z.name===n);x.selected=sel;if(other)x.other=other;};
- set('name',[],'شاهي جمر الطيب');set('hook',['h24']);set('sells',['coalTea','milkTea','zaatar']);set('place',['outdoor','indoor','screens']);set('hours',['h24']);set('apps',['hunger','keeta']);
+ set('name',[],'شاهي جمر الطيب');set('goal',['brand']);set('pain',['closed']);set('hook',['h24']);set('sells',['coalTea','milkTea','zaatar']);set('place',['outdoor','indoor','screens']);set('hours',['h24']);set('apps',['hunger','keeta']);
  set('news',['event'],'بطولة بلوت كل خميس');set('cta',['visit']);set('extras',['hours','apps']);set('social',['snap','tiktok']);set('pace',['medium']);process.stdout.write(Q.plan(f,''));'''
  PLAN=subprocess.check_output(['node','-e',node,str(repo/'app/src/main/assets/motion-questions.js')]).decode()
  REQUEST='سوّ لي إعلان موشن لمحلي من الصور المرفقة، مدته 45 ثانية، عمودي، وبدون موسيقى. خلي الشعار أولا.\n'+PLAN

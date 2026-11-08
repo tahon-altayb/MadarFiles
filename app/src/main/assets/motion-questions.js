@@ -41,6 +41,24 @@
   opening:['افتتحنا!','تعال احتفل معنا بالافتتاح','stars',['افتتح']],
   branch:['فرعنا الجديد صار قريب منك','تعال زورنا في الفرع الجديد','location',['فرع']]
  };
+ // What the advert is for decides its story (how ad agencies brief a motion piece: the goal, the viewer's
+ // problem, what makes you different, the proof, one clear action). Each goal has its own order of scenes.
+ const GOALS=[o('brand','تعريف بالمحل وش يميزنا (حتى لو ما عندنا جديد)',null),o('offer','الترويج لعرض',/عرض|خصم/),o('new','صنف أو منتج جديد',/جديد/),o('event','فعالية أو بطولة',/بطوله|فعاليه/),o('opening','افتتاح أو فرع جديد',/افتتاح|فرع جديد/),o('season','مناسبة (رمضان، العيد، اليوم الوطني)',/رمضان|العيد|الوطني/),o('orders','نبي طلبات أكثر من التطبيقات',/طلبات|تطبيقات/)];
+ const ARC={
+  brand:'ترتيب القصة: الشعار والاسم ← أقوى شي يميزنا (أو مشكلة العميل عند غيرنا وحلها عندنا) ← أشهر صنفين أو ثلاثة كل واحد بمشهد ← التجربة والمكان ← دليل الثقة ← دعوة واضحة',
+  offer:'ترتيب القصة: الشعار ← العرض نفسه بخط كبير ورقم واضح ← وش يشمل ← ليش الحين (مدة العرض) ← وين تلقانا ← دعوة واضحة',
+  new:'ترتيب القصة: الشعار ← تشويق «شي جديد وصل» ← كشف الصنف الجديد ← تفصيلة تشهي ← متوفر وين ومتى ← دعوة للتجربة',
+  event:'ترتيب القصة: الشعار ← إعلان الفعالية باسمها ← متى ← كيف تشارك والجائزة إن وجدت ← أجواء المكان ← دعوة للتسجيل أو الحضور',
+  opening:'ترتيب القصة: الشعار ← «افتتحنا» ← وش نقدم ← عرض الافتتاح إن وجد ← الموقع ← دعوة للزيارة',
+  season:'ترتيب القصة: الشعار ← تهنئة المناسبة بجملة قصيرة ← أصناف أو عرض المناسبة ← أوقات العمل في المناسبة ← دعوة واضحة',
+  orders:'ترتيب القصة: الشعار ← سؤال يلمس العميل («جوعان وما تبي تطلع؟») ← تطبيقات التوصيل بأسمائها ← أشهر الأصناف ← سرعة أو سهولة الطلب ← دعوة للطلب'
+ };
+ // The viewer's problem elsewhere: a hook that asks what he is already thinking.
+ const PAINS={
+  cafe:[o('cold','الشاي يوصل بارد أو ماله طعم'),o('wait','الانتظار الطويل'),o('closed','المحلات تقفل بدري'),o('crowd','الزحمة وما فيه مكان'),o('pricey','الأسعار غالية')],
+  restaurant:[o('cold','الأكل يوصل بارد'),o('wait','الانتظار الطويل'),o('portion','الكمية ما تشبع'),o('taste','الطعم يتغير كل مرة'),o('pricey','الأسعار غالية')],
+  general:[o('wait','الانتظار والتأخير'),o('quality','الجودة ما تكون مضمونة'),o('pricey','الأسعار غالية'),o('hard','صعوبة الطلب أو الحجز'),o('service','الخدمة ضعيفة')]
+ };
  const SOCIAL=[o('snap','سناب شات',/سناب/),o('tiktok','تيك توك',/تيك/),o('insta','انستقرام',/انستا|انستقرام/),o('x','إكس (تويتر)',/تويتر|اكس/),o('whatsapp','واتساب',/واتس/)];
  const NAME_LABEL={app:'وش اسم التطبيق؟',education:'وش اسم الجهة أو المعهد؟',realestate:'وش اسم المكتب أو المشروع؟',clinic:'وش اسم العيادة؟',gym:'وش اسم النادي؟',events:'وش اسم الفعالية أو الجهة؟',retail:'وش اسم المتجر؟'};
  // Each kind: label, how it is recognised, and its own suggestions per section.
@@ -162,8 +180,10 @@
  function build(kind,text){
   const k=KINDS[kind]||KINDS.general,f=[kindField(kind)];const q=(name,label,section,list,multi,placeholder)=>f.push(chips(name,label,section,list,multi,placeholder,text));
   q('name',NAME_LABEL[kind]||'وش اسم المحل؟','نشاطك',[],false,'اكتب الاسم بالضبط مثل ما تبيه يظهر');
+  q('goal','وش هدف الإعلان؟','نشاطك',GOALS,false,'أخرى: اكتب هدفك');
   const opening='الافتتاح: أول ما يشوفه الناس';
   q('hook','وش أقوى شي تبيه يعلق في بال الناس من أول ثانية؟',opening,k.hook,false,'أخرى: اكتب فكرتك للبداية');
+  q('pain','وش أكثر شي يزعج العميل عند غيركم وأنتم حليتوه؟ (اختياري)',opening,PAINS[kind]||PAINS.general,false,'أخرى: اكتب المشكلة اللي تحلونها');
   q('feeling','وش الإحساس اللي تبي الناس تطلع فيه؟',opening,[o('crave','نفسي أروح الحين'),o('trust','أثق فيهم'),o('wow','واو! ما توقعت'),o('belong','هذا مكاننا'),o('smart','قرار ذكي وموفر')],false);
   const products=kind==='app'?'وش يسوي':'المنتجات أو الخدمات';
   q('sells',k.sells[0],products,k.sells[1],true,k.sells[2]||'أخرى: مثلًا صنف ما ذكرته');
@@ -178,7 +198,7 @@
   const trust='الثقة';
   q('proof','وش يثبت للناس إنكم الأفضل؟',trust,[o('years','خبرة سنين',/سنين|سنه|منذ/),o('customers','عدد كبير من العملاء'),o('ratings','تقييمات عالية في قوقل والتطبيقات',/تقييم/),o('branches','أكثر من فرع',/فروع/),o('famous','معروفين في المنطقة')],true,'أخرى: مثلًا من 2015، أو 4.8 في قوقل');
   const offer='العروض والجديد';
-  q('offer','عندكم عرض حالي؟',offer,OFFER,false,'اكتب العرض بالضبط: مثلًا الشاي بريالين');
+  q('offer','عندكم عرض حالي؟',offer,OFFER,false,'اكتب العرض ومدته بالضبط: مثلًا الشاي بريالين لين نهاية الشهر');
   q('news','عندكم شي جديد؟',offer,NEWS,false,'اكتب الجديد بالضبط: مثلًا بيتزا، أو بطولة بلوت يوم الخميس');
   const closing='الختام';
   q('cta','وش تبي الناس تسوي بعد الإعلان؟',closing,k.cta,false,'أخرى: اكتب جملة الختام اللي تبيها');
@@ -204,6 +224,9 @@
   const scene=(title,caption,art,must)=>{if(title&&scenes.length<6)scenes.push('مشهد مطلوب: «'+title+'» | «'+caption+'»'+(art?' | رسمة: '+art:'')+(must&&must.length?' | لازم: '+must.join('، '):''));};
   const fromBank=id=>{const x=SCENES[id];if(x)scene(x[0],x[1],x[2],x[3]);};
   if(kindLabel)lines.push('نوع النشاط: '+kindLabel);
+  const goal=sel('goal')[0],goalText=typed('goal');
+  if(goal||goalText){lines.push('هدف الإعلان: '+(goalText||v('goal')[0]));if(ARC[goal])lines.push(ARC[goal]);}
+  const pain=typed('pain')||v('pain')[0];if(pain)lines.push('• مشكلة العميل عند غيرنا (اجعلها سؤال الافتتاح ثم الحل عندنا): '+pain);
   // The name the owner typed is the one the film writes (never a reading of the logo).
   const name=typed('name').replace(/^[«"']+|[»"']+$/g,'').trim();
   if(name)lines.push((kind==='app'?'اسم التطبيق':'اسم المحل')+': «'+name+'»');
