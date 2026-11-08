@@ -176,6 +176,7 @@
   line('حفظت تفضيلات '+MadarMotionBrief.describeProfile(profile)+'.\nأي طلب موشن فيه «'+profile.name+'» أو نفس الرابط بطبقها عليه تلقائيًا.');
  }
  function submit(text,record=true){if(switching)return;
+ if(!current()?.choiceRequest&&!current()?.motionPending){const small=MadarConversation.smallTalk(text,{motion:!!current()?.motionProject});if(small){if(record)line(text,'user');input.value='';line(small);return;}}
  const known=MadarConversation.facts(text,{attachments:current()?.attachments||[],pending:!!current()?.choiceRequest});if(known){if(record)line(text,'user');input.value='';line(known);return;}
  if(!state.busy&&!pending&&choiceReply(text,record))return;
  if(!state.busy&&!pending&&current()?.motionProject&&/^(?:اعتمد|اعتماد|اعتمدها|اعتمد هذي النسخه|اعتمد هذه النسخه|هذي النسخه معتمده)[.!؟\s]*$/.test(MadarConversation.normalize(text))){if(record)line(text,'user');input.value='';native('agentMotionApprove',{thread:active,project:current().motionProject});return;}

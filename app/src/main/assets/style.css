@@ -200,3 +200,14 @@ input[type=password]{width:100%;background:var(--white);padding:13px;border:1px 
 
 .agentChoiceIntro{margin:-6px 0 12px;font-size:12.5px;line-height:1.8;color:#5c6f61}.agentChipField{margin:14px 0}.agentChipLabel{display:block;font-size:12.5px;color:#3f594a;margin-bottom:8px;font-weight:bold}.agentChips{display:flex;flex-wrap:wrap;gap:7px}.agentChip{min-height:38px;border:1px solid #d3ddcc;border-radius:999px;background:#f7f8f1;color:#3f594a;padding:7px 13px;font:12.5px/1.5 Tahoma,sans-serif}.agentChip[aria-pressed=true]{background:#2f5b48;border-color:#2f5b48;color:#fffdf8}.agentChip[aria-pressed=true]::before{content:'✓ '}.agentChipField input{display:block;width:100%;min-height:42px;margin-top:8px;padding:9px 12px;border:1px dashed #cfd9c9;border-radius:12px;background:#fffefa;color:#263f35;font:13px/1.6 Tahoma,sans-serif}
 .agentChoiceSection{margin:22px 0 4px;padding-top:14px;border-top:1px solid #e6ebe2;font-size:13.5px;color:#2f5b48}.agentChoiceSection:first-of-type{border-top:0;padding-top:0;margin-top:6px}
+/* Chat polish: the assistant answers in a soft card, the newest message eases in, and work in
+   progress shows a typing pulse. */
+.agentMessage.assistant>div{background:#fffefb;border:1px solid #e9ece3;border-radius:5px 20px 20px 20px;padding:11px 15px;box-shadow:0 2px 10px #263d300a;display:inline-block;max-width:100%;white-space:pre-line}
+.agentMessage.assistant>small{color:#a8794f;font-weight:bold;letter-spacing:.2px}
+.agentMessage:last-child{animation:agentMessageIn .28s ease-out}
+@keyframes agentMessageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#agentTask b::after{content:'';display:inline-block;width:18px;margin-inline-start:4px;animation:agentTyping 1.2s steps(4,end) infinite;overflow:hidden;vertical-align:bottom;white-space:nowrap}
+@keyframes agentTyping{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+.agentChip{transition:background .15s,border-color .15s,transform .1s}.agentChip:active{transform:scale(.96)}
+@media(prefers-reduced-motion:reduce){.agentMessage:last-child,#agentTask b::after,.agentChip{animation:none;transition:none}}
+.agentMessage.assistant{text-align:left}.agentMessage.assistant>div{text-align:right}.agentMessage.assistant>small{display:block;text-align:left}.agentMessage.assistant .agentResult{text-align:right}

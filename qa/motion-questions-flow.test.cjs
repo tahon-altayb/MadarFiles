@@ -16,6 +16,10 @@ assert.equal(B.pictureMode('لا تحط الصور نفسها خله رسوما�
 const Q=require('../app/src/main/assets/motion-questions.js');
 for(const id of Q.ORDER){const f=Q.build(id,'نص الطلب');assert.ok(f.length>=17,id);assert.ok(f.every(x=>!String(x.placeholder).includes('نص الطلب')),id);assert.ok(f.reduce((n,x)=>n+x.options.length,0)>=70,id);}
 assert.equal(Q.detect('محل شاي جمر وفطيرة'),'cafe');assert.equal(Q.detect('عمودي للجوال، تطبيقات توصيل هنقرستيشن و كيتا'),'cafe');assert.equal(Q.detect('محل جوالات وساعات ذكية'),'electronics');assert.equal(Q.detect('تطبيق لتعليم الانجليزي'),'education');assert.equal(Q.detect('مشروع فلل في الرياض'),'realestate');
+// Small talk is answered at once; anything with a request in it is not small talk.
+assert.match(C.smallTalk('السلام عليكم',{}),/وعليكم السلام/);assert.match(C.smallTalk('يعطيك العافية',{motion:true}),/العفو/);
+for(const t of ['ممتاز بس غير الخط','شكرا سوي لي اعلان موشن لمحلي مدته 30 ثانية','تمام','هلا سوي اعلان'])assert.equal(C.smallTalk(t,{}),null,t);
+assert.match(C.facts('كيف اعدل الاعلان؟',{}),/غيّر العبارة/);
 (async()=>{const browser=await chromium.launch({...(process.env.MADAR_CHROME_PATH?{executablePath:process.env.MADAR_CHROME_PATH}:{channel:process.env.CI?'chrome':undefined}),headless:true});
  const page=await browser.newPage({viewport:{width:412,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{window.requests=[];window.Android={request:s=>requests.push(JSON.parse(s))};});
