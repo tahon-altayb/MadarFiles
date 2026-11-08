@@ -369,3 +369,6 @@ close=[{'title':'a','caption':'b','narration':'c'},{'title':'اطلب الحين
 C.tidy_copy(close,{'required':['اطلب الحين من متجرنا']});assert close[1]['narration']=='اطلب الحين من متجرنا عبر منصة زد.',close
 pro=[{'title':'مدربون','caption':'فريقنا يوجهك توجيها احترافيا لكل تمرين','narration':'n'}];C.drop_claims(pro,'مدربين معتمدين');assert pro[0]['caption']=='فريقنا يوجهك توجيها لكل تمرين',pro
 print('the closing voice never says «اطلب» twice; «احترافيا» needs the owner to say it')
+pie=[{'title':'فطيرة الطيب','caption':'تذوقوا فطيرة الطيب الطازجة','narration':'n'}];C.fix_brand(pie,'شاي جمر وفطيرة الطيب')
+assert pie[0]['title']=='فطيرة الطيب' and pie[0]['caption']=='تذوقوا فطيرة الطيب الطازجة',pie
+print('«فطيرة الطيب» never becomes «وفطيرة الطيب»')
