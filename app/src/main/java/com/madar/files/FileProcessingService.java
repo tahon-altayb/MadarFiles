@@ -37,4 +37,7 @@ public class FileProcessingService extends Service {
  private void emit(JSONObject event){if(cancel.get()&&!event.optString("type").equals("cancelled")){if(event.optString("type").equals("result"))try{FilesUtil.resolve(this,event.getString("name")).delete();}catch(Exception ignored){}throw new java.util.concurrent.CancellationException();}try{event.put("at",System.currentTimeMillis());}catch(JSONException ignored){}lastEvent=event.toString();if(java.util.Arrays.asList("result","text","subtitles","driveShared").contains(event.optString("type")))WorkNotifications.complete(this,742);sendBroadcast(new Intent(VideoExportService.EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
  @Override public IBinder onBind(Intent i){return null;}
  @Override public void onDestroy(){cancel.set(true);if(wake!=null&&wake.isHeld())wake.release();super.onDestroy();}
+
+ // Android 15 ends a data-sync service after its daily allowance: stop at once so the app is never closed for it.
+ @Override public void onTimeout(int startId,int type){cancel.set(true);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
 }
