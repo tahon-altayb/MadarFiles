@@ -374,6 +374,8 @@ def numbers_in(text):
   value=float(w.replace(',','.')) if w[0].isdigit() else NUMBER_WORDS.get(bare,NUMBER_WORDS.get(w))
   # «رقم 3» names an item, it counts nothing (an unclaimed «رقم 1» is caught as a claim).
   if value is None or i and words[i-1]=='رقم':continue
+  # «الثانية عشرة»، «الحادية عشر»: the teen of an ordinal hour, not ten.
+  if value==10 and i and (words[i-1].startswith('ال') or words[i-1] in NUMBER_WORDS):continue
   out.append((value,words[i+1] if i+1<len(words) else ''))
  return out
 def _num(v):return str(int(v)) if float(v)==int(v) else str(v)
@@ -422,7 +424,8 @@ def fix_fused(scenes,grounding):
     lead=re.match(r'(?:وال|بال|لل|ال|و|ب|ل)?',core).group() if len(core)>=8 and core not in known else ''
     rest=core[len(lead):]
     if len(core)>=8 and core not in known and rest not in known:
-     heads=[k for k in known if len(k)>=4 and rest.startswith(k) and len(rest)-len(k)>=3 and rest[len(k):] not in ('هما','كما','تين','تان')]
+     # «منتجاتنا» is «منتج» with a plural and «نا», not two words.
+     heads=[k for k in known if len(k)>=4 and rest.startswith(k) and len(rest)-len(k)>=3 and not re.fullmatch(r'(?:ات|ين|ون|ان|يه|يات|ت|ي|ه)?(?:ه|ها|هم|هن|ك|كم|كن|نا|ي|هما|كما)?',rest[len(k):])]
      if heads:
       head=max(heads,key=len);bare=w.strip('.،,!؟:');out.append(w.replace(bare,lead+head));hit=True;continue
     out.append(w)
