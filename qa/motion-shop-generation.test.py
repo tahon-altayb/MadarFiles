@@ -153,7 +153,8 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  video_stream=next(s for s in info['streams'] if s['codec_type']=='video');w,h=video_stream['width'],video_stream['height']
  check({'9:16':h>w,'16:9':w>h,'1:1':w==h}[ASPECT],f'frame {w}x{h} is not {ASPECT}')
  # Every scene the owner chose in the questions is in the film with its names.
- chosen=rules.required_scenes(REQUEST);missing=[x['title'] for x in chosen if not any(rules.covers(z,x) for z in scenes)]
+ shown_text=[{'title':s.get('title',''),'caption':' '.join(str(e.get('text','')) for e in s['composition']['elements'] if e.get('kind') in ('text','metric'))} for s in scenes]
+ chosen=rules.required_scenes(REQUEST);missing=[x['title'] for x in chosen if not any(rules.covers(z,x) for z in shown_text)]
  print('EVIDENCE chosen scenes',len(chosen),'missing',missing,flush=True)
  check(not missing,'chosen scenes missing: '+str(missing))
  check(any(s['codec_type']=='audio' for s in info['streams']),'the energetic effects track is missing')
