@@ -357,7 +357,8 @@ def groq_story(count):
      for item in local_rules.required_scenes(brief.get('text','')):
       if len(scenes)>=count:break
       if not any(local_rules.covers(z,item) for z in scenes):scenes.insert(len(scenes)-1,{'title':item['title'],'caption':item['caption'],'narration':(item['title']+'، '+item['caption']).strip('، ')+'.'})
-    usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
+    # One scene short of a long plan (seven of eight) is a whole advert: the film takes the draft's count.
+    usable=(len(scenes)==count or (count>=6 and len(scenes)==count-1)) and len({z['title'] for z in scenes})==len(scenes) and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
     with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':len(scenes),'usable':usable,'error':'','seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
     if usable:return {'title':plain(answer.get('title'))[:80],'scenes':scenes}
     # An answer with the wrong number of scenes (one scene in the 1.9.57 seven-picture run) is asked again, twice at most.
@@ -392,8 +393,13 @@ def groq_story(count):
  Path('groq-draft.json').write_text(json.dumps(draft['scenes'],ensure_ascii=False))
  final=call(editor_rules.strip(),{'facts':ask,'draft':draft},'groq editor') if editor_rules.strip() else None
  if final:Path('groq-edited.json').write_text(json.dumps(final['scenes'],ensure_ascii=False))
- return draft_story(final or draft,count)
+ chosen=final or draft
+ global scene_count
+ scene_count=len(chosen['scenes'])
+ return draft_story(chosen,scene_count)
 DRAFT=None if chunks else (groq_story(scene_count) or draft_story(brief.get('draftStory'),scene_count))
+# A Groq draft may set its own count (one short of a long plan): pacing and the schema follow it.
+scene_seconds=total_seconds/scene_count;STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
 if DRAFT:
  story=DRAFT;Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False));print('DIRECTOR_DRAFT groq',len(story['scenes']),file=sys.stderr,flush=True)
 else:
