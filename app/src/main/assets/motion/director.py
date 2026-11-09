@@ -344,7 +344,7 @@ def groq_story(count):
  def call(system,user,label):
   started=time.monotonic();note='';asked=0
   payload=dict(body,messages=[{'role':'system','content':system+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(user,ensure_ascii=False)}])
-  for attempt in range(5):
+  for attempt in range(6):
    try:
     req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
     text=json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'] or ''
@@ -376,6 +376,7 @@ def groq_story(count):
     if failed.code==400:
      if payload.get('reasoning_effort')!='low':payload.update(reasoning_effort='low',max_completion_tokens=8000)
      elif payload.get('temperature',0)==0:payload['temperature']=.5
+     elif payload['model']!='openai/gpt-oss-20b':payload.update(model='openai/gpt-oss-20b',temperature=.3)
      else:payload.pop('response_format',None)
      continue
     # The free tier allows about 8000 tokens a minute: wait as long as Groq asks (at most 30 s).
