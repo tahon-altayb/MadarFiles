@@ -371,8 +371,11 @@ def groq_story(count):
     except Exception:pass
     # 400 is Groq's JSON check failing on the model's answer (the same answer again at temperature 0):
     # ask again a little warmer, then without the JSON mode and read the object out of the text.
+    # An empty «failed_generation» means the thinking used up the answer's room (a long questions brief):
+    # think less and give the answer more room first.
     if failed.code==400:
-     if payload.get('temperature',0)==0:payload['temperature']=.5
+     if payload.get('reasoning_effort')!='low':payload.update(reasoning_effort='low',max_completion_tokens=8000)
+     elif payload.get('temperature',0)==0:payload['temperature']=.5
      else:payload.pop('response_format',None)
      continue
     # The free tier allows about 8000 tokens a minute: wait as long as Groq asks (at most 30 s).
