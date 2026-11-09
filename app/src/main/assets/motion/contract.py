@@ -463,8 +463,8 @@ def required_scenes(text):
  return out
 def covers(shot,item):
  seen=key(str(shot.get('title',''))+' '+str(shot.get('caption','')))
- # «الساعه|24»: either word shows the chosen scene.
- return all(any(key(alt) in seen for alt in w.split('|') if alt) for w in item['must'])
+ # «الساعه/24»: either word shows the chosen scene.
+ return all(any(key(alt) in seen for alt in w.split('/') if alt) for w in item['must'])
 # A city the client never named («مقهى في قلب الرياض» for a café in Taif): the phrase leaves.
 CITIES=r'الرياض|جده|جدة|مكه|مكة|المدينه المنوره|المدينة المنورة|الدمام|الخبر|الظهران|الطائف|ابها|أبها|تبوك|بريده|بريدة|القصيم|حائل|جازان|جيزان|نجران|الاحساء|الأحساء|الهفوف|ينبع|الجبيل|خميس مشيط|الباحه|الباحة|عرعر|سكاكا|القطيف'
 def fix_places(scenes,grounding):
