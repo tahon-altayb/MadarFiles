@@ -17,7 +17,7 @@ jobs:
       matrix:
         voice: [none]
         variant: [groq]
-        case: [answers, four]
+        case: [four, seven, telecom, grocery, gym, answers]
         include:
           - {case: four, mode: attached}
           - {case: seven, mode: attached}
