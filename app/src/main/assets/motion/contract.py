@@ -463,12 +463,35 @@ def required_scenes(text):
  return out
 def covers(shot,item):
  seen=key(str(shot.get('title',''))+' '+str(shot.get('caption','')))
- return all(key(w) in seen for w in item['must'])
+ # «الساعه|24»: either word shows the chosen scene.
+ return all(any(key(alt) in seen for alt in w.split('|') if alt) for w in item['must'])
+# A city the client never named («مقهى في قلب الرياض» for a café in Taif): the phrase leaves.
+CITIES=r'الرياض|جده|جدة|مكه|مكة|المدينه المنوره|المدينة المنورة|الدمام|الخبر|الظهران|الطائف|ابها|أبها|تبوك|بريده|بريدة|القصيم|حائل|جازان|جيزان|نجران|الاحساء|الأحساء|الهفوف|ينبع|الجبيل|خميس مشيط|الباحه|الباحة|عرعر|سكاكا|القطيف'
+def fix_places(scenes,grounding):
+ known=key(grounding);changed=[]
+ # The closing card carries the owner's address as he gave it.
+ for i,z in enumerate(scenes[:-1]):
+  for field in ['title','caption','narration']:
+   v=str(z.get(field,''))
+   for city in set(re.findall(CITIES,v)):
+    if key(city) in known:continue
+    w=re.sub(r'\s*(?:،\s*)?(?:(?:في|ب|من)\s+)?(?:(?:قلب|وسط|مدينه|مدينة)\s+)?'+city,'',v).strip(' ،,')
+    if w!=v:v=w;changed.append(i+1)
+   z[field]=v
+ return changed
 def place_required(scenes,items,keep=()):
  """Each chosen scene is in the film: a missing one takes the place of a middle scene that carries none of the
  chosen ones (the last such scene first), with the owner's polished words. Returns the scene numbers replaced."""
  changed=[]
  for item in items:
+  hit=next((i for i in range(1,len(scenes)-1) if covers(scenes[i],item)),None)
+  if hit is not None:
+   # The scene is there; its words become the owner's finished ones («لا يختفي، يظل متاحا لليلة ونهار» read
+   # «ليل نهار، طلبك جاهز متى ما جيت» in the 1.9.58 questions run).
+   z=scenes[hit]
+   if (z.get('title'),z.get('caption'))!=(item['title'],item['caption']):
+    z.update(title=item['title'],caption=item['caption'],narration=(item['title']+'، '+item['caption']).strip('، ')+'.');changed.append(hit+1)
+   continue
   if any(covers(z,item) for z in scenes):continue
   free=[i for i in range(1,len(scenes)-1) if i not in keep and i+1 not in changed and not any(covers(scenes[i],x) for x in items)]
   if not free:continue
