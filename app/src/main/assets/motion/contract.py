@@ -609,6 +609,15 @@ def enforce_closing(scenes,c):
  address=str(c.get('address') or '')
  # «الرياض حي النخيل» is the same address as «الرياض – حي النخيل»: compare letters and digits only.
  bare=lambda v:re.sub(r'[^\u0621-\u064a0-9]+','',key(v))
+ # The address is written exactly as the owner gave it: a version with other separators is replaced by his.
+ if address and not address.startswith('http') and key(address) not in key(everything) and bare(address) in bare(everything):
+  cap=str(last.get('caption',''))
+  pieces=[x for x in re.split(r'\s*·\s*',cap) if x.strip()]
+  join=[n for n in range(len(pieces)) for m in range(n+1,len(pieces)+1) if bare(' '.join(pieces[n:m]))==bare(address)]
+  if join:
+   n=join[0];m=next(m for m in range(n+1,len(pieces)+1) if bare(' '.join(pieces[n:m]))==bare(address))
+   pieces[n:m]=[address];last['caption']=' · '.join(pieces);everything=key(last.get('title',''))+' '+key(last.get('caption',''))
+   changed=True
  extras=[address] if address and not address.startswith('http') and bare(address) not in bare(everything) else []
  phone=str(c.get('phone') or '')
  if phone and phone not in everything.replace(' ',''):extras.append(phone)
