@@ -582,14 +582,16 @@ if not chunks and not (isinstance(asked_scenes,int) and not isinstance(asked_sce
    head=local_rules.key(story['scenes'][i].get('title',''))
    if len(story['scenes'])>floor and (head.startswith(brand_key) or local_rules.GREETING.search(head)):del story['scenes'][i]
   # The same fact twice in other words (opening hours in scenes 2 and 5) keeps only the first.
+ # A scene the owner chose (indoor and outdoor seating are two choices, not a repeat) is never dropped.
  for i in reversed(local_rules.topic_repeats(story['scenes'],globals().get('BRAND') or closing.get('businessName') or story.get('title',''))):
-  if len(story['scenes'])>floor:del story['scenes'][i]
+  if len(story['scenes'])>floor and not any(local_rules.covers(story['scenes'][i],x) for x in local_rules.required_scenes(brief.get('text',''))):del story['scenes'][i]
  scene_count=len(story['scenes'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 local_rules.tidy_copy(story['scenes'],closing)
 # The scenes the owner chose in the questions are all in the film, in his words (never the logo scene or the closing).
 REQUIRED=local_rules.required_scenes(brief.get('text',''))
 placed=local_rules.place_required(story['scenes'],REQUIRED,keep={0})
+local_rules.fix_places(story['scenes'],GROUNDING)
 if placed:
  with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'required scenes','placed':placed,'wanted':len(REQUIRED)},ensure_ascii=False)+'\n')
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())

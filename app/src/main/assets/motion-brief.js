@@ -175,7 +175,7 @@
   result.required=unique(result.required);result.forbidden=unique(result.forbidden.map(clean));result.notes=unique(result.notes).slice(0,12);
   const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes,Number.isInteger(context.images)?context.images:undefined);
   // Scenes the owner chose in the questions each need their own, plus the logo opening and the closing (two seconds a scene at least).
-  {const chosen=(String(text).match(/مشهد مطلوب:/g)||[]).length;if(chosen&&!Number.isInteger(result.explicitScenes))result.sceneCount=Math.min(10,Math.max(3,Math.floor(seconds/2)),Math.max(result.sceneCount,chosen+2));}
+  {const chosen=(String(text).match(/مشهد مطلوب:/g)||[]).length;if(chosen&&!Number.isInteger(result.explicitScenes))result.sceneCount=Math.min(10,Math.max(3,Math.floor(seconds/2)),Math.max(result.sceneCount,chosen+4));}
  result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
   const images=context.images||0,hasUrl=result.urls.length>0;
   if(result.requireAddress&&!result.address)result.missing.push({field:'address',blocking:true,question:'وش عنوان الفرع اللي أكتبه في آخر الإعلان؟ اكتبه مثل: الرياض – حي النرجس – طريق أبي بكر. وإذا ما تبيه اكتب «بدون عنوان».'});
