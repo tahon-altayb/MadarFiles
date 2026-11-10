@@ -634,9 +634,11 @@ PICTURE_CONCEPTS={'pastry':r'فطير|فطاي|معجن|مخبوز|pastr|\bpies?
 PRODUCT_CONCEPTS={'pastry','tea','coffee','menu','fries','grill','sweets','cold','watch','headphones','smartphone','grains'}
 def _concepts(text):
  t=local_rules.key(text).replace('ئ','ي');return {k for k,rx in PICTURE_CONCEPTS.items() if re.search(rx,t)}
+GENERIC_STEMS={'كبير','صغير','جديد','مميز','مريح','افضل','احلي','جميل','خاص','كامل','سريع','كثير','متنو','رايع','صوره','خلفي','داخل','وسط','تحتو','مكتو','عليه','تحته','فوق','تمثل'}
 def _stems(text):
  t=local_rules.key(text).replace('ئ','ي')
- return {w[:4] for w in re.findall(r'[\u0621-\u064a]{3,}',re.sub(r'(?:^|\s)(?:[وبفل])?ال',' ',t)) if len(w)>=3}|{'#'+k for k in _concepts(t)}
+ # «على» and «كبيرة» tie nothing together: the kettles photo («أباريق… على خلفية داكنة») sat under «المباريات على الشاشة الكبيرة».
+ return {w[:4] for w in re.findall(r'[\u0621-\u064a]{3,}',re.sub(r'(?:^|\s)(?:[وبفل])?ال',' ',t)) if len(w)>=3 and w not in local_rules.STOP and w[:4] not in GENERIC_STEMS}|{'#'+k for k in _concepts(t)}
 def picture_fits(z,index,loose=False):
  """2 levels: the picture shows what the scene says (shared words or concepts such as فطائر/فطيرة);
  or, loosely, a scene that names no product (hours, the brand, the atmosphere) may show a place or a
