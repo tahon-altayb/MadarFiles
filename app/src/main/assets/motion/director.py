@@ -610,7 +610,11 @@ if not chunks:
   for fact in reference_facts:
    if fact.get('index')==logo_index or fact.get('kind') in ('unrelated','platform_icon','brand_logo'):continue
    if not menu_said.search(local_rules.key(fact.get('description',''))) or any(menu_said.search(local_rules.key(str(z.get('title',''))+' '+str(z.get('caption','')))) for z in story['scenes']):continue
-   story['scenes'].insert(len(story['scenes'])-1,{'title':'تصفح المنيو','caption':'اختر طلبك على راحتك','narration':'تصفح المنيو، واختر طلبك على راحتك.','visual':'','reference':fact.get('index'),'chosen':True});menu_scene=True;break
+   story['scenes'].insert(len(story['scenes'])-1,{'title':'تصفح المنيو','caption':'اختر طلبك على راحتك','narration':'تصفح المنيو، واختر طلبك على راحتك.','visual':'','reference':fact.get('index'),'chosen':True,'pinned':True});menu_scene=True
+   # The menu belongs to this scene only (it also "fits" a scene that names one of its items).
+   for z in story['scenes'][:-2]:
+    if z.get('reference')==fact.get('index'):z['reference']=-1
+   break
  if opened or repeats or menu_scene:
   with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'owner plan','opening':opened,'repeats_removed':repeats,'menu_scene':menu_scene,'scenes':len(story['scenes'])},ensure_ascii=False)+'\n')
  # Fewer scenes never stretch each one: a film whose length the owner did not set himself keeps about seven seconds a scene.
@@ -657,6 +661,7 @@ for i,z in enumerate(story['scenes']):
  if ref!=-1:seen.add(ref)
 # The client's pictures come first: still unused ones take picture-less middle scenes, the closest
 # match first, then (loosely) scenes about the place, the hours or the brand; the rest are drawn.
+seen.update(z['reference'] for z in story['scenes'] if z.get('pinned') and z.get('reference',-1)!=-1)
 unused=[n for n in photos if n not in seen] if PICTURE_MODE!='inspired' else []
 for loose in (False,True):
  for i,z in enumerate(story['scenes']):
@@ -688,7 +693,10 @@ if PICTURE_MODE!='inspired' and reference_facts and photos:
    common=_concepts(read)&_concepts(description);words={w for w in _stems(read)&_stems(description) if not w.startswith('#')}
    if not (common or words):continue
    pairs.append((3*len(common)+len(words)+0.5*len(_concepts(said)&_concepts(description)),-i,i,n))
- taken_scene,taken_photo={},set()
+ # A picture given its own scene (the menu) stays there.
+ pinned={i:story['scenes'][i]['reference'] for i in middle if story['scenes'][i].get('pinned') and story['scenes'][i].get('reference',-1)!=-1}
+ pairs=[x for x in pairs if x[2] not in pinned and x[3] not in pinned.values()]
+ taken_scene,taken_photo=dict(pinned),set(pinned.values())
  for score,_,i,n in sorted(pairs,reverse=True):
   if i in taken_scene or n in taken_photo:continue
   taken_scene[i]=n;taken_photo.add(n)
