@@ -13,7 +13,7 @@ def post(body):
   except urllib.error.HTTPError as e:
    wait=e.headers.get('retry-after');print('WAIT',e.code,wait,e.read().decode()[:200],flush=True);time.sleep(min(40,float(wait or 5))+1)
  raise SystemExit('groq failed')
-SEARCHERS=sys.argv[1:] or ['groq/compound-mini','openai/gpt-oss-120b']
+SEARCHERS=sys.argv[1:] or ['openai/gpt-oss-120b','openai/gpt-oss-20b']
 cases=[('شاهي جمر الطيب','كوفي أو شاي','سوي موشن لمحلي\nنوع النشاط: كوفي أو شاي\nاسم المحل: «شاهي جمر الطيب»\n• نبيع ونقدم: شاي الجمر، شاي حليب\nالعنوان: الطائف، شارع الجال'),
  ('جاهز','تطبيق','سوي موشن لتطبيق\nنوع النشاط: تطبيق\nاسم التطبيق: «جاهز»'),
  ]
