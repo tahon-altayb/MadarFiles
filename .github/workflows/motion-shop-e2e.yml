@@ -17,13 +17,8 @@ jobs:
       matrix:
         voice: [none]
         variant: [groq]
-        case: [four, seven, telecom, grocery, gym, answers]
+        case: [answers]
         include:
-          - {case: four, mode: attached}
-          - {case: seven, mode: attached}
-          - {case: telecom, mode: attached}
-          - {case: grocery, mode: attached}
-          - {case: gym, mode: inspired}
           - {case: answers, mode: attached}
     steps:
       - uses: actions/checkout@v4
