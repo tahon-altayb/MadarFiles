@@ -222,7 +222,7 @@
   const kind=(get('business')?.selected||[])[0];const kindLabel=v('business')[0];
   const add=(label,n)=>{const x=v(n);if(x.length)lines.push('• '+label+': '+x.join('، '));};
   const scene=(title,caption,art,must)=>{if(title&&scenes.length<6)scenes.push('مشهد مطلوب: «'+title+'» | «'+caption+'»'+(art?' | رسمة: '+art:'')+(must&&must.length?' | لازم: '+must.join('، '):''));};
-  const fromBank=id=>{const x=SCENES[id];if(x)scene(x[0],x[1],x[2],x[3]);};
+  const fromBank=id=>{const x=SCENES[id];if(x&&x[0]!==opened)scene(x[0],x[1],x[2],x[3]);};
   if(kindLabel)lines.push('نوع النشاط: '+kindLabel);
   const goal=sel('goal')[0],goalText=typed('goal');
   if(goal||goalText){lines.push('هدف الإعلان: '+(goalText||v('goal')[0]));if(ARC[goal])lines.push(ARC[goal]);}
@@ -231,7 +231,12 @@
   const name=typed('name').replace(/^[«"']+|[»"']+$/g,'').trim();
   if(name)lines.push((kind==='app'?'اسم التطبيق':'اسم المحل')+': «'+name+'»');
   // The opening idea in finished words («مفتوحين 24 ساعة» reads «شغالين على مدار الساعة»).
-  {const hook=sel('hook')[0],own=typed('hook');const said=own||(SCENES[hook]?SCENES[hook][0]:v('hook')[0]);if(said)lines.push('• الافتتاح (أول مشهد بعد الشعار يكون عن هذا): '+said);}add('الإحساس المطلوب','feeling');
+  // A chosen opening that is already a headline is written as it is: the writer's own line there once read «نور الجملال دايماً».
+  const hook=sel('hook')[0];let opened='';
+  {const own=typed('hook'),bank=SCENES[hook],label=v('hook')[0]||'';const said=own||(bank?bank[0]:label);if(said)lines.push('• الافتتاح (أول مشهد بعد الشعار يكون عن هذا): '+said);
+   const ready=!own&&(bank?bank[0]:(label.split(/\s+/).length>=3&&label.length<=40&&!/…|\.\.\.|(?:^|\s)أو\s/.test(label)?label:''));
+   if(ready){opened=ready;lines.push('افتتاح مطلوب: «'+ready+'» | «'+(bank?bank[1]:'')+'»'+(bank&&bank[3]?' | لازم: '+bank[3].join('، '):''));}}
+  add('الإحساس المطلوب','feeling');
   add('نبيع ونقدم','sells');add('أفخر شي عندنا (يأخذ مشهد خاص)','star');add('مميزاتنا','quality');add('أحلى وقت للزيارة','moment');
   // What is new comes first: a new item, an event («بطولة بلوت»), an opening.
   const news=sel('news'),newsText=typed('news');
@@ -258,7 +263,8 @@
   if(extras.includes('apps')&&apps.length&&!scenes.some(x=>x.includes('اطلبنا من جوالك')))tail.push('اكتب «'+apps.join(' - ')+'» في آخر مشهد');
   const handles=(typed('social').match(/@?[A-Za-z0-9_.]{3,30}/g)||[]).map(h=>h.startsWith('@')?h:'@'+h);
   const platforms=sel('social').map(id=>(SOCIAL.find(([x])=>x===id)||[])[1]).filter(Boolean);
-  if(handles.length)tail.push('اكتب «تابعونا '+handles[0]+'» في آخر مشهد');
+  // The platform the owner ticked is named with his handle («تابعونا @tayebtea» did not say where).
+  if(handles.length)tail.push('اكتب «تابعونا على '+(platforms[0]||'حسابنا')+' '+handles[0]+'» في آخر مشهد');
   else if(platforms.length&&(extras.includes('account')||sel('social').length))tail.push('اكتب «تابعونا على '+platforms.slice(0,3).join(' و')+'» في آخر مشهد');
   for(const item of v('never'))tail.push('لا تذكر '+item.replace(/^(?:ما|لا)\s*(?:نبيع|نقدم)\s+/,'').replace(/^لا\s+تذكر\s+/,''));
   if(!lines.length&&!tail.length&&!scenes.length)return '';

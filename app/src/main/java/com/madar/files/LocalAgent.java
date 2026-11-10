@@ -32,11 +32,43 @@ final class LocalAgent {
   boolean think=needsThought(user);status.update(-1,think?"Groq · يفكر في طلبك":"Groq · فهم طلبك");
   JSONObject plain=new JSONObject(source.toString());plain.remove("_visual");String kind=plain.optString("kind");
   String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}prompt+=understanding(c);
-  JSONArray all=history(previous),recent=new JSONArray();for(int i=Math.max(0,all.length()-8);i<all.length();i++)recent.put(all.get(i));
-  JSONObject data=new JSONObject().put("source",plain).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",recent).put("userRequest",user);
-  return provider(AgentTools.validate(GroqClient.json(c,prompt,data.toString(),AgentTools.schema(kind),think?3072:2048,think?"medium":"low",cancel),kind),"groq");
+  // Groq's free tier refuses a request over about 8000 tokens (413): the instructions take most of it, so the newest
+  // turns that fit are sent, and a long file description (a film's scenes) is shortened only when it has to be.
+  JSONObject schema=AgentTools.schema(kind);JSONArray tools=new JSONArray(AgentTools.tools(kind)),all=history(previous);JSONObject preferences=memory(c);
+  int fixed=tokens(prompt)+tokens(schema.toString())+tokens(tools.toString())+tokens(preferences.toString())+tokens(user)+120;
+  JSONObject shown=fixed+tokens(plain.toString())>REQUEST_TOKENS-500?compact(plain,300):plain;
+  JSONArray recent=fitting(all,REQUEST_TOKENS-fixed-tokens(shown.toString()));
+  JSONObject data=new JSONObject().put("source",shown).put("availableTools",tools).put("preferences",preferences).put("conversation",recent).put("userRequest",user);
+  JSONObject answer;
+  try{answer=GroqClient.json(c,prompt,data.toString(),schema,think?3072:2048,think?"medium":"low",cancel);}
+  catch(GroqClient.TooLarge large){
+   // Still too large by Groq's own count: the request alone, with the file described briefly.
+   data.put("source",compact(plain,160)).put("conversation",fitting(all,300));
+   answer=GroqClient.json(c,prompt,data.toString(),schema,2048,"low",cancel);
+  }
+  return provider(AgentTools.validate(answer,kind),"groq");
  }
- /** Real thinking only where it pays: an opinion, a why or how, a comparison, a plan, or a long multi-step request. A greeting or a clear command is answered at once. */
+ /** What one request may hold, by the over-estimate below (Groq's free limit is about 8000 tokens a request). */
+ static final int REQUEST_TOKENS=7600;
+ /** A safe over-estimate of tokens: Arabic letters cost about one token for two, everything else one for three and a half. */
+ static int tokens(String text){int arabic=0;for(int i=0;i<text.length();i++){char ch=text.charAt(i);if(ch>=0x600&&ch<=0x6ff)arabic++;}return (int)Math.ceil(arabic/2.0+(text.length()-arabic)/3.5);}
+ /** The newest turns that fit in the room left (at most eight, each cut to 400 characters); older ones are left out first. */
+ static JSONArray fitting(JSONArray turns,int room)throws JSONException{
+  java.util.ArrayList<JSONObject> kept=new java.util.ArrayList<>();int used=0;
+  for(int i=turns.length()-1;i>=0&&kept.size()<8;i--){JSONObject turn=turns.getJSONObject(i);String text=turn.optString("text");if(text.length()>400)text=text.substring(0,400)+"…";
+   JSONObject cut=new JSONObject().put("role",turn.optString("role")).put("text",text);int cost=tokens(cut.toString());if(used+cost>room)break;used+=cost;kept.add(0,cut);}
+  JSONArray out=new JSONArray();for(JSONObject turn:kept)out.put(turn);return out;
+ }
+ /** The selected file's description with long texts cut and long lists shortened, when the full one does not fit. */
+ static JSONObject compact(JSONObject source,int each)throws JSONException{
+  JSONObject out=new JSONObject();
+  for(java.util.Iterator<String> names=source.keys();names.hasNext();){String name=names.next();Object value=source.get(name);
+   if(value instanceof String&&((String)value).length()>each)value=((String)value).substring(0,each)+"…";
+   else if(value instanceof JSONObject)value=compact((JSONObject)value,each);
+   else if(value instanceof JSONArray&&value.toString().length()>each*4){JSONArray list=(JSONArray)value,cut=new JSONArray();for(int i=0;i<list.length()&&cut.toString().length()<each*4;i++){Object item=list.get(i);cut.put(item instanceof JSONObject?compact((JSONObject)item,each):item instanceof String&&((String)item).length()>each?((String)item).substring(0,each)+"…":item);}value=cut;}
+   out.put(name,value);}
+  return out;
+ }
  static boolean needsThought(String user){
   String t=user==null?"":user.replaceAll("[\\u064b-\\u065f\\u0670\\u0640]","").replace('أ','ا').replace('إ','ا').replace('آ','ا').replace('ة','ه').replace('ى','ي');
   if(t.length()>220)return true;

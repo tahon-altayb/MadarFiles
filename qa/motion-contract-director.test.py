@@ -372,3 +372,26 @@ print('the closing voice never says «اطلب» twice; «احترافيا» nee
 pie=[{'title':'فطيرة الطيب','caption':'تذوقوا فطيرة الطيب الطازجة','narration':'n'}];C.fix_brand(pie,'شاي جمر وفطيرة الطيب')
 assert pie[0]['title']=='فطيرة الطيب' and pie[0]['caption']=='تذوقوا فطيرة الطيب الطازجة',pie
 print('«فطيرة الطيب» never becomes «وفطيرة الطيب»')
+# The owner's 1.9.60 café film: the opening read «نور الجملال دايماً», and the card tables, the matches and the outdoor
+# seating each came twice (the writer's own versions after the chosen ones).
+plan60='''افتتاح مطلوب: «شغالين على مدار الساعة» | «ليل نهار، طلبك جاهز متى ما جيت» | لازم: الساعه/24/٢٤
+مشهد مطلوب: «طاولات بلوت جاهزة» | «جيب ربعك وخل السهرة تحلى» | رسمة: cards | لازم: بلوت
+مشهد مطلوب: «المباريات على الشاشة الكبيرة» | «تابع مبارياتك مع الربع على شاشات كبيرة» | رسمة: screen | لازم: شاش/مباري
+مشهد مطلوب: «جلسات خارجية تفتح النفس» | «قعدة في الهواء الطلق مع أحلى الأجواء» | رسمة: outdoor | لازم: خارجي'''
+S60=lambda t,cap:{'title':t,'caption':cap,'narration':t+'، '+cap+'.','reference':-1}
+film60=[S60('نور الجملال دايماً','مفتوح لك في أي وقت من اليوم أو الليل'),S60('طاولات بلوت للسهرة','جيب ربعك'),S60('شاشات كبيرة للمباريات','تابع مع الربع'),S60('جلسات خارجية','في الهواء الطلق'),
+ S60('طاولات بلوت جاهزة للعب','جيب ربعك وخل السهرة تحلى بأصدقائك'),S60('تابع مبارياتك المفضلة مع الربع','على شاشات ضخمة'),S60('استمتع بقعدة مريحة في الهواء الطلق','اجلس مع أصدقائك في أجواء خارجية منعشة'),S60('نحن معك في كل ساعة','أبوابنا مفتوحة 24 ساعة'),S60('زورونا في فرعنا','مرحبا بالجميع')]
+req60=C.required_scenes(plan60);open60=C.required_opening(plan60);assert len(req60)==3 and open60['title']=='شغالين على مدار الساعة'
+C.place_required(film60,req60,keep={0});assert C.place_opening(film60,open60)
+assert C.drop_required_repeats(film60,req60,open60)==4
+assert [z['title'] for z in film60]==['شغالين على مدار الساعة','طاولات بلوت جاهزة','المباريات على الشاشة الكبيرة','جلسات خارجية تفتح النفس','زورونا في فرعنا'],film60
+assert film60[0]['caption']=='ليل نهار، طلبك جاهز متى ما جيت' and all(z.get('chosen') for z in film60[1:4]) and film60[1]['artHint'].endswith('cards')
+short60=[S60('أ','ب'),S60('طاولات بلوت','x'),S60('بلوت كل ليلة','y'),S60('زورونا','z')];assert C.drop_required_repeats(short60,req60)==0 and len(short60)==4
+clean60=[S60('أ','ب'),S60('طاولات بلوت','x'),S60('شاي على الجمر','y'),S60('فطاير طازجة','y'),S60('زورونا','z')];assert C.drop_required_repeats(clean60,req60)==0
+label60=C.required_opening('افتتاح مطلوب: «الطعم اللي ما تلقاه بمكان ثاني» | «»');writer60=[S60('نور الجملال','شاهي مضبوط على أصوله'),S60('ب','ج'),S60('زورونا','z')]
+assert C.place_opening(writer60,label60) and writer60[0]['title']=='الطعم اللي ما تلقاه بمكان ثاني' and writer60[0]['caption']=='شاهي مضبوط على أصوله' and C.required_opening('بدون افتتاح') is None
+# The account keeps its platform on the closing card.
+social60=[S60('أ','ب'),S60('ج','د'),S60('زورونا في فرعنا','حياكم')];C.enforce_closing(social60,{'required':['مرحبا بالجميع في محلهم','هنقرستيشن - كيتا','تابعونا على تيك توك @tayebtea']})
+assert all(x in social60[-1]['title']+' | '+social60[-1]['caption'] for x in ['مرحبا بالجميع في محلهم','هنقرستيشن - كيتا','تابعونا على تيك توك @tayebtea']),social60[-1]
+C.tidy_copy(social60,{'required':['مرحبا بالجميع في محلهم','هنقرستيشن - كيتا','تابعونا على تيك توك @tayebtea']});assert 'تابعونا على تيك توك @tayebtea' in social60[-1]['caption'],social60[-1]
+print('a chosen opening is written as chosen; chosen subjects appear once; the account keeps its platform')

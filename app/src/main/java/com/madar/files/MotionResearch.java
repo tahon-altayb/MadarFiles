@@ -31,7 +31,7 @@ final class MotionResearch {
    try{response=GroqClient.post(GroqClient.key(c),body,cancel);}
    catch(GroqClient.LimitReached limit){body.put("model",GroqClient.SPARE);response=GroqClient.post(GroqClient.key(c),body,cancel);}
    String notes=text(response);
-   return notes.contains("NOT_FOUND")||notes.length()<20?"":(notes.length()>4000?notes.substring(0,4000):notes);
+   return notes.contains("NOT_FOUND")||notes.length()<20?"":(notes.length()>2400?notes.substring(0,2400):notes);
   }catch(java.util.concurrent.CancellationException stop){throw stop;}
   catch(Exception failed){return "";}
  }
@@ -60,7 +60,7 @@ final class MotionResearch {
   try{
    out.put("type","motionResearch").put("token",request.optString("token")).put("facts",new JSONArray()).put("questions",new JSONArray());
    if(!GroqClient.configured(c))return out;
-   String owner=request.optString("text"),name=request.optString("name"),kind=request.optString("kind");if(owner.length()>6000)owner=owner.substring(0,6000);
+   String owner=request.optString("text"),name=request.optString("name"),kind=request.optString("kind");if(owner.length()>3000)owner=owner.substring(0,3000);
    String notes=search(c,name,kind,owner,cancel);
    JSONObject schema=new JSONObject("{\"type\":\"object\",\"properties\":{\"facts\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"questions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"question\",\"options\"]}}},\"required\":[\"facts\",\"questions\"]}");
    JSONObject answer=GroqClient.json(c,rules(c)[1],new JSONObject().put("owner_text",owner).put("research_notes",notes).toString(),schema,1500,cancel);

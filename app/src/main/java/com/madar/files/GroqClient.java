@@ -35,7 +35,9 @@ final class GroqClient {
    .put("response_format",new JSONObject().put("type","json_object"))
    .put("messages",new JSONArray().put(new JSONObject().put("role","system").put("content",instructions)).put(new JSONObject().put("role","user").put("content",user)));
   JSONObject response;
-  try{response=post(key(c),request,cancel);}
+  // The big model's free minute is used up after one long request: the smaller model (its own limits) answers at once
+  // instead of the chat waiting up to a minute («ما يمدي يفكر»); it waits only when both are busy.
+  try{response=post(key(c),request,cancel,6000);}
   catch(LimitReached limit){request.put("model",SPARE);response=post(key(c),request,cancel);}
   catch(IOException unsupported){if(!String.valueOf(unsupported.getMessage()).contains("(400)"))throw unsupported;request.remove("reasoning_effort");response=post(key(c),request,cancel);}
   JSONObject choice=response.getJSONArray("choices").getJSONObject(0);
@@ -46,14 +48,17 @@ final class GroqClient {
  }
 
  /** The free tier allows about 8000 tokens a minute: a 429 waits as long as Groq asks (at most 25 s, twice) instead of failing the chat. */
- static JSONObject post(String key,JSONObject body,AtomicBoolean cancel)throws Exception{
+ static JSONObject post(String key,JSONObject body,AtomicBoolean cancel)throws Exception{return post(key,body,cancel,30000);}
+ /** patience: the longest wait (ms) worth sitting through for this model before the caller turns to the other one. */
+ static JSONObject post(String key,JSONObject body,AtomicBoolean cancel,long patience)throws Exception{
   for(int attempt=0;;attempt++){
    try{return postOnce(key,body,cancel);}
-   catch(RateLimited limited){if(attempt>=2||limited.waitMs>30000)throw new LimitReached();long until=System.currentTimeMillis()+Math.max(2000,Math.min(25000,limited.waitMs));while(System.currentTimeMillis()<until){if(cancel.get())throw new CancellationException();Thread.sleep(200);}}
+   catch(RateLimited limited){if(attempt>=2||limited.waitMs>patience)throw new LimitReached();long until=System.currentTimeMillis()+Math.max(2000,Math.min(25000,limited.waitMs));while(System.currentTimeMillis()<until){if(cancel.get())throw new CancellationException();Thread.sleep(200);}}
   }
  }
  /** The free minute (after two waits) or the free day is used up for this model. */
  static final class LimitReached extends IOException{LimitReached(){super("وصل Groq المجاني إلى حده؛ أعد المحاولة بعد دقيقة، أو بكرة إذا انتهى حد اليوم");}}
+ static final class TooLarge extends IOException{TooLarge(){super("طلبك أكبر من حد Groq المجاني (413)");}}
  static final class RateLimited extends IOException{final long waitMs;RateLimited(long waitMs){super("429");this.waitMs=waitMs;}}
  static JSONObject postOnce(String key,JSONObject body,AtomicBoolean cancel)throws Exception{
   if(!validKey(key))throw new IOException("أضف مفتاح Groq صالحًا (يبدأ بـ gsk_)");
@@ -67,6 +72,8 @@ final class GroqClient {
    try(OutputStream stream=connection.getOutputStream()){stream.write(bytes);}
    int code=connection.getResponseCode();if(cancel.get())throw new CancellationException();
    if(code==429){String after=connection.getHeaderField("retry-after");double seconds=8;try{if(after!=null)seconds=Double.parseDouble(after.trim());}catch(NumberFormatException ignored){}throw new RateLimited((long)Math.ceil(seconds*1000)+500);}
+   // The whole request (instructions, conversation and file) is over the free limit for one request: the caller sends less.
+   if(code==413)throw new TooLarge();
    if(code!=200){String reason=code==401||code==403?"مفتاح Groq غير صالح أو بلا صلاحية":code==429?"وصل Groq المجاني إلى حده المؤقت؛ أعد المحاولة بعد دقيقة":code==413?"طلبك أكبر من حد Groq المجاني":"تعذر اتصال Groq";throw new IOException(reason+" ("+code+")");}
    try(InputStream in=connection.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] chunk=new byte[8192];int n;while((n=in.read(chunk))!=-1){if(cancel.get())throw new CancellationException();if(out.size()+n>2000000)throw new IOException("استجابة Groq أكبر من الحد");out.write(chunk,0,n);}return new JSONObject(out.toString("UTF-8"));}
   }finally{done.set(true);watcher.interrupt();connection.disconnect();}

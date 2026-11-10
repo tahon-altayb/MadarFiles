@@ -83,6 +83,23 @@ function semanticIcon(shot){
  return 'spark';
 }
 // Adaptive fallback uses real brief content and owned assets; geometry varies with aspect and shot.
+// The closing caption in parts: phrases are joined with « · »; one of them may be the delivery apps and one the account.
+const DELIVERY_APPS=/هنقر\s?ستيشن|هنجر\s?ستيشن|كيتا|جاهز|مرسول|تويو|ذا\s?شفز|شفز|نينجا|كريم|طلبات|مستر مندوب|شقردي|لقمة|توصيل|hungerstation|keeta|jahez|toyou|mrsool|careem|ninja|chefz/gi;
+function closingParts(body){
+ const parts=String(body||'').split(/\s+·\s+/).map(v=>v.trim()).filter(Boolean),free=[];let apps='',social=null;
+ for(const part of parts){
+  const bare=part.replace(/[\u2066-\u2069\u200e\u200f]/g,''),handle=bare.match(/@[A-Za-z0-9_.]{2,30}/);
+  if(!social&&(handle||/^(?:و)?تابعون?ا(?:\s|$)/.test(bare))&&bare.length<=60){
+   const label=bare.replace(/@[A-Za-z0-9_.]{2,30}/,'').replace(/\s+/g,' ').trim()||'تابعونا';
+   if(handle){social={label,handle:'\u2066'+handle[0]+'\u2069'};continue;}
+   const where=label.replace(/^(?:و)?تابعون?ا\s*(?:على|في)?\s*/,'').trim();if(where){social={label:'تابعونا على',handle:where};continue;}
+  }
+  const names=bare.replace(/^(?:اطلبنا|اطلبونا|اطلبوا|اطلب|موجودين|متوفرين|تلقونا|عبر)?\s*(?:من|في|على)?\s*(?:تطبيقات التوصيل)?\s*[:،]?\s*/,'');
+  if(!apps&&bare.length<=60&&DELIVERY_APPS.test(names)&&names.replace(DELIVERY_APPS,'').replace(/[\s\-–،,·]|(?:^|\s)و(?=\s|$)/g,'').replace(/^و+$/,'').length<=1){apps=names.split(/\s*[-–،,]\s*|\s+و\s*(?=\S)/).map(v=>v.trim()).filter(Boolean).join('  ·  ');DELIVERY_APPS.lastIndex=0;continue;}
+  DELIVERY_APPS.lastIndex=0;free.push(part);
+ }
+ return apps||social?{free:free.join(' · ').slice(0,75),apps:apps.slice(0,60),social}:null;
+}
 function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing=false,art}={}){
  const wide=aspect==='16:9',square=aspect==='1:1',style=(index+seed)%4;
  const title=String(shot.title).slice(0,60),body=String(shot.caption||shot.narration).slice(0,100);
@@ -99,7 +116,21 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
  let elements=[];
  // Vertical films are watched inside TikTok, Reels and Snapchat: every word stays in the safe zone
  // (top 9% and bottom 22% are covered by the app; the right edge of the lower half by its buttons).
- if(closing&&!wide){
+ const card=closing&&!wide&&!square?closingParts(body):null;
+ if(card){
+  // The owner's closing as a card with rows, not one run-on line («مرحبا بالجميع في محلهم · هنقرستيشن - كيتا · تابعونا @tayebtea»
+  // in his 1.9.60 film): the sign-off logo, the call, his greeting or address, the delivery apps, then the account with its platform.
+  const row=(y,icon,label,value,delay)=>[e('shape',.07,y,.79,.135,'card','fade',delay),e('icon',.70,y+.016,.13,.103,'accent','scale',delay+.04,{icon}),e('text',.10,y+.014,.58,.044,'muted','rise',delay+.04,{text:label,size:40}),e('text',.10,y+.062,.58,.062,'ink','rise',delay+.08,{text:value,size:60})];
+  const centred=(value,y,h,size,delay)=>e('text',.10,y,.76,h,'ink','rise',delay,{text:value,size,align:'center'});
+  // The rows sit together in the middle of the safe zone (.09 to .78), whatever the owner filled in.
+  const tall=(asset?.135:0)+.15+(card.free?.10:0)+(card.apps?.15:0)+(card.social?.135:0);
+  let y=Math.max(.09,.09+(.69-tall)/2),delay=0;
+  if(asset){elements.push(media(.36,y,.28,.118,0,whole));y+=.135;delay=.06;}
+  elements.push(centred(title,y,.11,100,delay),e('line',.38,y+.122,.24,.006,'accent','draw',delay+.06));y+=.15;delay+=.1;
+  if(card.free){elements.push(centred(card.free,y,.085,56,delay));y+=.10;delay+=.08;}
+  if(card.apps){elements.push(...row(y,'delivery','اطلبنا من التطبيقات',card.apps,delay));y+=.15;delay+=.12;}
+  if(card.social)elements.push(...row(y,'social',card.social.label,card.social.handle,delay));
+ }else if(closing&&!wide){
   // Closing call to action: large, centred, with the logo or photo as a smaller sign-off.
   elements=[e('shape',.06,.16,.88,.50,'card','fade',0),text(title,.10,.21,.80,.17,110,.04),e('line',.38,.40,.24,.006,'accent','draw',.10),text(body,.10,.43,.76,.16,60,.14),...(asset?[media(.32,.62,.36,.16,.2,whole)]:illustrationFor(shot)==='location'?[e('icon',.34,.62,.32,.16,'accent','scale',.2,{icon:'location'})]:[e('icon',.42,.68,.16,.09,'accent','scale',.2,{icon:'arrow'})])];
  }else if(logo&&asset&&!wide){
@@ -165,16 +196,17 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
  return validate({backdrop:['plain','split','grid','orbit'][style],elements});
 }
 function rounded(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,Math.min(r,w/2,h/2));if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}}
-function text(ctx,value,x,y,w,h,size,color,weight=700,reveal=1,marker=0,markerColor=null,family='Cairo'){ctx.direction='rtl';ctx.textAlign='right';ctx.textBaseline='top';const words=value.split(/\s+/);let lines=[];for(let n=0;n<12;n++){ctx.font=`${weight} ${size}px ${family}`;lines=[];let line='';for(const word of words){const candidate=line?line+' '+word:word;if(ctx.measureText(candidate).width>w&&line){lines.push(line);line=word;}else line=candidate;}if(line)lines.push(line);if(lines.length*size*1.55<=h&&lines.every(l=>ctx.measureText(l).width<=w))break;size*=.91;}// Highlighter sweep: once the headline has arrived, a soft accent bar slides in behind its last line
+function text(ctx,value,x,y,w,h,size,color,weight=700,reveal=1,marker=0,markerColor=null,family='Cairo',align='right'){ctx.direction='rtl';ctx.textAlign='right';ctx.textBaseline='top';const words=value.split(/\s+/);let lines=[];for(let n=0;n<12;n++){ctx.font=`${weight} ${size}px ${family}`;lines=[];let line='';for(const word of words){const candidate=line?line+' '+word:word;if(ctx.measureText(candidate).width>w&&line){lines.push(line);line=word;}else line=candidate;}if(line)lines.push(line);if(lines.length*size*1.55<=h&&lines.every(l=>ctx.measureText(l).width<=w))break;size*=.91;}// Highlighter sweep: once the headline has arrived, a soft accent bar slides in behind its last line
  // from the reading side (right to left), like a marker underlining the key words.
- if(marker>0&&markerColor&&lines.length){const last=lines.length-1,lw=ctx.measureText(lines[last]).width,ly=y+last*size*1.55;ctx.save();ctx.globalAlpha*=.38;ctx.fillStyle=markerColor;const mw=(lw+size*.3)*marker;ctx.beginPath();ctx.roundRect(x+w-mw+size*.15,ly+size*.62,mw,size*.48,size*.12);ctx.fill();ctx.restore();}
+ const edge=l=>align==='center'?x+w-Math.max(0,w-ctx.measureText(l).width)/2:x+w;
+ if(marker>0&&markerColor&&lines.length){const last=lines.length-1,lw=ctx.measureText(lines[last]).width,ly=y+last*size*1.55;ctx.save();ctx.globalAlpha*=.38;ctx.fillStyle=markerColor;const mw=(lw+size*.3)*marker;ctx.beginPath();ctx.roundRect(edge(lines[last])-mw+size*.15,ly+size*.62,mw,size*.48,size*.12);ctx.fill();ctx.restore();}
  ctx.fillStyle=color;
  // Kinetic headline: words arrive one after another in reading order (right to left), each fading in.
  let shown=reveal*lines.reduce((n,l)=>n+l.split(' ').length,0);
- lines.forEach((line,i)=>{const ly=y+i*size*1.55,ws=line.split(' ');if(reveal>=1){ctx.fillText(line,x+w,ly);return;}
+ lines.forEach((line,i)=>{const ly=y+i*size*1.55,ws=line.split(' '),xr=edge(line);if(reveal>=1){ctx.fillText(line,xr,ly);return;}
   const full=Math.max(0,Math.min(ws.length,Math.floor(shown))),frac=shown-full;
-  if(full)ctx.fillText(ws.slice(0,full).join(' '),x+w,ly);
-  if(full<ws.length&&frac>0){const before=full?ctx.measureText(ws.slice(0,full).join(' ')+' ').width:0,upto=ctx.measureText(ws.slice(0,full+1).join(' ')).width;ctx.save();ctx.beginPath();ctx.rect(x+w-upto-size*.2,ly-size*.3,upto-before+size*.2,size*1.8);ctx.clip();ctx.globalAlpha*=frac;ctx.fillText(ws.slice(0,full+1).join(' '),x+w,ly);ctx.restore();}
+  if(full)ctx.fillText(ws.slice(0,full).join(' '),xr,ly);
+  if(full<ws.length&&frac>0){const before=full?ctx.measureText(ws.slice(0,full).join(' ')+' ').width:0,upto=ctx.measureText(ws.slice(0,full+1).join(' ')).width;ctx.save();ctx.beginPath();ctx.rect(xr-upto-size*.2,ly-size*.3,upto-before+size*.2,size*1.8);ctx.clip();ctx.globalAlpha*=frac;ctx.fillText(ws.slice(0,full+1).join(' '),xr,ly);ctx.restore();}
   shown-=ws.length;});}
 // Vector illustrations for scenes without a client picture: drawn shapes (never photos or generated
 // images) in the film's palette with a few natural accents, gently animated. Unit square -1..1.
@@ -367,7 +399,7 @@ function draw(ctx,p,s,time,images){
   if(energy&&e===head){const slam=1+.32*level-.32*level*back;ctx.translate(x+w/2,y+h/2);ctx.scale(slam,slam);ctx.translate(-x-w/2,-y-h/2);}
   else if(energy&&e.kind!=='line'&&e.motion!=='scale'&&['image','device','icon','metric','shape'].includes(e.kind)){const pop=.86+.14*back;ctx.translate(x+w/2,y+h/2);ctx.scale(pop,pop);ctx.translate(-x-w/2,-y-h/2);}if(p.motionEnabled!==false&&['image','device'].includes(e.kind)){ctx.translate(x+w/2,y+h/2);const push=1+progress*.035;ctx.scale(push,push);ctx.translate(-x-w/2,-y-h/2);}
  if(e.motion==='scale'){const k=.82+.18*(energy?back:ease);ctx.translate(x+w/2,y+h/2);ctx.scale(k,k);ctx.translate(-x-w/2,-y-h/2);}const color=palette[e.color];if(p.motionEnabled!==false&&['image','device','icon'].includes(e.kind))y+=Math.sin(local*1.1+e.x*4)*H*.004;
- if(e.kind==='text'||e.kind==='metric'){const counted=e.kind==='metric'&&p.motionEnabled!==false?String(e.text).replace(/\d+(?:[.,]\d+)?/,v=>{const n=parseFloat(v.replace(',','.')),k=1-(1-clamp(t/.9))**3;return Number.isInteger(n)?String(Math.round(n*k)):(n*k).toFixed(1);}):e.text;const words=String(counted).split(/\s+/).length,reveal=p.motionEnabled===false||e.kind!=='text'||e.size<90?1:clamp(t/(.18+.11*words));text(ctx,counted,x,y,w,h,e.size*W/1080,color,e.kind==='metric'?900:700,reveal,e.kind==='text'&&(e.textRole==='heading'||e.text===s.title)&&e.size>=90&&p.motionEnabled!==false?1-(1-clamp((t-(.18+.11*words)-.15)/.45))**3:0,accent,p.fonts?(e.kind==='metric'||(e.textRole==='heading'||e.text===s.title)?'MadarHeading, Cairo':'MadarBody, Cairo'):'Cairo');}
+ if(e.kind==='text'||e.kind==='metric'){const counted=e.kind==='metric'&&p.motionEnabled!==false?String(e.text).replace(/\d+(?:[.,]\d+)?/,v=>{const n=parseFloat(v.replace(',','.')),k=1-(1-clamp(t/.9))**3;return Number.isInteger(n)?String(Math.round(n*k)):(n*k).toFixed(1);}):e.text;const words=String(counted).split(/\s+/).length,reveal=p.motionEnabled===false||e.kind!=='text'||e.size<90?1:clamp(t/(.18+.11*words));text(ctx,counted,x,y,w,h,e.size*W/1080,color,e.kind==='metric'?900:700,reveal,e.kind==='text'&&(e.textRole==='heading'||e.text===s.title)&&e.size>=90&&p.motionEnabled!==false?1-(1-clamp((t-(.18+.11*words)-.15)/.45))**3:0,accent,p.fonts?(e.kind==='metric'||(e.textRole==='heading'||e.text===s.title)?'MadarHeading, Cairo':'MadarBody, Cairo'):'Cairo',e.align==='center'?'center':'right');}
  if(e.kind==='shape')rounded(ctx,x,y,w,h,24*W/1080,color);
  if(e.kind==='line'){ctx.strokeStyle=color;ctx.lineWidth=4*W/1080;ctx.beginPath();ctx.moveTo(x,y+h/2);ctx.lineTo(x+w*(e.motion==='draw'?ease:1),y+h/2);ctx.stroke();}
  if(e.kind==='icon'&&p.motionEnabled!==false&&order===p.scenes.length-1&&order>0){const pulse=1+.045*Math.sin(local*3.2);ctx.translate(x+w/2,y+h/2);ctx.scale(pulse,pulse);ctx.translate(-x-w/2,-y-h/2);}
@@ -399,4 +431,4 @@ function reviseImages(p,names,logo){
   for(const e of swap){if(!queue.length)break;e.asset=queue.shift();placed.push(e.asset);}}
  p.scenes.forEach(s=>validate(s.composition));return {placed,unused:queue};
 }
-return {ILLUSTRATIONS,illustration,illustrationFor,illustrationHits,anyIllustration,keyNumber,safeText,validate,validateDesign,compose,draw,assets,semanticIcon,textBindings,setTitle,kinds,motions,reviseImages};});
+return {ILLUSTRATIONS,illustration,illustrationFor,illustrationHits,anyIllustration,keyNumber,safeText,validate,validateDesign,compose,draw,assets,semanticIcon,closingParts,textBindings,setTitle,kinds,motions,reviseImages};});
