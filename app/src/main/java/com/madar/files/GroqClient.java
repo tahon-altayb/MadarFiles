@@ -27,9 +27,11 @@ final class GroqClient {
  static boolean validKey(String value){return value!=null&&value.matches("gsk_[A-Za-z0-9]{20,200}");}
 
  /** One JSON answer. The schema is described in the instructions; JSON mode guarantees an object. */
- static JSONObject json(Context c,String system,String user,JSONObject schema,int tokens,AtomicBoolean cancel)throws Exception{
+ static JSONObject json(Context c,String system,String user,JSONObject schema,int tokens,AtomicBoolean cancel)throws Exception{return json(c,system,user,schema,tokens,"low",cancel);}
+ /** effort is the model's real reasoning: "low" for a clear request, "medium" when the request needs thought (an opinion, a plan, several steps). */
+ static JSONObject json(Context c,String system,String user,JSONObject schema,int tokens,String effort,AtomicBoolean cancel)throws Exception{
   String instructions=system+"\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n"+schema;
-  JSONObject request=new JSONObject().put("model",MODEL).put("temperature",0).put("max_completion_tokens",Math.max(512,Math.min(tokens,4096))).put("reasoning_effort","low")
+  JSONObject request=new JSONObject().put("model",MODEL).put("temperature",0).put("max_completion_tokens",Math.max(512,Math.min(tokens,4096))).put("reasoning_effort","medium".equals(effort)?"medium":"low")
    .put("response_format",new JSONObject().put("type","json_object"))
    .put("messages",new JSONArray().put(new JSONObject().put("role","system").put("content",instructions)).put(new JSONObject().put("role","user").put("content",user)));
   JSONObject response;
