@@ -47,7 +47,16 @@ assert.match(C.facts('كيف اعدل الاعلان؟',{}),/غيّر العبا
  await page.locator('[data-choice=neverOther]').fill('ما نبيع لحوم');await page.locator('[data-choice=offerOther]').fill('الشاي بريالين');
  await page.screenshot({path:'qa/evidence/chat-review/motion-questions.png',fullPage:false});
  await page.locator('.agentChoiceActions .primary').click();
+ // Before the film the assistant looks the business up and may ask what it still needs: the owner unticks a
+ // wrong fact, answers one question, and both reach the brief.
+ assert.equal(await last('agentMotionStart'),undefined,'the film waits for the research');
+ const research=await last('motionResearch');assert.ok(research&&research.token,'the business is researched first');assert.match(research.text,/خطة الإعلان من صاحب المحل/);
+ await page.evaluate(token=>receive({type:'motionResearch',token,facts:['تقييم 4.8 من 46 مراجعة','فرع في جدة'],questions:[{question:'وش الصنف اللي يميزكم عن غيركم؟',options:['شاي على الجمر','فطائر طازجة']}]}),research.token);
+ await page.locator('.agentChip',{hasText:'فرع في جدة'}).click();await page.locator('.agentChip',{hasText:'شاي على الجمر'}).click();
+ await page.screenshot({path:'qa/evidence/chat-review/motion-research.png',fullPage:false});
+ await page.locator('.agentChoiceActions .primary').click();
  const start=await last('agentMotionStart');assert.ok(start,'the film starts after the answers');
+ assert.match(start.prompt,/معلومات من البحث أكدها صاحب المحل:\n• تقييم 4.8 من 46 مراجعة/);assert.doesNotMatch(start.prompt,/فرع في جدة/);assert.match(start.prompt,/وش الصنف اللي يميزكم عن غيركم: شاي على الجمر/);
  assert.match(start.prompt,/خطة الإعلان من صاحب المحل/);assert.match(start.prompt,/الافتتاح \(أول مشهد بعد الشعار يكون عن هذا\): سهرات الشباب والمباريات/);assert.match(start.prompt,/المكان والتجربة: شاشات لعرض المباريات، بلوت وجكارو/);assert.match(start.prompt,/الجمهور: الشباب/);assert.match(start.prompt,/العرض الحالي \(اكتبه كما هو\): الشاي بريالين/);assert.match(start.prompt,/روح الإعلان: حماسية وشبابية/);assert.doesNotMatch(start.prompt,/بلايستيشن/);
  assert.ok(start.contract.forbidden.includes('لحوم'),JSON.stringify(start.contract.forbidden));assert.equal(start.setup.references,'inspired');
  await page.evaluate(r=>receive({type:'motionState',thread:r.thread,task:r.task,status:'cancelled',message:'انتهى الاختبار'}),start);

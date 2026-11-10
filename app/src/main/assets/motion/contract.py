@@ -461,6 +461,31 @@ def required_scenes(text):
   must=[w.strip(' «»') for w in re.split(r'[،,]',m.group(4) or '') if w.strip(' «»')] or [m.group(1)]
   out.append({'title':m.group(1).strip(),'caption':m.group(2).strip(),'art':m.group(3) or '','must':must})
  return out
+OPENING_LINE=re.compile(r'افتتاح مطلوب:\s*«([^»\n]{2,45})»\s*\|\s*«([^»\n]{0,95})»(?:\s*\|\s*لازم:\s*([^\n|]+))?')
+def required_opening(text):
+ """The opening headline the owner chose in the questions, in finished words (or None)."""
+ m=OPENING_LINE.search(str(text or ''))
+ if not m:return None
+ return {'title':m.group(1).strip(),'caption':m.group(2).strip(),'art':'','must':[w.strip(' «»') for w in re.split(r'[،,]',m.group(3) or '') if w.strip(' «»')]}
+def place_opening(scenes,item):
+ """The first scene reads the owner's chosen opening; the writer's own line there once read «نور الجملال دايماً»."""
+ if not item or not scenes:return False
+ z=scenes[0];caption=item['caption'] or str(z.get('caption','')).strip()
+ if (z.get('title'),z.get('caption'))==(item['title'],caption):return False
+ z.update(title=item['title'],caption=caption,narration=(item['title']+'، '+caption).strip('، ')+'.');return True
+def drop_required_repeats(scenes,items,opening=None,floor=4):
+ """A chosen scene is in the film once. The writer, short of things to say, wrote the card tables, the matches
+ and the outdoor seating a second time each in other words (the owner's 1.9.60 café film): the first scene on a
+ chosen subject stays (it carries the owner's words) and later middle scenes on it leave. Returns how many left."""
+ keep=set();repeats=set()
+ for item in items:
+  hits=[i for i in range(1,len(scenes)-1) if covers(scenes[i],item)]
+  if hits:keep.add(hits[0]);repeats.update(hits[1:])
+ if opening and opening.get('must'):repeats.update(i for i in range(1,len(scenes)-1) if covers(scenes[i],opening))
+ gone=0
+ for i in sorted(repeats-keep,reverse=True):
+  if len(scenes)>floor:del scenes[i];gone+=1
+ return gone
 def covers(shot,item):
  seen=key(str(shot.get('title',''))+' '+str(shot.get('caption','')))
  # «الساعه/24»: either word shows the chosen scene.
@@ -489,6 +514,8 @@ def place_required(scenes,items,keep=()):
    # The scene is there; its words become the owner's finished ones («لا يختفي، يظل متاحا لليلة ونهار» read
    # «ليل نهار، طلبك جاهز متى ما جيت» in the 1.9.58 questions run).
    z=scenes[hit]
+   z['chosen']=True
+   if item['art'] and z.get('reference',-1)==-1:z['artHint']=item['title']+' '+item['art']
    if (z.get('title'),z.get('caption'))!=(item['title'],item['caption']):
     z.update(title=item['title'],caption=item['caption'],narration=(item['title']+'، '+item['caption']).strip('، ')+'.');changed.append(hit+1)
    continue
@@ -496,7 +523,7 @@ def place_required(scenes,items,keep=()):
   free=[i for i in range(1,len(scenes)-1) if i not in keep and i+1 not in changed and not any(covers(scenes[i],x) for x in items)]
   if not free:continue
   i=free[-1];z=scenes[i]
-  z.update(title=item['title'],caption=item['caption'],narration=(item['title']+'، '+item['caption']).strip('، ')+'.',reference=-1)
+  z.update(title=item['title'],caption=item['caption'],narration=(item['title']+'، '+item['caption']).strip('، ')+'.',reference=-1,chosen=True)
   if item['art']:z['artHint']=item['title']+' '+item['art']
   changed.append(i+1)
  return changed

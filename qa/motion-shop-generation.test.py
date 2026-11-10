@@ -148,7 +148,8 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  def check(ok,message):
   if not ok:findings.append(message)
  scenes=p['scenes'];duration=float(info['format']['duration'])
- check(3<=len(scenes)<=SCENES,f'scene count {len(scenes)} outside 3..{SCENES}')
+ # A menu the owner attached may add its own scene to the plan.
+ check(3<=len(scenes)<=SCENES+1,f'scene count {len(scenes)} outside 3..{SCENES+1}')
  check(abs(duration-TARGET)<=(2 if args.voice=='none' else 5),f'duration {duration:.1f}s, requested {TARGET}s')
  video_stream=next(s for s in info['streams'] if s['codec_type']=='video');w,h=video_stream['width'],video_stream['height']
  check({'9:16':h>w,'16:9':w>h,'1:1':w==h}[ASPECT],f'frame {w}x{h} is not {ASPECT}')
@@ -157,6 +158,13 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  chosen=rules.required_scenes(REQUEST);missing=[x['title'] for x in chosen if not any(rules.covers(z,x) for z in shown_text)]
  print('EVIDENCE chosen scenes',len(chosen),'missing',missing,flush=True)
  check(not missing,'chosen scenes missing: '+str(missing))
+ # A chosen subject is shown once (the owner's 1.9.60 film showed the card tables, the matches and the outdoor seating twice
+ # each), and the opening he chose is written as chosen (it read «نور الجملال دايماً»).
+ twice=[x['title'] for x in chosen if sum(rules.covers(z,x) for z in shown_text[1:-1])>1]
+ opening=rules.required_opening(REQUEST)
+ print('EVIDENCE repeats',twice,'opening',scenes[0].get('title'),'wanted',opening and opening['title'],flush=True)
+ check(not twice,'chosen scenes repeated: '+str(twice))
+ if opening:check(scenes[0].get('title')==opening['title'],'the opening is not the chosen one: '+str(scenes[0].get('title')))
  check(any(s['codec_type']=='audio' for s in info['streams']),'the energetic effects track is missing')
  # Every cut has its whoosh: the sound around each scene start is clearly louder than the quiet middle of a scene.
  subprocess.run(['ffmpeg','-v','error','-y','-i',str(video),'-vn','-ac','1','-ar','8000','-c:a','pcm_s16le',str(evidence/'effects.wav')],check=True)

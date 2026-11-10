@@ -358,7 +358,8 @@ def groq_story(count):
       if len(scenes)>=count:break
       if not any(local_rules.covers(z,item) for z in scenes):scenes.insert(len(scenes)-1,{'title':item['title'],'caption':item['caption'],'narration':(item['title']+'، '+item['caption']).strip('، ')+'.'})
     # One scene short of a long plan (seven of eight) is a whole advert: the film takes the draft's count.
-    usable=(len(scenes)==count or (count>=6 and len(scenes)==count-1)) and len({z['title'] for z in scenes})==len(scenes) and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
+    # Fewer complete scenes are a whole advert too (asked to fill eight, the writer repeated three subjects).
+    usable=max(4,count-3)<=len(scenes)<=count and len({z['title'] for z in scenes})==len(scenes) and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
     with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':len(scenes),'usable':usable,'error':'','seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
     if usable:return {'title':plain(answer.get('title'))[:80],'scenes':scenes}
     # An answer with the wrong number of scenes (one scene in the 1.9.57 seven-picture run) is asked again, twice at most.
@@ -595,6 +596,27 @@ placed=local_rules.place_required(story['scenes'],REQUIRED,keep={0})
 local_rules.fix_places(story['scenes'],GROUNDING)
 if placed:
  with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'required scenes','placed':placed,'wanted':len(REQUIRED)},ensure_ascii=False)+'\n')
+if not chunks:
+ # The opening the owner chose is written as he chose it, and a chosen subject is in the film once: the owner's
+ # 1.9.60 café film opened with «نور الجملال دايماً» and showed the card tables, the matches and the outdoor
+ # seating twice each.
+ OPENING=local_rules.required_opening(brief.get('text',''))
+ opened=local_rules.place_opening(story['scenes'],OPENING)
+ repeats=local_rules.drop_required_repeats(story['scenes'],REQUIRED,OPENING)
+ # A menu the owner attached gets its own scene when no scene speaks of it (it sat under «طاولات بلوت جاهزة»).
+ menu_said=re.compile(r'منيو|قايمه|قائمه|اصناف|menu|price list')
+ menu_scene=False
+ if PICTURE_MODE!='inspired' and 3<=len(story['scenes'])<10 and not isinstance(local_contract.get('explicitScenes'),int):
+  for fact in reference_facts:
+   if fact.get('index')==logo_index or fact.get('kind') in ('unrelated','platform_icon','brand_logo'):continue
+   if not menu_said.search(local_rules.key(fact.get('description',''))) or any(menu_said.search(local_rules.key(str(z.get('title',''))+' '+str(z.get('caption','')))) for z in story['scenes']):continue
+   story['scenes'].insert(len(story['scenes'])-1,{'title':'تصفح المنيو','caption':'اختر طلبك على راحتك','narration':'تصفح المنيو، واختر طلبك على راحتك.','visual':'','reference':fact.get('index'),'chosen':True});menu_scene=True;break
+ if opened or repeats or menu_scene:
+  with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'owner plan','opening':opened,'repeats_removed':repeats,'menu_scene':menu_scene,'scenes':len(story['scenes'])},ensure_ascii=False)+'\n')
+ # Fewer scenes never stretch each one: a film whose length the owner did not set himself keeps about seven seconds a scene.
+ if len(story['scenes'])!=scene_count:
+  scene_count=len(story['scenes'])
+  if local_contract.get('durationSource')!='user':total_seconds=min(total_seconds,7.0*scene_count)
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
 for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
@@ -627,10 +649,10 @@ for i,z in enumerate(story['scenes']):
  ref=z.get('reference',-1)
  if i in logo_targets or ref==-1 or (ref==logo_index and i==len(story['scenes'])-1):continue
  # The model's own pick must show what the scene says too (a crowd photo under «نكهة الفحم»).
- if ref!=logo_index and reference_facts and not picture_fits(z,ref,loose=True):z['reference']=-1;continue
+ if ref!=logo_index and reference_facts and not picture_fits(z,ref,loose=not z.get('chosen')):z['reference']=-1;continue
  if ref==logo_index or ref in seen:
   free=[n for n in photos if n not in seen and all(x.get('reference')!=n for x in story['scenes'][i+1:])]
-  free=[n for n in free if not reference_facts or picture_fits(z,n,loose=True)]
+  free=[n for n in free if not reference_facts or picture_fits(z,n,loose=not z.get('chosen'))]
   z['reference']=free[0] if free else -1;ref=z['reference']
  if ref!=-1:seen.add(ref)
 # The client's pictures come first: still unused ones take picture-less middle scenes, the closest
@@ -639,7 +661,8 @@ unused=[n for n in photos if n not in seen] if PICTURE_MODE!='inspired' else []
 for loose in (False,True):
  for i,z in enumerate(story['scenes']):
   if not unused:break
-  if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1:
+  # A scene the owner chose keeps its drawing (the card table, the big screen) unless a picture shows exactly that.
+  if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1 and not (loose and z.get('chosen')):
    fit=next((n for n in unused if (picture_fits(z,n,loose) if reference_facts else loose)),None)
    if fit is not None:unused.remove(fit);z['reference']=fit;seen.add(fit)
 # Still unused photos of the client's own products may illustrate a scene that names no product (opening
@@ -647,7 +670,7 @@ for loose in (False,True):
 # scene about another product.
 for i,z in enumerate(story['scenes']):
  if not unused or not reference_facts:break
- if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1 and not (_concepts(' '.join(str(z.get(k,'')) for k in ['title','caption','narration']))&PRODUCT_CONCEPTS):
+ if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1 and not z.get('chosen') and not (_concepts(' '.join(str(z.get(k,'')) for k in ['title','caption','narration']))&PRODUCT_CONCEPTS):
   fit=unused.pop(0);z['reference']=fit;seen.add(fit)
 # Each of the client's photos goes to the scene it shows best, judged by the headline and caption (what the viewer
 # reads), not by a passing word in the narration: in the 1.9.57 café run the mint-tea photo sat under «فطائر الطيب»
@@ -676,7 +699,7 @@ if PICTURE_MODE!='inspired' and reference_facts and photos:
  free=[n for n in photos if n not in {z.get('reference') for z in story['scenes']}]
  for i in middle:
   if not free:break
-  if story['scenes'][i].get('reference',-1)==-1 and not (_concepts(shown(i)+' '+str(story['scenes'][i].get('narration','')))&PRODUCT_CONCEPTS):story['scenes'][i]['reference']=free.pop(0)
+  if story['scenes'][i].get('reference',-1)==-1 and not story['scenes'][i].get('chosen') and not (_concepts(shown(i)+' '+str(story['scenes'][i].get('narration','')))&PRODUCT_CONCEPTS):story['scenes'][i]['reference']=free.pop(0)
 # The closing card signs off with the brand when it has no picture (also after repeats were removed).
 # A product photo left on the closing (the menu under «زورونا في فرعنا» in the 1.9.57 run) gives way to the logo too.
 if logo_index is not None and logo_name and len(story['scenes'])>1:story['scenes'][-1]['reference']=logo_index
