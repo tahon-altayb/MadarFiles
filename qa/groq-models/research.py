@@ -13,17 +13,20 @@ def post(body):
   except urllib.error.HTTPError as e:
    wait=e.headers.get('retry-after');print('WAIT',e.code,wait,e.read().decode()[:200],flush=True);time.sleep(min(40,float(wait or 5))+1)
  raise SystemExit('groq failed')
+SEARCHERS=sys.argv[1:] or ['groq/compound-mini','openai/gpt-oss-120b']
 cases=[('شاهي جمر الطيب','كوفي أو شاي','سوي موشن لمحلي\nنوع النشاط: كوفي أو شاي\nاسم المحل: «شاهي جمر الطيب»\n• نبيع ونقدم: شاي الجمر، شاي حليب\nالعنوان: الطائف، شارع الجال'),
  ('جاهز','تطبيق','سوي موشن لتطبيق\nنوع النشاط: تطبيق\nاسم التطبيق: «جاهز»'),
- ('مغسلة لمعة الخيال الفضي','خدمة','سوي موشن لمغسلة سيارات\nاسم المحل: «مغسلة لمعة الخيال الفضي»\nالمدينة: عرعر')]
+ ]
 for name,kind,owner in cases:
- t=time.monotonic()
- ask='Business name: '+name+'\nKind: '+kind+'\nWhat the owner wrote (for the city and details):\n'+owner
- out=post({'model':'openai/gpt-oss-20b','temperature':0,'max_completion_tokens':1500,'reasoning_effort':'low','tools':[{'type':'browser_search'}],'tool_choice':'required','messages':[{'role':'system','content':search_rules},{'role':'user','content':ask}]})
- notes=(out['choices'][0]['message'].get('content') or '').strip();usage=out.get('usage',{})
- print('SEARCH',name,round(time.monotonic()-t,1),'s tokens',usage.get('total_tokens'),json.dumps(notes[:1200],ensure_ascii=False),flush=True)
- if 'NOT_FOUND' in notes or len(notes)<20:notes=''
- t=time.monotonic()
- out=post({'model':'openai/gpt-oss-120b','temperature':0,'max_completion_tokens':1500,'reasoning_effort':'low','response_format':{'type':'json_object'},'messages':[{'role':'system','content':decide_rules+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps({'owner_text':owner,'research_notes':notes[:4000]},ensure_ascii=False)}]})
- print('DECIDE',name,round(time.monotonic()-t,1),'s tokens',out.get('usage',{}).get('total_tokens'),out['choices'][0]['message']['content'],flush=True)
- time.sleep(4)
+ for searcher in SEARCHERS:
+  t=time.monotonic()
+  ask='Business name: '+name+'\nKind: '+kind+'\nWhat the owner wrote (for the city and details):\n'+owner
+  body={'model':searcher,'temperature':0,'max_completion_tokens':1500,'messages':[{'role':'system','content':search_rules},{'role':'user','content':ask}]}
+  if 'gpt-oss' in searcher:body.update(reasoning_effort='low',tools=[{'type':'browser_search'}],tool_choice='required')
+  out=post(body);notes=(out['choices'][0]['message'].get('content') or '').strip();usage=out.get('usage',{})
+  print('SEARCH',searcher,name,round(time.monotonic()-t,1),'s tokens',usage.get('total_tokens'),json.dumps(notes[:1300],ensure_ascii=False),flush=True)
+  if 'NOT_FOUND' in notes or len(notes)<20:notes=''
+  t=time.monotonic()
+  out=post({'model':'openai/gpt-oss-120b','temperature':0,'max_completion_tokens':1500,'reasoning_effort':'low','response_format':{'type':'json_object'},'messages':[{'role':'system','content':decide_rules+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps({'owner_text':owner,'research_notes':notes[:4000]},ensure_ascii=False)}]})
+  print('DECIDE',searcher,name,round(time.monotonic()-t,1),'s tokens',out.get('usage',{}).get('total_tokens'),out['choices'][0]['message']['content'],flush=True)
+  time.sleep(4)
