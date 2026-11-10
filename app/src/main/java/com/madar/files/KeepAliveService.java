@@ -25,4 +25,7 @@ public final class KeepAliveService extends Service {
  }
  @Override public void onDestroy(){running=false;super.onDestroy();}
  @Override public IBinder onBind(Intent intent){return null;}
+
+ // Android 15 ends a data-sync service after its daily allowance: stop at once so the app is never closed for it.
+ @Override public void onTimeout(int startId,int type){running=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
 }

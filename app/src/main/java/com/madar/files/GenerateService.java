@@ -68,7 +68,7 @@ public final class GenerateService extends Service {
   return START_NOT_STICKY;
  }
  private static JSONObject parse(String value){try{return new JSONObject(value);}catch(Exception e){return null;}}
- @Override public void onTimeout(int startId,int type){cancel.set(true);}
+ @Override public void onTimeout(int startId,int type){cancel.set(true);stopForeground(STOP_FOREGROUND_DETACH);stopSelf();}
  @Override public void onDestroy(){cancel.set(true);if(wake!=null&&wake.isHeld())wake.release();super.onDestroy();}
  @Override public IBinder onBind(Intent intent){return null;}
 }

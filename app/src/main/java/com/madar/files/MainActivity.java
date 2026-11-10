@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private PreviewProxy mediaProxy;private LocalMediaServer mediaServer;private File webAssets;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private volatile java.util.concurrent.atomic.AtomicBoolean researchCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private final ExecutorService agentWorker=Executors.newSingleThreadExecutor();private final LocalAgent localAgent=new LocalAgent();private final java.util.concurrent.atomic.AtomicBoolean agentRunning=new java.util.concurrent.atomic.AtomicBoolean();private volatile boolean agentComputing;private volatile java.util.concurrent.atomic.AtomicBoolean agentCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private final ExecutorService previews=Executors.newSingleThreadExecutor();
     private volatile int previewToken;private volatile int stepToken;private final ExecutorService navigation=Executors.newSingleThreadExecutor();
@@ -60,6 +61,8 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new Bridge(),"Android");
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
+            // When Android ends the page's renderer (memory pressure while editing large media), rebuild the screen instead of closing the app.
+            @Override public boolean onRenderProcessGone(WebView v,android.webkit.RenderProcessGoneDetail detail){ready=false;if(v.getParent() instanceof android.view.ViewGroup)((android.view.ViewGroup)v.getParent()).removeView(v);v.destroy();if(web==v)web=null;recreate();return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
                 if(mediaServer!=null&&mediaServer.owns(r.getUrl()))return null;
                 String path=r.getUrl().toString();
@@ -126,6 +129,8 @@ public class MainActivity extends Activity {
             case "agentStatus":send(new JSONObject().put("type","agentStatus").put("ready",true).put("localReady",LocalAgent.ready(this)).put("offline",getSharedPreferences("local_agent",0).getBoolean("offline",false)).put("learning",getSharedPreferences("local_agent",0).getBoolean("learn",true)));break;
             case "agentInstall":startAgent(request,true);break;
             case "agentMotionStart":startAgentMotion(request);break;
+            // The assistant looks the business up and decides what it still needs to ask; the answer always arrives (empty on any failure).
+            case "motionResearch":{final JSONObject asked=new JSONObject(request.toString());researchCancel.set(true);final java.util.concurrent.atomic.AtomicBoolean stop=new java.util.concurrent.atomic.AtomicBoolean();researchCancel=stop;Thread research=new Thread(()->{JSONObject found=MotionResearch.run(getApplicationContext(),asked,stop);if(!stop.get())send(found);},"madar-motion-research");research.setDaemon(true);research.start();break;}
             case "agentMotionApprove":{JSONObject approved=MotionProject.load(this,request.getString("project"));if(!request.optString("thread").equals(approved.optString("agentThread")))throw new IOException("المشروع لا يخص المحادثة");if(MotionGpuSession.held()&&!MotionGpuSession.available(MotionGpuSession.owner(approved)))throw new IOException("جلسة المراجعة الحالية تخص محادثة أخرى أو ما زالت تُغلق؛ اعتمد نسختها من محادثتها أولًا");if(!MotionGpuSession.held()&&getSharedPreferences("colab_owned_runtime",0).contains("name")&&!ColabCredentials.ready()){getSharedPreferences("motion-studio",0).edit().putString("pendingApproval",approved.getString("id")).commit();startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("motionStudio",true),7205);}else startService(new Intent(this,MotionStudioService.class).setAction("approve").putExtra("project",approved.getString("id")));break;}
             case "agentMotionStatus":{String raw=getSharedPreferences("motion-studio",0).getString("chatState","{}");JSONObject status=new JSONObject(raw);if(request.optString("task").equals(status.optString("task"))){if(status.optString("status").equals("running")&&!MotionStudioService.active&&!(status.optBoolean("preflight")&&working)){if(status.optBoolean("preflight"))status.put("status","error").put("checkpoint",true).put("message","توقفت مراجعة الطلب قبل تشغيل GPU؛ المرحلة المكتملة محفوظة. اكتب «أعد المحاولة» للاستكمال");else MotionTransfer.interrupted(this,status);}send(status);}else send(new JSONObject().put("type","motionState").put("thread",request.optString("thread")).put("task",request.optString("task")).put("status","error").put("message","لم تكتمل المهمة السابقة؛ أعد الطلب من المحادثة"));break;}
             case "motionStudio":if(isBusy()||agentComputing)return;String motionPrompt=request.optString("prompt","");if(motionPrompt.length()>6000)throw new IOException("اختصر فكرة الفيديو");startActivity(new Intent(this,MotionStudioActivity.class).putExtra("prompt",motionPrompt));break;

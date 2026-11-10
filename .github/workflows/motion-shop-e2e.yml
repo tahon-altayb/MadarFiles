@@ -52,6 +52,14 @@ jobs:
             case: seven
             mode: attached
             variant: groq
+          - voice: none
+            case: answers
+            mode: attached
+            variant: groq
+          - voice: none
+            case: answers
+            mode: attached
+            variant: plain
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

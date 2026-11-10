@@ -24,7 +24,7 @@
  const MAPLINK=/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.[a-z.]+\/maps)[^\s]*/i;
  const META_ADDRESS=/^(?:مكان|عنوان|موقع|لوكيشن|لوكيشين|الخريطه|خريطه|اللوكيشن|العنوان|المكان)(?:\s|$)|^(?:مكان|عنوان)\s+(?:ال)?(?:موقع|فرع|محل|المحل|الفرع)/;
  const META_PHONE=/^(?:رقم|الرقم|جوال|الجوال|التواصل|تواصل|واتس|الواتس|رقم التواصل|رقم الجوال)(?:\s|$)/;
- const META_NAME=/^(?:اسم|الاسم)\s+(?:المحل|المتجر|النشاط|المطعم|الكوفي|المقهي|الشركه)/;
+ const META_NAME=/^(?:اسم|الاسم)\s+(?:المحل|المتجر|النشاط|المطعم|الكوفي|المقهي|الشركه|التطبيق|الموقع|النادي|العياده|المشروع|الخدمه)/;
  // «حط ...» / «خلي ...» about pictures, the logo or layout is a direction, not on-screen text.
  const VISUAL=new RegExp(`^(?:${'(?:ال)?(?:شعار|لوقو|لوجو|لوغو|لوكو)|logo'}|(?:ال)?صور|صوره|الصوره|(?:ال)?لقط|(?:ال)?فيديو|(?:ال)?مقطع|(?:ال)?خلفي|(?:ال)?الوان|(?:ال)?لون|(?:ال)?خط(?:\\s|$)|(?:ال)?حركات|(?:ال)?انتقال|(?:ال)?منتج|(?:ال)?منتجات|(?:ال)?مشهد|(?:ال)?مشاهد|(?:ال)?صوت|(?:ال)?تعليق|(?:ال)?موسيقي)`);
  const WEBSITE=['موقع إلكتروني','موقع الكتروني','الموقع الإلكتروني','الموقع الالكتروني','موقعنا الإلكتروني','موقعنا الالكتروني','متجر إلكتروني','متجر الكتروني','متجرنا الإلكتروني','متجرنا الالكتروني','زوروا موقعنا','زورو موقعنا','اطلب أونلاين','اطلب اونلاين','www','.com','عبر موقعنا','من موقعنا'];
@@ -150,7 +150,7 @@
   const d=duration(t),each=perScene(t);
   if(d){result.durationSec=d;result.durationSource='user';}
   else if(each&&result.explicitScenes){result.durationSec=Math.max(6,Math.min(180,each*result.explicitScenes));result.durationSource='user';}
-  result.aspect=aspect(t);
+  result.aspect=aspect(t.replace(/«[^»]*»/g,' '));
   result.musicRequested=/(?:مع|حط|ضيف|اضف|ابي|ابغي|ابغى)\s+(?:\S+\s+)?(?:موسيقي|موسيقى|اغنيه|ميوزك|music)/.test(t)&&!new RegExp(NEG+'\\s*(?:\\S+\\s+)?(?:موسيقي|موسيقى)').test(t);
   const position=logoPosition(text);result.logoFirst=position.first;result.logoLast=position.last;
   result.noWebsite=/(?:ما|ماعندنا|ما\s*عندنا|ما\s*لنا|مالنا|ليس\s*لدينا|لا\s*يوجد|لا\s*نملك|مافي|ما\s*في|مافيه|ما\s*فيه|بدون|مب|مو)\s*(?:عندنا\s*)?(?:اي\s*)?(?:موقع\s*(?:الكتروني|ويب|انترنت|اونلاين)|متجر\s*(?:الكتروني|اونلاين)|ويب\s*سايت|website|اونلاين)/.test(t);
@@ -165,7 +165,7 @@
   if(skip(answers.address))result.requireAddress=false;if(skip(answers.phone))result.requirePhone=false;if(skip(answers.name))result.requireName=false;
   if(skip(answers.logo)){result.logoFirst=false;result.logoLast=false;}
   if(answers.name&&!skip(answers.name))result.businessName=clean(answers.name);
-  const name=/(?:اسم\s+(?:المحل|المتجر|النشاط|المطعم|الكوفي|المقهى|المقهي))\s*(?:هو|:)?\s*([^\n.،]{2,40})/.exec(soft(text));if(name&&!result.businessName)result.businessName=clean(name[1]);
+  const name=/(?:اسم\s+(?:المحل|المتجر|النشاط|المطعم|الكوفي|المقهى|المقهي|التطبيق|الموقع|النادي|العيادة|العياده|الشركة|الشركه|المشروع|الخدمة|الخدمه))\s*(?:هو|:)?\s*([^\n.،]{2,40})/.exec(soft(text));if(name&&!result.businessName)result.businessName=clean(name[1]);
   // «لمحلي «العبور للاتصالات»» / «لمتجري الإلكتروني «بيت الحبوب»» / «لنادي «قوة» الرياضي»: the quoted name after the kind of business.
   const quotedName=/(?:محل|متجر|مطعم|مقهى|مقهي|كافيه|كوفي|نادي|صالون|عياده|عيادة|شركه|شركة|تطبيق|مركز|معرض|مخبز|بوتيك|مشغل)(?:ي|نا)?\s+(?:(?:الإلكتروني|الالكتروني|الرياضي|الجديد|الصغير)\s+)?[«"“]([^»"”]{2,40})[»"”]/.exec(soft(text));if(quotedName&&!result.businessName)result.businessName=clean(quotedName[1]);
   if(context.logoAttachment)result.logoAttachment=String(context.logoAttachment);
@@ -173,7 +173,10 @@
   // "we have no website"): never audience copy. The request itself stays ordinary brief.
   for(const raw of sentences(text))for(const part of soft(raw).split(CLAUSE)){const s=key(part).replace(/^و\s*/,'');if(/^(?:خلي|خل|اكتب|حط|ضع|لا\s+(?:تكتب|تحط|تذكر)|اذا|لو|اسالني|شيل|احذف)\s|ماعندنا|ما\s*عندنا\s*(?:موقع|متجر)/.test(s)||result.corrections.some(c=>key(c.text)===key(raw)))result.notes.push(clean(part));}
   result.required=unique(result.required);result.forbidden=unique(result.forbidden.map(clean));result.notes=unique(result.notes).slice(0,12);
-  const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes,Number.isInteger(context.images)?context.images:undefined);result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
+  const seconds=result.durationSec||30;result.sceneCount=sceneCount(seconds,result.explicitScenes,Number.isInteger(context.images)?context.images:undefined);
+  // Scenes the owner chose in the questions each need their own, plus the logo opening and the closing (two seconds a scene at least).
+  {const chosen=(String(text).match(/مشهد مطلوب:/g)||[]).length;if(chosen&&!Number.isInteger(result.explicitScenes))result.sceneCount=Math.min(10,Math.max(3,Math.floor(seconds/2)),Math.max(result.sceneCount,chosen+4));}
+ result.sceneSeconds=Math.round(seconds/result.sceneCount*10)/10;
   const images=context.images||0,hasUrl=result.urls.length>0;
   if(result.requireAddress&&!result.address)result.missing.push({field:'address',blocking:true,question:'وش عنوان الفرع اللي أكتبه في آخر الإعلان؟ اكتبه مثل: الرياض – حي النرجس – طريق أبي بكر. وإذا ما تبيه اكتب «بدون عنوان».'});
   if(result.requirePhone&&!result.phone)result.missing.push({field:'phone',blocking:true,question:'وش رقم التواصل اللي تبيه يظهر في الإعلان؟ وإذا ما تبيه اكتب «بدون رقم».'});

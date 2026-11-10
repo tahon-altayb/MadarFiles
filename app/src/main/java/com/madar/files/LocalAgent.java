@@ -29,12 +29,20 @@ final class LocalAgent {
  JSONObject provider(JSONObject plan,String name)throws Exception{return plan.put("provider",name);}
  /** Text-only plan from Groq with the compact local prompt (fits the free per-minute token limit). */
  JSONObject groq(Context c,String user,JSONObject source,JSONArray previous,AtomicBoolean cancel)throws Exception{
-  status.update(-1,"Groq · فهم طلبك (بديل Gemini المجاني)");
+  boolean think=needsThought(user);status.update(-1,think?"Groq · يفكر في طلبك":"Groq · فهم طلبك");
   JSONObject plain=new JSONObject(source.toString());plain.remove("_visual");String kind=plain.optString("kind");
   String prompt;try(InputStream in=c.getAssets().open("agent-local-prompt.txt");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);prompt=out.toString("UTF-8");}prompt+=understanding(c);
   JSONArray all=history(previous),recent=new JSONArray();for(int i=Math.max(0,all.length()-8);i<all.length();i++)recent.put(all.get(i));
   JSONObject data=new JSONObject().put("source",plain).put("availableTools",new JSONArray(AgentTools.tools(kind))).put("preferences",memory(c)).put("conversation",recent).put("userRequest",user);
-  return provider(AgentTools.validate(GroqClient.json(c,prompt,data.toString(),AgentTools.schema(kind),2048,cancel),kind),"groq");
+  return provider(AgentTools.validate(GroqClient.json(c,prompt,data.toString(),AgentTools.schema(kind),think?3072:2048,think?"medium":"low",cancel),kind),"groq");
+ }
+ /** Real thinking only where it pays: an opinion, a why or how, a comparison, a plan, or a long multi-step request. A greeting or a clear command is answered at once. */
+ static boolean needsThought(String user){
+  String t=user==null?"":user.replaceAll("[\\u064b-\\u065f\\u0670\\u0640]","").replace('أ','ا').replace('إ','ا').replace('آ','ا').replace('ة','ه').replace('ى','ي');
+  if(t.length()>220)return true;
+  if(t.matches("(?s).*(?:وش رايك|ايش رايك|رايك|ايش الافضل|وش الافضل|ايهم افضل|تنصحني|تنصح|اقترح|اقتراح|قارن|الفرق بين|ليش|ليه |لماذا|كيف اسوي|كيف اخلي|خطه|فكر|حلل|راجع|قيّم|قيم لي|وش ناقص|ايش ناقص|وش المشكله|ايش المشكله).*"))return true;
+  int steps=0;java.util.regex.Matcher m=java.util.regex.Pattern.compile("(?:^|\\s)(?:ثم|وبعدين|بعدين|بعدها|وبعد كذا)(?:\\s|$)").matcher(t);while(m.find())steps++;
+  return steps>=2;
  }
 
  /** How the online planners (Gemini, Groq) read dialect, ideas and vague requests; the small on-device model keeps its short prompt. */

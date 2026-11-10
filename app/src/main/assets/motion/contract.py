@@ -82,7 +82,7 @@ def short_headline(text,limit=5):
  while len(cut)>2 and (WEAK_END.search(key(' '.join(cut))) or DANGLING.search(key(' '.join(cut)))):cut=cut[:-1]
  return ' '.join(cut)
 # A headline never ends on a verb or a link word waiting for its object: «شاي جمر وفطيرة الطيب تقدم».
-DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|(?:في\s+)?(?:قلب|وسط|عالم|مجال|مدينه)|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين|خلال|لكل|لجميع|جميع|كافه|لكافه|اصناف|انواع|افضل|اجود|احدث|اكثر|اقل|مختلف|منذ|بعد|قبل|عبر|داخل|طوال|حول|ضمن|نحو|لدي|عن|الى)$')
+DANGLING=re.compile(r'(?:^|\s)(?:ل(?:ا|ت)[ء-ي]{4,}|(?:في\s+)?(?:قلب|وسط|عالم|مجال|مدينه)|[تين]?قدم|[تين]قدم لكم|[تين]وفر|[تين]جمع|[تين]ضم|[تين]حضر|[تين]صنع|حيث|اللي|الي|يعني|لكم|لك|لنا|بكل|كل|هو|هي|ان|بان|لان|كما|مع|بين|عند|حتى|لين|خلال|لكل|لجميع|جميع|كافه|لكافه|اصناف|انواع|افضل|اجود|احدث|اكثر|اقل|مختلف|منذ|بعد|قبل|عبر|داخل|طوال|حول|ضمن|نحو|لدي|عن|الى|عاليه|عالي|فائقه|فائق)$')
 def trim_title(text):
  """Drops dangling last words («… في قلب»، «… تقدم»), keeping at least one word."""
  words=str(text).strip(' .،,!؟:').split()
@@ -275,7 +275,8 @@ def fix_brand(scenes,name):
  # One letter off inside the name («شاي جمبر» for «شاي جمر» copied from a misread menu, «بيت الحوب» for «بيت الحبوب»):
  # a pair of words where one is the name's word and the next is one letter away from the name's next word.
  def near(a,b):
-  if a==b or abs(len(a)-len(b))>1 or min(len(a),len(b))<3:return False
+  # «فطيرة» and the name's «وفطيرة» are the same word: a joining «و» is never a spelling mistake.
+  if a==b or re.sub(r'^و(?=..)','',a)==re.sub(r'^و(?=..)','',b) or abs(len(a)-len(b))>1 or min(len(a),len(b))<3:return False
   if len(a)==len(b):return sum(x!=y for x,y in zip(a,b))==1
   s,l=(a,b) if len(a)<len(b) else (b,a)
   return any(l[:k]+l[k+1:]==s for k in range(len(l)))
@@ -373,7 +374,7 @@ def drop_products(scenes,grounding):
 
 # Credentials and superlatives the owner never claimed («أفضل أنواع الحبوب النظيفة والمعتمدة»، «المحضرة باحترافية»):
 # allowed only when the brief, the page or the pictures say them.
-CLAIM_WORDS=re.compile(r'(?:^|\s)(?:[وب]?(?:ال)?(?:معتمد(?:ه|ين|ون|ات)?|مرخص(?:ه|ين)?|حاصل(?:ه)?|حائز(?:ه)?|جوائز|عالمي(?:ه)?|باحترافيه|احترافي(?:ه)?|مضمون(?:ه)?|موثوق(?:ه)?|حصري(?:ه)?|ارخص|الارخص|رقم\s*(?:1|واحد)|100\s*%))(?=\s|$|[.،,!؟])')
+CLAIM_WORDS=re.compile(r'(?:^|\s)(?:[وب]?(?:ال)?(?:معتمد(?:ه|ين|ون|ات)?|مرخص(?:ه|ين)?|حاصل(?:ه)?|حائز(?:ه)?|جوائز|عالمي(?:ه)?|باحترافيه|احترافي(?:ه|ا)?|مضمون(?:ه|ا)?|موثوق(?:ه|ا)?|حصري(?:ه|ا)?|ارخص|الارخص|رقم\s*(?:1|واحد)|100\s*%))(?=\s|$|[.،,!؟])')
 def unsupported_claims(copy,grounding):
  ground=key(grounding)
  out=[]
@@ -450,6 +451,54 @@ def fix_fused(scenes,grounding):
       head=max(heads,key=len);bare=w.strip('.،,!؟:');out.append(w.replace(bare,lead+head));hit=True;continue
     out.append(w)
    if hit:z[field]=' '.join(out);changed.append(i+1)
+ return changed
+# Scenes the owner chose in the questions («جلسات خارجية»، «المباريات على الشاشة الكبيرة»، «هنقرستيشن وكيتا»،
+# «على مدار الساعة»): the plan writes one line per scene, the film must show each one.
+SCENE_LINE=re.compile(r'مشهد مطلوب:\s*«([^»\n]{2,45})»\s*\|\s*«([^»\n]{0,95})»(?:\s*\|\s*رسمة:\s*([a-z0-9]+))?(?:\s*\|\s*لازم:\s*([^\n|]+))?')
+def required_scenes(text):
+ out=[]
+ for m in SCENE_LINE.finditer(str(text or '')):
+  must=[w.strip(' «»') for w in re.split(r'[،,]',m.group(4) or '') if w.strip(' «»')] or [m.group(1)]
+  out.append({'title':m.group(1).strip(),'caption':m.group(2).strip(),'art':m.group(3) or '','must':must})
+ return out
+def covers(shot,item):
+ seen=key(str(shot.get('title',''))+' '+str(shot.get('caption','')))
+ # «الساعه/24»: either word shows the chosen scene.
+ return all(any(key(alt) in seen for alt in w.split('/') if alt) for w in item['must'])
+# A city the client never named («مقهى في قلب الرياض» for a café in Taif): the phrase leaves.
+CITIES=r'الرياض|جده|جدة|مكه|مكة|المدينه المنوره|المدينة المنورة|الدمام|الخبر|الظهران|الطائف|ابها|أبها|تبوك|بريده|بريدة|القصيم|حائل|جازان|جيزان|نجران|الاحساء|الأحساء|الهفوف|ينبع|الجبيل|خميس مشيط|الباحه|الباحة|عرعر|سكاكا|القطيف'
+def fix_places(scenes,grounding):
+ known=key(grounding);changed=[]
+ # The closing card carries the owner's address as he gave it.
+ for i,z in enumerate(scenes[:-1]):
+  for field in ['title','caption','narration']:
+   v=str(z.get(field,''))
+   for city in set(re.findall(CITIES,v)):
+    if key(city) in known:continue
+    w=re.sub(r'\s*(?:،\s*)?(?:(?:في|ب|من)\s+)?(?:(?:قلب|وسط|مدينه|مدينة)\s+)?'+city,'',v).strip(' ،,')
+    if w!=v:v=w;changed.append(i+1)
+   z[field]=v
+ return changed
+def place_required(scenes,items,keep=()):
+ """Each chosen scene is in the film: a missing one takes the place of a middle scene that carries none of the
+ chosen ones (the last such scene first), with the owner's polished words. Returns the scene numbers replaced."""
+ changed=[]
+ for item in items:
+  hit=next((i for i in range(1,len(scenes)-1) if covers(scenes[i],item)),None)
+  if hit is not None:
+   # The scene is there; its words become the owner's finished ones («لا يختفي، يظل متاحا لليلة ونهار» read
+   # «ليل نهار، طلبك جاهز متى ما جيت» in the 1.9.58 questions run).
+   z=scenes[hit]
+   if (z.get('title'),z.get('caption'))!=(item['title'],item['caption']):
+    z.update(title=item['title'],caption=item['caption'],narration=(item['title']+'، '+item['caption']).strip('، ')+'.');changed.append(hit+1)
+   continue
+  if any(covers(z,item) for z in scenes):continue
+  free=[i for i in range(1,len(scenes)-1) if i not in keep and i+1 not in changed and not any(covers(scenes[i],x) for x in items)]
+  if not free:continue
+  i=free[-1];z=scenes[i]
+  z.update(title=item['title'],caption=item['caption'],narration=(item['title']+'، '+item['caption']).strip('، ')+'.',reference=-1)
+  if item['art']:z['artHint']=item['title']+' '+item['art']
+  changed.append(i+1)
  return changed
 def claim_issues(copy,grounding):
  seen=set();issues=[]
@@ -558,7 +607,18 @@ def enforce_closing(scenes,c):
  last=scenes[-1];everything=key(' '.join(str(last.get(k,'')) for k in ['title','caption']))
  missing=[p for p in c.get('required',[]) if key(p) not in everything]
  address=str(c.get('address') or '')
- extras=[address] if address and not address.startswith('http') and key(address) not in everything else []
+ # «الرياض حي النخيل» is the same address as «الرياض – حي النخيل»: compare letters and digits only.
+ bare=lambda v:re.sub(r'[^\u0621-\u064a0-9]+','',key(v))
+ # The address is written exactly as the owner gave it: a version with other separators is replaced by his.
+ if address and not address.startswith('http') and key(address) not in key(everything) and bare(address) in bare(everything):
+  cap=str(last.get('caption',''))
+  pieces=[x for x in re.split(r'\s*·\s*',cap) if x.strip()]
+  join=[n for n in range(len(pieces)) for m in range(n+1,len(pieces)+1) if bare(' '.join(pieces[n:m]))==bare(address)]
+  if join:
+   n=join[0];m=next(m for m in range(n+1,len(pieces)+1) if bare(' '.join(pieces[n:m]))==bare(address))
+   pieces[n:m]=[address];last['caption']=' · '.join(pieces);everything=key(last.get('title',''))+' '+key(last.get('caption',''))
+   changed=True
+ extras=[address] if address and not address.startswith('http') and bare(address) not in bare(everything) else []
  phone=str(c.get('phone') or '')
  if phone and phone not in everything.replace(' ',''):extras.append(phone)
  if not missing and not extras:return []
@@ -572,6 +632,10 @@ def enforce_closing(scenes,c):
   if head and key(head)!=key(last.get('title','')):last['title']=head;changed.append('title')
   missing=[p for p in required if key(p) not in key(last.get('title',''))]
   extras=[x for x in ([address] if address and not address.startswith('http') else [])+([phone] if phone else []) if key(x) not in key(last.get('title',''))]
+ else:
+  # Only the address or phone is missing: the phrases already on the card stay («زورونا في فرعنا» was
+  # replaced by the address alone in the 1.9.58 gym run).
+  missing=[p for p in required if key(p) not in key(last.get('title',''))]
  parts=[]
  for item in missing+extras:
   if len(' · '.join(parts+[item]))<=95:parts.append(item)
@@ -592,7 +656,7 @@ def tidy_copy(scenes,c=None):
  # An English word in an Arabic advert («توصيل سريع nationwide» in the 1.9.57 store run) is dropped.
  for i,z in enumerate(scenes):
   for field in ['title','caption']:
-   v=str(z.get(field,''));w=re.sub(r'\s*\b[A-Za-z][A-Za-z\-]{2,}\b','',v).strip(' ،,')
+   v=str(z.get(field,''));w=re.sub(r'\s*(?<!@)\b[A-Za-z][A-Za-z\-]{2,}\b','',v).strip(' ،,')
    if w!=v and re.search('[ء-ي]',w):z[field]=re.sub(r'\s{2,}',' ',w);changed.append(i+1)
  for i,z in enumerate(scenes[:-1]):
   t,cap=key(z.get('title','')).strip(' .،,'),key(z.get('caption','')).strip(' .،,')
@@ -627,6 +691,10 @@ def tidy_copy(scenes,c=None):
   # «العبور للاتصالات: ضمان سنة»: a headline has no colon.
   t=str(z.get('title',''))
   if ':' in t:z['title']=re.sub(r'\s*:\s*',' · ',t).strip(' ·');changed.append(i+1)
+  # «نحن مفتوحون 24 ساعة» is a translation, not an advert: «شغالين على مدار الساعة».
+  for field in ['title','caption','narration']:
+   v=str(z.get(field,''));w=re.sub(r'(?:(?:نحن|احنا|إحنا|حنا)\s+)?مفتوح(?:ون|ين)?\s+(?:لكم\s+)?(?:على\s+مدار\s+)?(?:24|٢٤)\s*ساع[ةه]','شغالين على مدار الساعة',v)
+   if w!=v:z[field]=w;changed.append(i+1)
   # A caption is read in one glance: at most 14 words, cut at a clause and never on a dangling word.
  for i,z in enumerate(scenes[:-1]):
   cap=str(z.get('caption',''))
@@ -636,7 +704,9 @@ def tidy_copy(scenes,c=None):
    # A relative clause is where a long sentence can stop («… الطازجتين | اللتين ستشعر بهما في كل لقمه»).
    cut=next((k for k,w in enumerate(words) if k>=4 and key(w) in ('الذي','التي','اللتين','اللذين','الذين','اللي','حيث')),None)
    if cut:words=words[:cut]
-   short=' '.join(words) if 3<=len(words)<=12 else trim_title(' '.join(words[:12]))
+   # Without a clause to stop at, a sentence of up to 16 words stays whole: cutting it left «… في أكواب زجاجية بألوان».
+   short=' '.join(words) if 3<=len(words)<=12 or (not cut and len(words)<=16 and words==first.split() and first==cap.strip(' .،,')) else trim_title(' '.join(words[:12]))
+   if short==cap.strip(' .،,'):short=cap
    if short and short!=cap:z['caption']=short;changed.append(i+1)
   # The closing voice says the closing: a product line read there («نوفر ساعات ذكية بعمر ضمان سنتين»,
   # «مرحباً بكم في نادي قوة») becomes the closing headline and who and where.
@@ -644,7 +714,13 @@ def tidy_copy(scenes,c=None):
   last=scenes[-1];said=key(last.get('narration',''))
   wanted=[key(x) for x in c.get('required',[]) if x and len(key(x))>=4]
   if not any(r in said for r in wanted) and not is_cta(said,c):
-   line='، '.join(dict.fromkeys(x for x in [str(last.get('title','')).strip(' .،,'),re.sub(r'\s*·\s*','، ',str(last.get('caption',''))).strip(' .،,')] if x))
+   title=str(last.get('title','')).strip(' .،,');cap=re.sub(r'\s*·\s*','، ',str(last.get('caption',''))).strip(' .،,')
+   # «اطلب الحين من متجرنا» + «اطلب الآن عبر منصة زد» is read «اطلب الحين من متجرنا عبر منصة زد», not «اطلب» twice.
+   tw,cw=title.split(),cap.split()
+   if tw and cw and key(tw[0])==key(cw[0]):
+    k=next((n for n,w in enumerate(cw) if key(w) in ('عبر','من','في','على','مع')),None)
+    cap='' if k is None else ' '.join(cw[k:]);line=(title+' '+cap).strip()
+   else:line='، '.join(dict.fromkeys(x for x in [title,cap] if x))
    if line:last['narration']=line+'.';changed.append(len(scenes))
  if scenes:
   last=scenes[-1];cap=str(last.get('caption','')).strip()

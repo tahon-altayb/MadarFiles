@@ -342,34 +342,68 @@ def groq_story(count):
  schema={'type':'object','properties':{'title':{'type':'string'},'scenes':{'type':'array','items':{'type':'object','properties':{'title':{'type':'string'},'caption':{'type':'string'},'narration':{'type':'string'}},'required':['title','caption','narration']}}},'required':['title','scenes']}
  body={'model':str(WRITER.get('model') or 'openai/gpt-oss-120b'),'temperature':0,'max_completion_tokens':4000,'reasoning_effort':'medium','response_format':{'type':'json_object'}}
  def call(system,user,label):
-  started=time.monotonic();note=''
+  started=time.monotonic();note='';asked=0
   payload=dict(body,messages=[{'role':'system','content':system+'\n\nReturn ONLY one JSON object that matches this JSON schema exactly (types, required fields and enum values):\n'+json.dumps(schema)},{'role':'user','content':json.dumps(user,ensure_ascii=False)}])
-  for attempt in range(3):
+  for attempt in range(6):
    try:
     req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+key,'User-Agent':'madar-motion'})
-    answer=json.loads(json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'])
+    text=json.loads(urllib.request.urlopen(req,timeout=120).read())['choices'][0]['message']['content'] or ''
+    found=re.search(r'\{.*\}',text,re.S);answer=json.loads(found.group(0) if found else text)
+    if not isinstance(answer,dict):answer={}
     scenes=[{'title':re.sub(r'[.:،,]+$','',plain(z.get('title'))),'caption':plain(z.get('caption')),'narration':plain(z.get('narration'))} for z in answer.get('scenes',[]) if isinstance(z,dict)]
-    usable=len(scenes)==count and len({z['title'] for z in scenes})==count and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
+    # Six scenes where eight were asked (the owner chose six scenes in the questions): the chosen scenes it
+    # left out go in before the closing, in the owner's polished words.
+    if 3<=len(scenes)<count:
+     for item in local_rules.required_scenes(brief.get('text','')):
+      if len(scenes)>=count:break
+      if not any(local_rules.covers(z,item) for z in scenes):scenes.insert(len(scenes)-1,{'title':item['title'],'caption':item['caption'],'narration':(item['title']+'، '+item['caption']).strip('، ')+'.'})
+    # One scene short of a long plan (seven of eight) is a whole advert: the film takes the draft's count.
+    usable=(len(scenes)==count or (count>=6 and len(scenes)==count-1)) and len({z['title'] for z in scenes})==len(scenes) and all(re.search('[ء-ي]',z['title']) and len(z['title'])<=45 and len(z['title'].split())<=7 and len(z['caption'])<=95 and 8<=len(z['narration'])<=220 and re.search('[ء-ي]',z['narration']) and not re.search('[A-Za-z]{3,}',z['title']+' '+z['caption']) for z in scenes)
     with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':len(scenes),'usable':usable,'error':'','seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
-    return {'title':plain(answer.get('title'))[:80],'scenes':scenes} if usable else None
+    if usable:return {'title':plain(answer.get('title'))[:80],'scenes':scenes}
+    # An answer with the wrong number of scenes (one scene in the 1.9.57 seven-picture run) is asked again, twice at most.
+    if asked>=2:return None
+    asked+=1
+    payload['messages'].append({'role':'user','content':f'Return all {count} scenes, each with a unique Arabic title, a caption of at most 12 words and a complete narration.'})
    except urllib.error.HTTPError as failed:
     note='HTTPError:'+str(failed.code)
+    try:note+=' '+re.sub(r'gsk_\w+','gsk_…',failed.read().decode('utf-8','replace'))[:240]
+    except Exception:pass
+    # 400 is Groq's JSON check failing on the model's answer (the same answer again at temperature 0):
+    # ask again a little warmer, then without the JSON mode and read the object out of the text.
+    # An empty «failed_generation» means the thinking used up the answer's room (a long questions brief):
+    # think less and give the answer more room first.
+    if failed.code==400:
+     if payload.get('reasoning_effort')!='low':payload.update(reasoning_effort='low',max_completion_tokens=8000)
+     elif payload.get('temperature',0)==0:payload['temperature']=.5
+     elif payload['model']!='openai/gpt-oss-20b':payload.update(model='openai/gpt-oss-20b',temperature=.3)
+     else:payload.pop('response_format',None)
+     continue
     # The free tier allows about 8000 tokens a minute: wait as long as Groq asks (at most 30 s).
     wait=failed.headers.get('retry-after') if failed.code==429 else None
-    time.sleep(min(30,float(wait))+1 if wait and re.fullmatch(r'[0-9.]+',wait) else 3)
-   except Exception as failed:note=type(failed).__name__;time.sleep(3)
+    seconds=float(wait) if wait and re.fullmatch(r'[0-9.]+',wait) else 3
+    # The day's free tokens for the big model are gone: the smaller model (its own limits) writes instead.
+    if failed.code==429 and seconds>30 and payload['model']!='openai/gpt-oss-20b':payload['model']='openai/gpt-oss-20b';continue
+    time.sleep(min(30,seconds)+1)
+   except Exception as failed:note=type(failed).__name__+' '+str(failed)[:160];time.sleep(3)
   with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':label,'scenes':0,'usable':False,'error':note,'seconds':round(time.monotonic()-started,1)},ensure_ascii=False)+'\n')
   return None
  plain=lambda v:re.sub(r'\s+',' ',re.sub(r'[\u064b-\u065f\u0670\u0640]','',str(v or ''))).strip()
- # The instructions file holds the copywriter and, after «=== EDITOR ===», the chief editor who checks his draft against the facts.
+ # An optional second part after «=== EDITOR ===» runs a chief-editor pass. Off for now: on gpt-oss-120b it fixed
+ # some lines and broke others («فيديو موشن قصير», an empty closing caption) in the 1.9.57 comparison.
  writer_rules,_,editor_rules=str(WRITER['system']).partition('=== EDITOR ===')
  draft=call(writer_rules.strip(),ask,'groq writer')
  if not draft:return None
  Path('groq-draft.json').write_text(json.dumps(draft['scenes'],ensure_ascii=False))
  final=call(editor_rules.strip(),{'facts':ask,'draft':draft},'groq editor') if editor_rules.strip() else None
  if final:Path('groq-edited.json').write_text(json.dumps(final['scenes'],ensure_ascii=False))
- return draft_story(final or draft,count)
+ chosen=final or draft
+ global scene_count
+ scene_count=len(chosen['scenes'])
+ return draft_story(chosen,scene_count)
 DRAFT=None if chunks else (groq_story(scene_count) or draft_story(brief.get('draftStory'),scene_count))
+# A Groq draft may set its own count (one short of a long plan): pacing and the schema follow it.
+scene_seconds=total_seconds/scene_count;STORY['properties']['scenes'].update(minItems=scene_count,maxItems=scene_count)
 if DRAFT:
  story=DRAFT;Path('story-candidate.json').write_text(json.dumps(story,ensure_ascii=False));print('DIRECTOR_DRAFT groq',len(story['scenes']),file=sys.stderr,flush=True)
 else:
@@ -549,11 +583,18 @@ if not chunks and not (isinstance(asked_scenes,int) and not isinstance(asked_sce
    head=local_rules.key(story['scenes'][i].get('title',''))
    if len(story['scenes'])>floor and (head.startswith(brand_key) or local_rules.GREETING.search(head)):del story['scenes'][i]
   # The same fact twice in other words (opening hours in scenes 2 and 5) keeps only the first.
+ # A scene the owner chose (indoor and outdoor seating are two choices, not a repeat) is never dropped.
  for i in reversed(local_rules.topic_repeats(story['scenes'],globals().get('BRAND') or closing.get('businessName') or story.get('title',''))):
-  if len(story['scenes'])>floor:del story['scenes'][i]
+  if len(story['scenes'])>floor and not any(local_rules.covers(story['scenes'][i],x) for x in local_rules.required_scenes(brief.get('text',''))):del story['scenes'][i]
  scene_count=len(story['scenes'])
 enforced=local_rules.enforce_closing(story['scenes'],closing)
 local_rules.tidy_copy(story['scenes'],closing)
+# The scenes the owner chose in the questions are all in the film, in his words (never the logo scene or the closing).
+REQUIRED=local_rules.required_scenes(brief.get('text',''))
+placed=local_rules.place_required(story['scenes'],REQUIRED,keep={0})
+local_rules.fix_places(story['scenes'],GROUNDING)
+if placed:
+ with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'required scenes','placed':placed,'wanted':len(REQUIRED)},ensure_ascii=False)+'\n')
 logo_targets=local_rules.logo_scenes(local_contract,len(story['scenes']))|({0} if contract.get('opening_logo') else set())
 # Without an identified logo the scene is typography only: never a storefront or product photo in its place.
 for index in logo_targets:story['scenes'][index]['reference']=logo_index if logo_index is not None else -1
@@ -608,6 +649,34 @@ for i,z in enumerate(story['scenes']):
  if not unused or not reference_facts:break
  if 0<i<len(story['scenes'])-1 and i not in logo_targets and z.get('reference',-1)==-1 and not (_concepts(' '.join(str(z.get(k,'')) for k in ['title','caption','narration']))&PRODUCT_CONCEPTS):
   fit=unused.pop(0);z['reference']=fit;seen.add(fit)
+# Each of the client's photos goes to the scene it shows best, judged by the headline and caption (what the viewer
+# reads), not by a passing word in the narration: in the 1.9.57 café run the mint-tea photo sat under «فطائر الطيب»
+# because its narration said «لتكمل شايك», and the kettles on coals under the mint tea instead of «شاي على الفحم».
+if PICTURE_MODE!='inspired' and reference_facts and photos:
+ middle=[i for i in range(1,len(story['scenes'])-1) if i not in logo_targets]
+ def shown(i):return ' '.join(str(story['scenes'][i].get(k,'')) for k in ['title','caption'])
+ pairs=[]
+ for i in middle:
+  read=shown(i);said=str(story['scenes'][i].get('narration',''))
+  for n in photos:
+   fact=next((f for f in reference_facts if f.get('index')==n),None)
+   if not fact:continue
+   description=str(fact.get('description',''))
+   common=_concepts(read)&_concepts(description);words={w for w in _stems(read)&_stems(description) if not w.startswith('#')}
+   if not (common or words):continue
+   pairs.append((3*len(common)+len(words)+0.5*len(_concepts(said)&_concepts(description)),-i,i,n))
+ taken_scene,taken_photo={},set()
+ for score,_,i,n in sorted(pairs,reverse=True):
+  if i in taken_scene or n in taken_photo:continue
+  taken_scene[i]=n;taken_photo.add(n)
+ for i in middle:
+  if i in taken_scene:story['scenes'][i]['reference']=taken_scene[i]
+  elif story['scenes'][i].get('reference',-1) in taken_photo or (story['scenes'][i].get('reference',-1)!=-1 and _concepts(shown(i))&PRODUCT_CONCEPTS):story['scenes'][i]['reference']=-1
+ # A photo still free illustrates a scene that names no product (hours, the team, the place).
+ free=[n for n in photos if n not in {z.get('reference') for z in story['scenes']}]
+ for i in middle:
+  if not free:break
+  if story['scenes'][i].get('reference',-1)==-1 and not (_concepts(shown(i)+' '+str(story['scenes'][i].get('narration','')))&PRODUCT_CONCEPTS):story['scenes'][i]['reference']=free.pop(0)
 # The closing card signs off with the brand when it has no picture (also after repeats were removed).
 # A product photo left on the closing (the menu under «زورونا في فرعنا» in the 1.9.57 run) gives way to the logo too.
 if logo_index is not None and logo_name and len(story['scenes'])>1:story['scenes'][-1]['reference']=logo_index
@@ -631,6 +700,9 @@ if local_contract and not chunks:
  pacing['opening_logo']=bool(contract.get('opening_logo') or (local_contract.get('logoFirst') and logo_name))
  pacing['physical_visit']=bool(contract.get('physical_visit') or local_contract.get('visitBranch') or local_contract.get('required') or local_contract.get('address'))
 for shot,seconds in zip(story['scenes'],scene_durations(total_seconds,scene_count,pacing)):shot['seconds']=seconds
+# An @handle reads left to right inside the Arabic line.
+for z in story['scenes']:
+ for field in ['title','caption']:z[field]=re.sub(r'(?<!\u2066)(@[A-Za-z0-9_.]{2,30})',lambda m:'\u2066'+m.group(1)+'\u2069',str(z.get(field,'')))
 Path('story.json').write_text(json.dumps(story,ensure_ascii=False))
 # The full shot is synthesized from freely positioned primitives, not the product-template renderer.
 SCHEMA='''Output {"backdrop":"plain|orbit|grid|radial|split","elements":[...]}. Every element has kind, x,y,w,h (normalized 0..1), color (ink|accent|card|muted|background), motion (rise|left|right|scale|draw|fade), delay (0..0.7 fraction of initial 5 sec). Bounds x+w<=1,y+h<=1. Keep a .06 outer safe margin, use y=.08.. .91. Between 4 and 8 elements. Kind text/metric: text <=75 chars, size 20..110 in a 1080px wide canvas. Text blocks must NOT overlap. Allocate h >= size/1080*1.6*expectedLines / aspectHeightRatio. Short 1-5 word headlines, not narration paragraphs. kind image/device: asset must be an EXACT provided filename. Show screenshots inside device frames; do not crop. kind shape is a rounded color panel. kind icon: icon=play|file|audio|check|spark|arrow|grain|book|shield|image|phone|chat. kind line is a horizontal accent line. Draw order follows array. Background panels precede text and icons. Always visible text contrast ink over background/card or background over ink. At least two text elements (a striking heading and a brief supporting statement), and one purposeful visual. Use large whitespace, aligned groups, staggered entries. No text outside safe area. Do not put large empty boxes, tiny unreadable text, overlapping screenshots, extraneous counters, or unrelated decorative shapes. Do not repeat the same geometry for every scene.'''
