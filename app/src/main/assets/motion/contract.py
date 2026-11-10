@@ -241,7 +241,11 @@ def topic_of(shot,brand=''):
  t=key(' '.join([str(shot.get('title','')),str(shot.get('caption',''))]))
  # The shop's name («شاي جمر وفطيرة الطيب») is not a topic: every scene may say it.
  if brand and len(key(brand))>=4:t=t.replace(key(brand),' ')
- return [name for name,rx in TOPICS.items() if rx.search(t)]
+ # Coals and seating are a scene's subject only when its headline says so: «قائمة أسعار غنية · شاي جمر وشاي حليب» lists
+ # the coal tea without being about the coals, and the next scene «شاي على الفحم» was dropped as its repeat.
+ head=key(str(shot.get('title','')))
+ if brand and len(key(brand))>=4:head=head.replace(key(brand),' ')
+ return [name for name,rx in TOPICS.items() if rx.search(head if name in ('coals','seating') else t)]
 def topic_repeats(scenes,brand=''):
  """Indexes (not the first or the last scene) whose topic an earlier scene already covered."""
  seen=set();out=[]

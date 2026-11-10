@@ -395,3 +395,9 @@ social60=[S60('أ','ب'),S60('ج','د'),S60('زورونا في فرعنا','حي
 assert all(x in social60[-1]['title']+' | '+social60[-1]['caption'] for x in ['مرحبا بالجميع في محلهم','هنقرستيشن - كيتا','تابعونا على تيك توك @tayebtea']),social60[-1]
 C.tidy_copy(social60,{'required':['مرحبا بالجميع في محلهم','هنقرستيشن - كيتا','تابعونا على تيك توك @tayebtea']});assert 'تابعونا على تيك توك @tayebtea' in social60[-1]['caption'],social60[-1]
 print('a chosen opening is written as chosen; chosen subjects appear once; the account keeps its platform')
+# A menu scene that lists the coal tea is not a scene about the coals: the coal tea scene after it stays (1.9.61 questions run).
+menu61=[{'title':'شغالين على مدار الساعة','caption':'ليل نهار'},{'title':'قائمة أسعار غنية','caption':'شاي جمر وشاي حليب وفطائر متنوعة'},{'title':'شاي على الفحم','caption':'أباريق شاي على الجمر تنبعث نكهة أصيلة'},{'title':'زورونا','caption':'x'}]
+assert C.topic_repeats(menu61,'شاهي جمر الطيب')==[],C.topic_repeats(menu61,'شاهي جمر الطيب')
+coals61=[{'title':'أ','caption':'ب'},{'title':'شاي ساخن على الجمر','caption':'x'},{'title':'شاي ساخن على الفحم','caption':'y'},{'title':'زورونا','caption':'x'}];assert C.topic_repeats(coals61)==[2]
+seats61=[{'title':'أ','caption':'ب'},{'title':'جلسات عائلية وأصدقاء','caption':'x'},{'title':'مقاعد مريحة تجمع العائلة والأصدقاء','caption':'y'},{'title':'زورونا','caption':'x'}];assert C.topic_repeats(seats61)==[2]
+print('a menu scene listing the coal tea does not make the coal tea scene a repeat')
