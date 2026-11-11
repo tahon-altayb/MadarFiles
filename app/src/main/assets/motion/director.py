@@ -739,6 +739,38 @@ for z in story['scenes']:
 Path('story.json').write_text(json.dumps(story,ensure_ascii=False))
 # The full shot is synthesized from freely positioned primitives, not the product-template renderer.
 SCHEMA='''Output {"backdrop":"plain|orbit|grid|radial|split","elements":[...]}. Every element has kind, x,y,w,h (normalized 0..1), color (ink|accent|card|muted|background), motion (rise|left|right|scale|draw|fade), delay (0..0.7 fraction of initial 5 sec). Bounds x+w<=1,y+h<=1. Keep a .06 outer safe margin, use y=.08.. .91. Between 4 and 8 elements. Kind text/metric: text <=75 chars, size 20..110 in a 1080px wide canvas. Text blocks must NOT overlap. Allocate h >= size/1080*1.6*expectedLines / aspectHeightRatio. Short 1-5 word headlines, not narration paragraphs. kind image/device: asset must be an EXACT provided filename. Show screenshots inside device frames; do not crop. kind shape is a rounded color panel. kind icon: icon=play|file|audio|check|spark|arrow|grain|book|shield|image|phone|chat. kind line is a horizontal accent line. Draw order follows array. Background panels precede text and icons. Always visible text contrast ink over background/card or background over ink. At least two text elements (a striking heading and a brief supporting statement), and one purposeful visual. Use large whitespace, aligned groups, staggered entries. No text outside safe area. Do not put large empty boxes, tiny unreadable text, overlapping screenshots, extraneous counters, or unrelated decorative shapes. Do not repeat the same geometry for every scene.'''
+# The delivery apps and platforms the film names are shown by their official icons: the owner's own picture of one
+# when he attached it, otherwise the icon of the App Store entry (looked up by its id and checked by its bundle),
+# downloaded here and returned with the film. Nothing is drawn or guessed; when it cannot be had, the scene keeps its drawing.
+def brand_icon(brand,timeout=8):
+ try:
+  ask=urllib.request.Request('https://itunes.apple.com/lookup?id=%d&country=sa'%brand['id'],headers={'User-Agent':'Mozilla/5.0'})
+  entry=next((z for z in json.loads(urllib.request.urlopen(ask,timeout=timeout).read()).get('results',[]) if z.get('bundleId')==brand['bundle']),None)
+  url=str((entry or {}).get('artworkUrl512') or '')
+  if not re.fullmatch(r'https://is\d+-ssl\.mzstatic\.com/image/thumb/[^\s?#]+/512x512bb\.jpg',url):return None
+  data=urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'}),timeout=timeout).read(600001)
+  if not data.startswith(b'\xff\xd8') or not 2000<len(data)<=600000:return None
+  name='asset_'+hashlib.md5(('brand:'+brand['key']).encode()).hexdigest()+'.jpg';Path(name).write_bytes(data);return name
+ except Exception:return None
+brand_assets={};scene_brands=[]
+if not chunks:
+ for fact in reference_facts:
+  if fact.get('kind')=='platform_icon' and 0<=fact.get('index',-1)<len(images):
+   for brand in local_rules.brands_in(fact.get('description',''))[:1]:brand_assets.setdefault(brand['key'],images[fact['index']])
+ began=time.time();missed=[]
+ for z in story['scenes']:
+  named=local_rules.brands_in(str(z.get('title',''))+' '+str(z.get('caption','')))[:6]
+  for brand in named:
+   if brand['key'] not in brand_assets and brand['key'] not in missed and len(brand_assets)<6 and time.time()-began<30:
+    icon=brand_icon(brand)
+    if icon:
+     brand_assets[brand['key']]=icon
+     if icon not in generated:generated.append(icon)
+    else:missed.append(brand['key'])
+  scene_brands.append([{'label':b['label'],'kind':b['kind'],'asset':brand_assets[b['key']]} for b in named if b['key'] in brand_assets])
+ if brand_assets or missed:
+  Path('source-assets.json').write_text(json.dumps(generated))
+  with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'app icons','found':sorted(brand_assets),'missed':missed,'seconds':round(time.time()-began,1)},ensure_ascii=False)+'\n')
 scenes=[];prior=[]
 used_art=[]
 BASIC_ICONS={'play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat'}
@@ -765,7 +797,7 @@ for i,shot in enumerate(story['scenes']):
  if composition is None or (i in logo_targets and logo_name and not local_rules.has_asset(composition,logo_name)):
   Path('shot.json').write_text(json.dumps(shot,ensure_ascii=False))
   # Picture-less scenes get a drawn illustration of their subject, a different one each time when possible.
-  composition=json.loads(subprocess.check_output([os.environ['MADAR_NODE'],'-e',"const C=require('./creative'),fs=require('fs');const shot=JSON.parse(fs.readFileSync('shot.json')),o=JSON.parse(process.argv[1]);o.art=o.noArt?null:C.illustrationFor(shot,o.usedArt||[]);if(o.alwaysArt&&(!o.art||(o.usedArt||[]).includes(o.art)))o.art=C.anyIllustration(shot,o.usedArt||[])||o.art;delete o.usedArt;delete o.noArt;delete o.alwaysArt;process.stdout.write(JSON.stringify(C.compose(shot,o)));",json.dumps({'aspect':aspect,'images':images,'index':i,'seed':seed,'logo':bool(i in logo_targets and logo_name),'closing':i==len(story['scenes'])-1 and len(story['scenes'])>1,'usedArt':used_art,'noArt':PICTURE_MODE=='photosOnly','alwaysArt':PICTURE_MODE=='inspired' and not (i==len(story['scenes'])-1 and len(story['scenes'])>1)})],text=True,timeout=30))
+  composition=json.loads(subprocess.check_output([os.environ['MADAR_NODE'],'-e',"const C=require('./creative'),fs=require('fs');const shot=JSON.parse(fs.readFileSync('shot.json')),o=JSON.parse(process.argv[1]);o.art=o.noArt?null:C.illustrationFor(shot,o.usedArt||[]);if(o.alwaysArt&&(!o.art||(o.usedArt||[]).includes(o.art)))o.art=C.anyIllustration(shot,o.usedArt||[])||o.art;delete o.usedArt;delete o.noArt;delete o.alwaysArt;process.stdout.write(JSON.stringify(C.compose(shot,o)));",json.dumps({'aspect':aspect,'images':images,'index':i,'seed':seed,'logo':bool(i in logo_targets and logo_name),'closing':i==len(story['scenes'])-1 and len(story['scenes'])>1,'usedArt':used_art,'noArt':PICTURE_MODE=='photosOnly','alwaysArt':PICTURE_MODE=='inspired' and not (i==len(story['scenes'])-1 and len(story['scenes'])>1),'brands':scene_brands[i] if i<len(scene_brands) else []})],text=True,timeout=30))
  used_art+=[e.get('icon') for e in composition.get('elements',[]) if e.get('kind')=='icon' and e.get('icon') not in BASIC_ICONS]
  sid=uuid.uuid4().hex[:12];s={'id':sid,'title':shot['title'],'narration':shot['narration'],'seconds':max(1,min(120,float(shot.get('seconds',6)))),'graphic':'creative','composition':composition,'effect':'rise','transition':'slide' if i%2 else 'fade','image':'','imageQuery':'','imageAnchor':'','credit':'','illustration':False,'highlights':[],'words':[]}
  scenes.append(s);prior.append({'title':s['title'],'geometry':[(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in composition['elements']]})

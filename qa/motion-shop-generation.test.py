@@ -188,12 +188,21 @@ with tempfile.TemporaryDirectory(prefix='madar-shop-') as tmp:
  if ADDRESS:check(rules.key(ADDRESS) in last,'branch address missing from the last scene')
  geometry={json.dumps([(e['kind'],e['x'],e['y'],e['w'],e['h']) for e in s['composition']['elements']]) for s in scenes};check(len(geometry)>=min(4,len(scenes)-1),f'only {len(geometry)} distinct layouts')
  used={e.get('asset') for s in scenes for e in s['composition']['elements'] if e.get('asset')}
- DRAWINGS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell']
+ # Official app icons fetched for the film (returned with it as extra assets) are not the owner's pictures.
+ fetched=set(json.loads((job/'source-assets.json').read_text())) if (job/'source-assets.json').exists() else set()
+ icons_shown=sorted(used&fetched);used-=fetched
+ named=[b['key'] for z in shown_text for b in rules.brands_in(z.get('title','')+' '+z.get('caption',''))]
+ print('EVIDENCE app icons shown',icons_shown,'named',named,flush=True)
+ for name in icons_shown:
+  data=(job/name).read_bytes();check(data[:2]==b'\xff\xd8' and len(data)>2000,'app icon is not a picture: '+name)
+ # A film that names delivery apps or platforms shows at least one official icon (the store was reachable from here on 2026-11-11).
+ if named and args.mode!='inspired':check(bool(icons_shown),'apps are named but no official icon is shown: '+str(named))
+ DRAWINGS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell','outdoor','screen','cards','social','walkin']
  if args.mode=='inspired':
   check(used<={logo},'«inspired» shows only the logo: '+str(used))
   drawn=[e.get('icon') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('kind')=='icon' and e.get('icon') in DRAWINGS];check(len(set(drawn))>=min(3,len(scenes)-2),'too few drawings: '+str(drawn))
  else:check(len(used)>=math.ceil(len(ORDER)/2),f'only {len(used)} of {len(ORDER)} owned images used')
- shown=[e.get('asset') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('asset') and e.get('asset')!=logo];check(len(shown)==len(set(shown)),'a picture is repeated: '+str(shown))
+ shown=[e.get('asset') for s in scenes[1:-1] for e in s['composition']['elements'] if e.get('asset') and e.get('asset')!=logo and e.get('asset') not in fetched];check(len(shown)==len(set(shown)),'a picture is repeated: '+str(shown))
  for i,s in enumerate(scenes[:-1]):check(not any(rules.is_cta(t,{'address':ADDRESS}) for t in [s.get('title',''),s.get('caption','')]),f'call to action before the closing in scene {i+1}: '+s.get('title',''))
  for i,s in enumerate(scenes):check(len(re.findall(r'[ء-يA-Za-z0-9]+',s.get('narration','')))>=4,f'scene {i+1} narration is only a label')
  # Copy craft, on every film: one headline per idea, complete headlines, words not cut on screen,

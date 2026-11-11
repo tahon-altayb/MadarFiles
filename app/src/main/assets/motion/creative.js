@@ -56,7 +56,7 @@ function illustrationFor(shot,used=[]){
  // («قهوة عربية دافئة … تملأ المكان» is coffee, not seating).
  // The hidden picture's description (a menu with prices) comes after the words: «فطائر دافئة» is pastries, not an offer.
  const title=normalize(shot.title),head=normalize([shot.title,shot.caption].filter(Boolean).join(' ')),hint=normalize(shot.artHint),full=normalize([shot.title,shot.caption,shot.narration,shot.artHint].filter(Boolean).join(' '));
- const rules=[['cards',/بلوت|ورق اللعب|كوتشينه|بطوله|بطولات|طاوله لعب/],['screen',/شاشه|شاشات|مباريات|مباراه|الدوري|نقل مباشر|بلايستيشن|سوني/],['outdoor',/خارجي|خارجيه|الهواء الطلق|برا |في البر|حديقه|تراس|سطح/],['social',/سناب|تيك ?توك|انستقرام|انستا|تابعونا|حسابنا|حساباتنا|@/],['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|عايل|اصدقاء|اصدقا|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف|مدرب|فريق|طاقم|كادر/],['seating',/جلس|جلسات|اجواء|مكان|مساحه|مساحات|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/],['watch',/ساعه ذكيه|ساعات ذكيه|الساعات الذكيه|ساعتك الذكيه|سمارت ?واتش|smart ?watch/],['headphones',/سماع|ايربود|بلوتوث|airpods/],['smartphone',/جوال|جولات|هاتف|ايفون|سامسونج|شاحن|شواحن|كفر|كفرات|حمايه الشاشه|اكسسوار|اجهزه ذكيه|تقنيه/],['grains',/(?:^|\s)(?:وال|بال|ال|و)?(?:رز|ارز)(?:\s|$)|عدس|حمص|فاصوليا|برغل|حبوب|بقوليات|قمح|شوفان|بهارات|تمور/],['dumbbell',/نادي|رياضي|رياضه|تمارين|تمرين|لياقه|جيم|اوزان|حديد|اجهزه رياضيه|معدات|كمال اجسام/]];
+ const rules=[['cards',/بلوت|ورق اللعب|كوتشينه|بطوله|بطولات|طاوله لعب/],['screen',/شاشه|شاشات|مباريات|مباراه|الدوري|نقل مباشر|بلايستيشن|سوني/],['outdoor',/خارجي|خارجيه|الهواء الطلق|برا |في البر|حديقه|تراس|سطح/],['social',/سناب|تيك ?توك|انستقرام|انستا|تابعونا|حسابنا|حساباتنا|@/],['clock24',/24|٢٤|على مدار|طوال (?:اليوم|الوقت)|مفتوح|ساعات العمل|نفتح|طول اليوم|ليل نهار|الليل/],['location',/زورونا|فرعنا|الفرع|عنوان|موقعنا|شارع|حي |بجوار|مقابل|خلف/],['delivery',/توصيل|طلبات|اطلب|سفري|استلام/],['offer',/عرض|عروض|خصم|تخفيض|اسعار|سعر|ريال|٪|%/],['stars',/تقييم|نجوم|مميز|الافضل|جوده|ثقه/],['people',/عائل|عايل|اصدقاء|اصدقا|اصحاب|الاهل|الشباب|لمه|اجتماع|ضيوف|مدرب|فريق|طاقم|كادر/],['walkin',/داخلي|داخليه|صاله|صالات|مكيف|مكيفه|تفضل|حياكم/],['seating',/جلس|جلسات|اجواء|مكان|مساحه|مساحات|راحه|هدوء|ديكور|طاولات|كراسي|استراحه/],['flame',/جمر|فحم|حطب|نار|على الجمر|مشوي/],['teapot',/ابريق|براد|دله شاي|غلي/],['pastry',/فطير|فطاي|معجنات|مخبوز|خبز|سمبوس|مناقيش/],['fries',/بطاطس|بطاطا|فرايز|سناك|وجبه خفيفه|وجبات خفيفه|مقرمش/],['menu',/منيو|قائمه|قايمه|اصناف|المشروبات|الاسعار/],['sandwich',/شطير|شطاي|ساندو|برجر|تورتيلا|راب/],['sweets',/حلى|حلو|كيك|حلويات|كنافه|بسبوسه/],['cold',/بارد|عصير|مثلج|ايس|موهيتو|ليمون/],['coffee',/قهوه|دله|فنجان|كوفي|اسبريسو|لاتيه/],['mint',/نعناع|حبق|ريحان|اعشاب/],['storefront',/محلنا|المحل|متجر|واجهه|مقهي|كوفي شوب|كافيه|افتتاح|فتحنا/],['tea',/شاي|شاهي|استكان|كرك|حليب/],['watch',/ساعه ذكيه|ساعات ذكيه|الساعات الذكيه|ساعتك الذكيه|سمارت ?واتش|smart ?watch/],['headphones',/سماع|ايربود|بلوتوث|airpods/],['smartphone',/جوال|جولات|هاتف|ايفون|سامسونج|شاحن|شواحن|كفر|كفرات|حمايه الشاشه|اكسسوار|اجهزه ذكيه|تقنيه/],['grains',/(?:^|\s)(?:وال|بال|ال|و)?(?:رز|ارز)(?:\s|$)|عدس|حمص|فاصوليا|برغل|حبوب|بقوليات|قمح|شوفان|بهارات|تمور/],['dumbbell',/نادي|رياضي|رياضه|تمارين|تمرين|لياقه|جيم|اوزان|حديد|اجهزه رياضيه|معدات|كمال اجسام/]];
  const match=t=>rules.filter(([,re])=>re.test(t)).map(([id])=>id);
  if(used==='all')return [...new Set([...match(head),...match(hint),...match(full)])];
  // The headline alone first («فريقنا يخدمك» is people even when its caption mentions chairs), then with its caption.
@@ -100,7 +100,7 @@ function closingParts(body){
  }
  return apps||social?{free:free.join(' · ').slice(0,75),apps:apps.slice(0,60),social}:null;
 }
-function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing=false,art}={}){
+function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing=false,art,brands=[]}={}){
  const wide=aspect==='16:9',square=aspect==='1:1',style=(index+seed)%4;
  const title=String(shot.title).slice(0,60),body=String(shot.caption||shot.narration).slice(0,100);
  const asset=shot.reference===-1?null:images[Number.isInteger(shot.reference)&&shot.reference>=0?shot.reference:index%Math.max(1,images.length)];
@@ -117,19 +117,37 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
  // Vertical films are watched inside TikTok, Reels and Snapchat: every word stays in the safe zone
  // (top 9% and bottom 22% are covered by the app; the right edge of the lower half by its buttons).
  const card=closing&&!wide&&!square?closingParts(body):null;
+ // The apps and platforms this scene names, with their official icons (downloaded for the film, or the owner's own
+ // picture of one): [{label,kind,asset}]. A tile is the icon itself, rounded like on a phone; nothing is redrawn.
+ const marks=(Array.isArray(brands)?brands:[]).filter(b=>b&&/^asset_[a-f0-9]{32}\.jpg$/.test(b.asset||'')&&b.asset!==asset&&['delivery','social'].includes(b.kind)).slice(0,6);
+ const tiles=(list,y,w,gap,delay)=>{const total=list.length*w+(list.length-1)*gap,x0=(1-total)/2;return list.map((b,i)=>e('image',x0+(list.length-1-i)*(w+gap),y,w,w*9/16,'ink','scale',Math.min(.7,delay+i*.08),{asset:b.asset}));};
  if(card){
   // The owner's closing as a card with rows, not one run-on line («مرحبا بالجميع في محلهم · هنقرستيشن - كيتا · تابعونا @tayebtea»
   // in his 1.9.60 film): the sign-off logo, the call, his greeting or address, the delivery apps, then the account with its platform.
   const row=(y,icon,label,value,delay)=>[e('shape',.07,y,.79,.135,'card','fade',delay),e('icon',.70,y+.016,.13,.103,'accent','scale',delay+.04,{icon}),e('text',.10,y+.014,.58,.044,'muted','rise',delay+.04,{text:label,size:40}),e('text',.10,y+.062,.58,.062,'ink','rise',delay+.08,{text:value,size:60})];
-  const centred=(value,y,h,size,delay)=>e('text',.10,y,.76,h,'ink','rise',delay,{text:value,size,align:'center'});
-  // The rows sit together in the middle of the safe zone (.09 to .78), whatever the owner filled in.
-  const tall=(asset?.135:0)+.15+(card.free?.10:0)+(card.apps?.15:0)+(card.social?.135:0);
+  const centred=(value,y,h,size,delay,color='ink')=>e('text',.10,y,.76,h,color,'rise',Math.min(.7,delay),{text:value,size,align:'center'});
+  const apps=card.apps?marks.filter(b=>b.kind==='delivery').slice(0,3):[],socials=card.social?marks.filter(b=>b.kind==='social').slice(0,3):[];
+  const named=card.social&&/^\u2066@/.test(card.social.handle);
+  // The rows sit together in the middle of the safe zone (.09 to .78), whatever the owner filled in; a full card uses the smaller sizes.
+  const heights=k=>({logo:asset?(k?.105:.135):0,title:k?.125:.15,free:card.free?(k?.085:.10):0,apps:!card.apps?0:apps.length?(k?.152:.17):.15,social:!card.social?0:socials.length?(k?.135:.15)+(named?.06:0):.135});
+  let k=false,hs=heights(false);if(hs.logo+hs.title+hs.free+hs.apps+hs.social>.69){k=true;hs=heights(true);}
+  const tall=hs.logo+hs.title+hs.free+hs.apps+hs.social,tile=k?.13:.15;
   let y=Math.max(.09,.09+(.69-tall)/2),delay=0;
-  if(asset){elements.push(media(.36,y,.28,.118,0,whole));y+=.135;delay=.06;}
-  elements.push(centred(title,y,.11,100,delay),e('line',.38,y+.122,.24,.006,'accent','draw',delay+.06));y+=.15;delay+=.1;
-  if(card.free){elements.push(centred(card.free,y,.085,56,delay));y+=.10;delay+=.08;}
-  if(card.apps){elements.push(...row(y,'delivery','اطلبنا من التطبيقات',card.apps,delay));y+=.15;delay+=.12;}
-  if(card.social)elements.push(...row(y,'social',card.social.label,card.social.handle,delay));
+  if(asset){elements.push(media(k?.385:.36,y,k?.23:.28,hs.logo-.017,0,whole));y+=hs.logo;delay=.06;}
+  elements.push(centred(title,y,hs.title-.04,k?88:100,delay),e('line',.38,y+hs.title-.028,.24,.006,'accent','draw',delay+.06));y+=hs.title;delay+=.1;
+  if(card.free){elements.push(centred(card.free,y,hs.free-.015,k?50:56,delay));y+=hs.free;delay+=.08;}
+  if(card.apps&&apps.length){elements.push(centred('اطلبنا من '+card.apps.split(/\s+·\s+/).join(' و'),y,.045,44,delay,'muted'),...tiles(apps,y+.052,tile,.035,delay+.06));y+=hs.apps;delay+=.14;}
+  else if(card.apps){elements.push(...row(y,'delivery','اطلبنا من التطبيقات',card.apps,delay));y+=hs.apps;delay+=.12;}
+  if(card.social&&socials.length){
+   // The platform's icon with the account under it.
+   elements.push(centred(named?card.social.label:card.social.label+' '+card.social.handle,y,.045,44,delay,'muted'),...tiles(socials,y+.052,tile,.035,delay+.06));
+   if(named)elements.push(centred(card.social.handle,y+.058+tile*9/16,.055,k?52:58,delay+.14));
+  }else if(card.social)elements.push(...row(y,'social',card.social.label,card.social.handle,Math.min(.58,delay)));
+ }else if(marks.length&&!closing&&!wide&&!square&&!asset&&!logo){
+  // A scene that names delivery apps or platforms shows their icons side by side, each with its name under it.
+  const list=marks.slice(0,3),w=list.length>2?.215:list.length>1?.30:.34,gap=list.length>2?.04:.08,total=list.length*w+(list.length-1)*gap,x0=(1-total)/2,top=.42;
+  elements=[text(title,.07,.10,.81,.13,108,0),e('line',.38,.235,.24,.006,'accent','draw',.06),text(body,.08,.255,.78,.11,56,.1),e('shape',.06,top-.035,.88,w*9/16+.14,'card','fade',.12),...tiles(list,top,w,gap,.18),
+   ...list.map((b,i)=>e('text',x0+(list.length-1-i)*(w+gap),top+w*9/16+.014,w,.045,'ink','rise',Math.min(.7,.26+i*.08),{text:String(b.label||'').slice(0,24)||'التطبيق',size:list.length>2?40:46,align:'center'}))];
  }else if(closing&&!wide){
   // Closing call to action: large, centred, with the logo or photo as a smaller sign-off.
   elements=[e('shape',.06,.16,.88,.50,'card','fade',0),text(title,.10,.21,.80,.17,110,.04),e('line',.38,.40,.24,.006,'accent','draw',.10),text(body,.10,.43,.76,.16,60,.14),...(asset?[media(.32,.62,.36,.16,.2,whole)]:illustrationFor(shot)==='location'?[e('icon',.34,.62,.32,.16,'accent','scale',.2,{icon:'location'})]:[e('icon',.42,.68,.16,.09,'accent','scale',.2,{icon:'arrow'})])];
@@ -210,7 +228,7 @@ function text(ctx,value,x,y,w,h,size,color,weight=700,reveal=1,marker=0,markerCo
   shown-=ws.length;});}
 // Vector illustrations for scenes without a client picture: drawn shapes (never photos or generated
 // images) in the film's palette with a few natural accents, gently animated. Unit square -1..1.
-const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell','outdoor','screen','cards','social'];
+const ILLUSTRATIONS=['tea','teapot','pastry','coffee','seating','clock24','location','flame','mint','people','delivery','stars','offer','sweets','cold','sandwich','fries','storefront','menu','watch','headphones','smartphone','grains','dumbbell','outdoor','screen','cards','social','walkin'];
 function illustration(ctx,id,x,y,w,h,pal,t=0){
  const s=Math.min(w,h)/2;ctx.save();ctx.translate(x+w/2,y+h/2);ctx.scale(s,s);ctx.lineCap='round';ctx.lineJoin='round';
  const ink=pal.ink,accent=pal.accent,card=pal.card,muted=pal.muted,amber='#c8692a',green='#5aa364',flame='#f08a3c',glow='#ffd27a';
@@ -219,6 +237,47 @@ function illustration(ctx,id,x,y,w,h,pal,t=0){
  const line=(c,wd,f)=>{ctx.beginPath();f();ctx.strokeStyle=c;ctx.lineWidth=wd;ctx.stroke();};
  const steam=(cx,top,n=3)=>{for(let i=0;i<n;i++){const ph=(t*.6+i/n)%1,yy=top-ph*.55;ctx.globalAlpha=(1-ph)*.7;line(muted,.035,()=>{ctx.moveTo(cx+(i-1)*.14,yy+.25);ctx.bezierCurveTo(cx+(i-1)*.14+.09,yy+.15,cx+(i-1)*.14-.09,yy+.05,cx+(i-1)*.14,yy-.05);});}ctx.globalAlpha=1;};
  const plate=(yy,rx)=>{fill(card,()=>ctx.ellipse(0,yy,rx,rx*.22,0,0,Math.PI*2));line(accent,.03,()=>ctx.ellipse(0,yy,rx,rx*.22,0,0,Math.PI*2));};
+ // Flat characters for living scenes (a man in a thobe and ghutra, as the café's own guests): feet at (cx,fy), H tall.
+ // pose 'stand' | 'walk' | 'sit' (side view, lap toward `face`); cheer and wave lift the arms; cup holds a glass.
+ // On a light theme (dark ink) the white thobe gets a firm outline so it does not melt into the background.
+ const m=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(ink)),pale=!!m&&(parseInt(m[1],16)*.299+parseInt(m[2],16)*.587+parseInt(m[3],16)*.114)<110;
+ const skin='#d9a67e',cloth=pale?'#ffffff':'#f6f0e6',dark='#2b2623',edge=pale?'rgba(60,45,35,.62)':'rgba(60,45,35,.28)';
+ const limb=(wd,f)=>{if(pale)line(edge,wd+.035,f);line(cloth,wd,f);};
+ const person=(cx,fy,H,o={})=>{
+  const {pose='stand',face=1,cheer=0,wave=0,cup=false,step=0,scarf=cloth}=o,sway=pose==='walk'?Math.sin(step)*.06:0,swing=pose==='walk'?Math.sin(step)*.55:0;
+  ctx.save();ctx.translate(cx,fy-(pose==='walk'?Math.abs(Math.sin(step))*.02*H:0));ctx.scale(H*face,H);
+  const arm=(sx,ang,len=.30)=>{const hx=sx+Math.sin(ang)*len,hy=-.72+Math.cos(ang)*len;limb(.09,()=>{ctx.moveTo(sx,-.72);ctx.lineTo(hx,hy);});fill(skin,()=>ctx.arc(hx,hy,.04,0,Math.PI*2));return [hx,hy];};
+  if(pose==='sit'){
+   for(const part of [[-.14,-.80,.28,.48,.10],[-.12,-.48,.44,.16,.07],[.18,-.46,.15,.42,.06]]){line(edge,.024,()=>ctx.roundRect(...part));}
+   fill(cloth,()=>ctx.roundRect(-.14,-.80,.28,.48,.10));fill(cloth,()=>ctx.roundRect(-.12,-.48,.44,.16,.07));fill(cloth,()=>ctx.roundRect(.18,-.46,.15,.42,.06));fill(dark,()=>ctx.roundRect(.16,-.06,.24,.06,.03));
+   line(edge,.012,()=>{ctx.moveTo(-.14,-.40);ctx.lineTo(-.14,-.72);});
+  }else{
+   fill(dark,()=>ctx.roundRect(-.13+sway,-.05,.13,.05,.02));fill(dark,()=>ctx.roundRect(.01-sway,-.05,.13,.05,.02));
+   fill(cloth,()=>{ctx.moveTo(-.15,-.76);ctx.quadraticCurveTo(0,-.86,.15,-.76);ctx.lineTo(.18,-.05);ctx.lineTo(-.18,-.05);ctx.closePath();});line(edge,.012,()=>{ctx.moveTo(-.15,-.76);ctx.quadraticCurveTo(0,-.86,.15,-.76);ctx.lineTo(.18,-.05);ctx.lineTo(-.18,-.05);ctx.closePath();});
+   line(edge,.012,()=>{ctx.moveTo(0,-.50);ctx.lineTo(sway*.4,-.07);});
+  }
+  // The far arm first, the near arm over the body.
+  const up=Math.PI-.45;
+  if(cheer>0){arm(-.13,-(up*cheer)-Math.sin(t*9)*.08*cheer);arm(.13,up*cheer+Math.sin(t*9)*.08*cheer);}
+  else{arm(-.13,-swing-.06);
+   if(wave>0)arm(.13,(2.35+Math.sin(t*7)*.28)*wave+.06*(1-wave));
+   else if(cup){const [hx,hy]=arm(.13,1.15+Math.sin(t*1.6)*.12,.27);fill('#f4ede1',()=>ctx.roundRect(hx-.01,hy-.10,.09,.11,.02));fill(amber,()=>ctx.rect(hx,hy-.07,.07,.06));}
+   else arm(.13,swing+.06);}
+  // Head: the ghutra falls to the shoulders behind the face, the agal sits on top.
+  fill(scarf,()=>ctx.roundRect(-.15,-1.03,.30,.36,.12));line(edge,.012,()=>ctx.roundRect(-.15,-1.03,.30,.36,.12));
+  fill(skin,()=>ctx.ellipse(.03,-.88,.085,.095,0,0,Math.PI*2));
+  line(dark,.03,()=>{ctx.moveTo(-.125,-.97);ctx.quadraticCurveTo(0,-1.045,.125,-.97);});
+  ctx.restore();
+ };
+ // A guest seen from behind (watching the screen): shoulders, the ghutra and agal; cheer lifts both arms.
+ const fan=(cx,by,W,scarf,cheer=0)=>{
+  ctx.save();ctx.translate(cx,by);ctx.scale(W,W);
+  if(cheer>0)for(const side of [-1,1])limb(.14,()=>{ctx.moveTo(side*.36,-.30);ctx.lineTo(side*(.52+Math.sin(t*9)*.03),-.30-.62*cheer);});
+  fill(cloth,()=>{ctx.moveTo(-.5,.12);ctx.quadraticCurveTo(-.5,-.42,0,-.42);ctx.quadraticCurveTo(.5,-.42,.5,.12);ctx.closePath();});line(edge,.02,()=>{ctx.moveTo(-.5,.12);ctx.quadraticCurveTo(-.5,-.42,0,-.42);ctx.quadraticCurveTo(.5,-.42,.5,.12);});
+  fill(scarf,()=>ctx.roundRect(-.24,-.92,.48,.62,.2));line(edge,.02,()=>ctx.roundRect(-.24,-.92,.48,.62,.2));
+  line(dark,.05,()=>{ctx.moveTo(-.2,-.80);ctx.quadraticCurveTo(0,-.93,.2,-.80);});line(edge,.02,()=>{ctx.moveTo(0,-.72);ctx.lineTo(0,-.36);});
+  ctx.restore();
+ };
  if(id==='tea'){
   plate(.62,.62);
   fill('#f4ede1',()=>{ctx.moveTo(-.34,-.3);ctx.quadraticCurveTo(-.18,.1,-.3,.55);ctx.lineTo(.3,.55);ctx.quadraticCurveTo(.18,.1,.34,-.3);ctx.closePath();});
@@ -248,19 +307,26 @@ function illustration(ctx,id,x,y,w,h,pal,t=0){
   line('#8a5a33',.07,()=>{ctx.moveTo(-.72,.68);ctx.quadraticCurveTo(-.78,.1,-.66,-.32);});
   for(const a of [-2.6,-2.1,-1.6,-1.1,-.6]){ctx.save();ctx.translate(-.66,-.32);ctx.rotate(a+Math.sin(t*1.2)*.04);fill(green,()=>ctx.ellipse(.22,0,.26,.06,0,0,Math.PI*2));ctx.restore();}
   fill(card,()=>ctx.ellipse(.15,.12,.34,.09,0,0,Math.PI*2));line(muted,.05,()=>{ctx.moveTo(.15,.15);ctx.lineTo(.15,.62);ctx.moveTo(-.02,.64);ctx.lineTo(.32,.64);});
-  for(const side of [-1,1]){const cx=.15+side*.5;fill(accent,()=>ctx.roundRect(cx-.13,.02,.26,.36,.06));line(muted,.04,()=>{ctx.moveTo(cx-.1,.38);ctx.lineTo(cx-.1,.62);ctx.moveTo(cx+.1,.38);ctx.lineTo(cx+.1,.62);});}
+  // Two guests at the table: one lifts his glass now and then.
+  for(const side of [-1,1]){const cx=.15+side*.56;fill(accent,()=>ctx.roundRect(cx-.15+side*.06,-.02,.26,.42,.06));line(muted,.04,()=>{ctx.moveTo(cx-.06+side*.06,.40);ctx.lineTo(cx-.06+side*.06,.64);ctx.moveTo(cx+.1+side*.06,.40);ctx.lineTo(cx+.1+side*.06,.64);});person(cx,.66,.92,{pose:'sit',face:-side,cup:side>0,scarf:side>0?cloth:'#d9534f'});}
   fill('#f4ede1',()=>ctx.roundRect(.08,-.02,.14,.12,.03));steam(.15,-.12,2);
   line(muted,.03,()=>{ctx.moveTo(-.95,.68);ctx.lineTo(.95,.68);});
  }else if(id==='screen'){
-  // A big screen showing a match: pitch lines, a ball and a live dot.
+  // A big screen showing a match (pitch lines, a ball, a live dot) and three guests watching from behind;
+  // the middle one throws his arms up whenever the ball reaches a goal.
+  ctx.save();ctx.translate(0,-.30);ctx.scale(.86,.86);
   fill(ink,()=>ctx.roundRect(-.9,-.62,1.8,1.06,.06));fill(green,()=>ctx.roundRect(-.82,-.55,1.64,.92,.03));
   line('#ffffff',.02,()=>{ctx.rect(-.74,-.47,1.48,.76);ctx.moveTo(0,-.47);ctx.lineTo(0,.29);});line('#ffffff',.02,()=>ctx.arc(0,-.09,.14,0,Math.PI*2));
-  const bx=Math.sin(t*1.4)*.42,by=-.09+Math.cos(t*2.1)*.18;fill('#ffffff',()=>ctx.arc(bx,by,.06,0,Math.PI*2));
+  const bx=Math.sin(t*1.4)*.62,by=-.09+Math.cos(t*2.1)*.18;fill('#ffffff',()=>ctx.arc(bx,by,.06,0,Math.PI*2));
   ctx.globalAlpha=.5+.5*Math.abs(Math.sin(t*3));fill('#e53935',()=>ctx.arc(.66,-.41,.04,0,Math.PI*2));ctx.globalAlpha=1;label('LIVE',.5,-.41,.07,'#ffffff');
-  line(muted,.05,()=>{ctx.moveTo(0,.44);ctx.lineTo(0,.62);ctx.moveTo(-.3,.64);ctx.lineTo(.3,.64);});
+  ctx.restore();
+  const goal=Math.max(0,Math.min(1,(Math.abs(Math.sin(t*1.4))-.82)/.14));
+  fan(-.62,.98,.52,cloth,0);fan(.62,.98,.52,'#d9534f',goal*.6);fan(0,1.0,.6,cloth,goal);
  }else if(id==='cards'){
   // Baloot: a fan of four playing cards over a table, a suit on each.
-  fill(card,()=>ctx.ellipse(0,.5,.92,.2,0,0,Math.PI*2));line(accent,.03,()=>ctx.ellipse(0,.5,.92,.2,0,0,Math.PI*2));
+  // Two players sit across a round table, on stools.
+  for(const side of [-1,1]){fill(accent,()=>ctx.roundRect(side*.86-.14,.50,.28,.08,.04));line(muted,.04,()=>{ctx.moveTo(side*.86,.58);ctx.lineTo(side*.86,.90);});person(side*.84,.92,.88,{pose:'sit',face:-side,scarf:side<0?'#d9534f':cloth});}
+  fill(card,()=>ctx.ellipse(0,.5,.52,.13,0,0,Math.PI*2));line(accent,.03,()=>ctx.ellipse(0,.5,.52,.13,0,0,Math.PI*2));line(muted,.05,()=>{ctx.moveTo(0,.63);ctx.lineTo(0,.90);ctx.moveTo(-.18,.91);ctx.lineTo(.18,.91);});
   const suits=[['♠',ink],['♥','#d64545'],['♦','#d64545'],['♣',ink]];
   suits.forEach(([suit,c],i)=>{ctx.save();ctx.translate(0,.32);ctx.rotate((i-1.5)*.26+Math.sin(t*1.3+i)*.015);fill('#ffffff',()=>ctx.roundRect(-.2,-.82,.4,.6,.05));line(muted,.02,()=>ctx.roundRect(-.2,-.82,.4,.6,.05));label(suit,0,-.52,.26,c);label(['A','K','Q','J'][i],-.12,-.72,.09,c);ctx.restore();});
  }else if(id==='social'){
@@ -272,6 +338,17 @@ function illustration(ctx,id,x,y,w,h,pal,t=0){
    else{line('#ffffff',.025,()=>ctx.roundRect(-.08,-.06,.16,.12,.03));line('#ffffff',.025,()=>ctx.arc(0,0,.035,0,Math.PI*2));}
    ctx.restore();}
   for(let i=0;i<3;i++)fill(muted,()=>ctx.roundRect(-.22,-.45+i*.3,.44,.2,.04));
+ }else if(id==='walkin'){
+  // The indoor hall: an arched doorway with warm light, a cooler breathing air above the sofa, and a guest who
+  // walks in from the door, stops and waves.
+  line(muted,.03,()=>{ctx.moveTo(-1,.86);ctx.lineTo(1,.86);});
+  fill(glow,()=>{ctx.moveTo(-.95,.86);ctx.lineTo(-.95,-.25);ctx.quadraticCurveTo(-.95,-.62,-.62,-.62);ctx.quadraticCurveTo(-.29,-.62,-.29,-.25);ctx.lineTo(-.29,.86);ctx.closePath();});
+  line(accent,.05,()=>{ctx.moveTo(-.95,.86);ctx.lineTo(-.95,-.25);ctx.quadraticCurveTo(-.95,-.62,-.62,-.62);ctx.quadraticCurveTo(-.29,-.62,-.29,-.25);ctx.lineTo(-.29,.86);});
+  fill(card,()=>ctx.roundRect(.22,-.86,.66,.2,.05));line(muted,.02,()=>{ctx.moveTo(.30,-.72);ctx.lineTo(.80,-.72);});
+  for(let i=0;i<3;i++){const ph=(t*.7+i/3)%1;ctx.globalAlpha=(1-ph)*.7;line('#9fd3e6',.03,()=>{const ax=.36+i*.19,ay=-.62+ph*.34;ctx.moveTo(ax,ay);ctx.quadraticCurveTo(ax+.05,ay+.06,ax,ay+.12);});}ctx.globalAlpha=1;
+  fill(accent,()=>ctx.roundRect(.18,.18,.76,.42,.10));fill(card,()=>ctx.roundRect(.12,.44,.88,.26,.08));line(muted,.05,()=>{ctx.moveTo(.22,.70);ctx.lineTo(.22,.86);ctx.moveTo(.90,.70);ctx.lineTo(.90,.86);});
+  const go=Math.min(1,t/2.6),px=-.62+go*.56;
+  person(px,.86,1.18,go<1?{pose:'walk',step:t*7}:{wave:Math.min(1,(t-2.6)/.4)});
  }else if(id==='seating'){
   for(const side of [-1,1]){ctx.save();ctx.scale(side,1);fill(accent,()=>ctx.roundRect(.38,-.2,.5,.7,.12));fill(card,()=>ctx.roundRect(.32,.2,.62,.28,.08));line(muted,.05,()=>{ctx.moveTo(.42,.48);ctx.lineTo(.42,.68);ctx.moveTo(.86,.48);ctx.lineTo(.86,.68);});ctx.restore();}
   fill(card,()=>ctx.ellipse(0,.12,.28,.08,0,0,Math.PI*2));line(muted,.05,()=>{ctx.moveTo(0,.14);ctx.lineTo(0,.66);ctx.moveTo(-.16,.68);ctx.lineTo(.16,.68);});
@@ -293,8 +370,8 @@ function illustration(ctx,id,x,y,w,h,pal,t=0){
   line(green,.05,()=>{ctx.moveTo(0,.85);ctx.quadraticCurveTo(.05,0,-.05,-.8);});
   for(let i=0;i<5;i++){const yy=.55-i*.32,side=i%2?1:-1,sw=Math.sin(t*1.6+i)*.06;ctx.save();ctx.translate(0,yy);ctx.rotate(side*(.6+sw));fill(i%2?green:'#4a8a52',()=>{ctx.moveTo(0,0);ctx.quadraticCurveTo(side*.3,-.22,side*.62,0);ctx.quadraticCurveTo(side*.3,.2,0,0);});ctx.restore();}
  }else if(id==='people'){
-  for(const [px,sc,c] of [[-.5,.85,muted],[.5,.85,muted],[0,1,accent]]){ctx.save();ctx.translate(px,.12+(1-sc)*.3);ctx.scale(sc,sc);fill(c,()=>ctx.arc(0,-.42,.2,0,Math.PI*2));fill(c,()=>{ctx.moveTo(-.34,.55);ctx.quadraticCurveTo(-.34,-.18,0,-.18);ctx.quadraticCurveTo(.34,-.18,.34,.55);ctx.closePath();});ctx.restore();}
-  ctx.globalAlpha=.5+.5*Math.sin(t*2);fill(flame,()=>{ctx.moveTo(0,-.78);ctx.bezierCurveTo(-.12,-.92,-.24,-.74,0,-.6);ctx.bezierCurveTo(.24,-.74,.12,-.92,0,-.78);});ctx.globalAlpha=1;
+  // Three friends standing together; the middle one waves.
+  person(-.52,.86,1.25,{scarf:'#d9534f'});person(.52,.86,1.25,{face:-1});person(0,.92,1.5,{wave:1});
  }else if(id==='delivery'){
   const dx=Math.sin(t*2)*.04;ctx.save();ctx.translate(dx,0);fill(accent,()=>ctx.roundRect(-.45,-.45,.9,.8,.1));line(card,.05,()=>{ctx.moveTo(-.2,-.45);ctx.quadraticCurveTo(-.2,-.75,0,-.75);ctx.quadraticCurveTo(.2,-.75,.2,-.45);});fill(card,()=>ctx.roundRect(-.2,-.1,.4,.14,.05));ctx.restore();
   for(let i=0;i<3;i++){ctx.globalAlpha=.3+.7*((t*2+i/3)%1);line(muted,.05,()=>{ctx.moveTo(.6+i*.1,-.3+i*.25);ctx.lineTo(.92,-.3+i*.25);});}ctx.globalAlpha=1;
