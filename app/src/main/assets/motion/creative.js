@@ -161,7 +161,11 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
   // No client picture: a drawn illustration of what the scene says (tea, pastries, seating, opening
   // hours, location…) with the words, never a photo or a generated image.
   const ill=art===undefined?illustrationFor(shot):art,v=(index+seed)%4;
-  if(v===0)elements=[e('icon',.22,.11,.56,.33,'accent','scale',0,{icon:ill}),text(title,.07,.47,.81,.13,108,.08),e('line',.38,.615,.24,.006,'accent','draw',.14),text(body,.08,.64,.78,.13,58,.18)];
+  // A living scene (guests walking in, watching the match, sitting outside, playing cards) gets the stage: it was a
+  // thumbnail between the headline and the caption in the first 1.9.62 film.
+  if(['walkin','screen','outdoor','cards','people'].includes(ill))elements=v%2===0?[text(title,.07,.09,.81,.13,108,0),text(body,.07,.23,.79,.11,56,.08),e('icon',.08,.35,.84,.43,'accent','scale',.14,{icon:ill})]
+   :[e('shape',.06,.09,.88,.46,'card','fade',0),e('icon',.10,.105,.80,.43,'accent','scale',.04,{icon:ill}),text(title,.07,.575,.81,.115,104,.1),e('line',.07,.697,.24,.006,'accent','draw',.14),text(body,.07,.708,.79,.075,54,.18)];
+  else if(v===0)elements=[e('icon',.22,.11,.56,.33,'accent','scale',0,{icon:ill}),text(title,.07,.47,.81,.13,108,.08),e('line',.38,.615,.24,.006,'accent','draw',.14),text(body,.08,.64,.78,.13,58,.18)];
   else if(v===1)elements=[e('shape',.06,.09,.88,.41,'card','fade',0),e('icon',.24,.12,.52,.35,'accent','scale',.04,{icon:ill}),text(title,.07,.53,.81,.12,104,.1),e('line',.07,.665,.24,.006,'accent','draw',.14),text(body,.07,.68,.79,.10,56,.18)];
   else if(v===2)elements=[text(title,.07,.09,.81,.13,108,0),text(body,.07,.23,.79,.11,56,.08),e('icon',.14,.37,.72,.40,'accent','scale',.14,{icon:ill})];
   else elements=[text(title,.07,.10,.81,.18,110,0),e('icon',.28,.31,.44,.27,'accent','scale',.08,{icon:ill}),e('line',.38,.605,.24,.006,'accent','draw',.14),text(body,.08,.63,.78,.14,58,.18)];
