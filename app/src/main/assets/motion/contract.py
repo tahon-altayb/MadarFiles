@@ -774,6 +774,43 @@ def logo_scenes(c,count):
  if c.get('logoLast'):wanted.add(count-1)
  return wanted
 
+# Delivery apps and social platforms an advert may point to, with their App Store entries (checked on the Saudi store,
+# 2026-11): the official icon is downloaded from there for the film, never drawn or guessed. `says` is matched on key().
+BRANDS=[
+ ('hungerstation','delivery','هنقرستيشن',596011949,'com.hungerstation.ios.hungerstationapp',r'هنقر ?ستيشن|هنجر ?ستيشن|hunger ?station'),
+ ('keeta','delivery','كيتا',1662451643,'com.sankuai.sailor.ifooddelivery',r'كيتا|keeta'),
+ ('jahez','delivery','جاهز',1137352156,'com.alamat.jahez',r'(?:تطبيق|من|في|علي|عبر) جاهز(?! (?:متي|لك|في|علي|خلال))|^جاهز$|jahez'),
+ ('mrsool','delivery','مرسول',1040038773,'com.peer.udel',r'مرسول|mrsool'),
+ ('toyou','delivery','تويو',1196302015,'com.arammeem.toyou.ios',r'تو ?يو\b|toyou'),
+ ('chefz','delivery','ذا شفز',1139450244,'com.thashefz.shogalbait',r'ذا ?شفز|شفز|chefz'),
+ ('ninja','delivery','نينجا',1620153149,'com.ananinja.app',r'نينجا|ninja'),
+ ('careem','delivery','كريم',592978487,'com.careem.mobile.app.icma',r'تطبيق كريم|careem'),
+ ('talabat','delivery','طلبات',451001072,'com.6alabat.cuisineApp',r'تطبيق طلبات|talabat'),
+ ('noon','delivery','نون',1269038866,'com.noon.buyerapp',r'نون فود|تطبيق نون|noon'),
+ ('lugmety','delivery','لقمتي',1299592575,'com.lugmety.customer',r'لقمتي|lugmety'),
+ ('nana','delivery','نعناع',1055344588,'iShopCloud.com',r'تطبيق نعناع|nana'),
+ ('tiktok','social','تيك توك',835599320,'com.zhiliaoapp.musically',r'تيك ?توك|tik ?tok'),
+ ('snapchat','social','سناب شات',447188370,'com.toyopagroup.picaboo',r'سناب(?: ?شات)?|snap(?:chat)?'),
+ ('instagram','social','انستقرام',389801252,'com.burbn.instagram',r'انستقرام|انستجرام|انستغرام|انستا|instagram'),
+ ('x','social','إكس',333903271,'com.atebits.Tweetie2',r'تويتر|منصه اكس|(?:على|في) اكس|twitter'),
+ ('whatsapp','social','واتساب',310633997,'net.whatsapp.WhatsApp',r'واتساب|واتس اب|واتس|whatsapp'),
+ ('youtube','social','يوتيوب',544007664,'com.google.ios.youtube',r'يوتيوب|youtube'),
+ ('facebook','social','فيسبوك',284882215,'com.facebook.Facebook',r'فيسبوك|فيس بوك|facebook'),
+ ('telegram','social','تيليجرام',686449807,'ph.telegra.Telegraph',r'تيليجرام|تلجرام|تيليقرام|تلقرام|telegram'),
+]
+def brands_in(text):
+ """The apps and platforms a text names, in the order it names them: [{'key','kind','label','id','bundle'}]."""
+ t=key(str(text or '')).lower();found=[]
+ for name,kind,label,store,bundle,says in BRANDS:
+  m=re.search(says,t)
+  if m:found.append((m.start(),{'key':name,'kind':kind,'label':label,'id':store,'bundle':bundle,'says':says}))
+ # «جاهز» is also the word "ready": beside another delivery app it is the app («هنقرستيشن - كيتا - جاهز»), elsewhere it is not.
+ if any(x['kind']=='delivery' for _,x in found) and not any(x['key']=='jahez' for _,x in found):
+  m=re.search(r'(?<![\u0621-\u064a])و?جاهز(?! (?:متي|لك|في|علي|خلال|لل))(?![\u0621-\u064a])',t)
+  if m:
+   name,kind,label,store,bundle,says=next(b for b in BRANDS if b[0]=='jahez');found.append((m.start(),{'key':name,'kind':kind,'label':label,'id':store,'bundle':bundle,'says':says}))
+ return [x for _,x in sorted(found,key=lambda v:v[0])]
+
 def has_asset(composition,name):
  return any(e.get('asset')==name for e in (composition or {}).get('elements',[]))
 
