@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application android:networkSecurityConfig="@xml/network_security_config" android:label="مدار الملفات" android:icon="@drawable/ic_launcher" android:theme="@style/AppTheme" android:supportsRtl="true" android:allowBackup="false">
-        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
+        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/><data android:mimeType="image/*"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/><data android:mimeType="application/pdf"/></intent-filter>
         </activity>
@@ -106,6 +106,8 @@
         <service android:name=".MotionStudioService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <activity android:name=".DriveAccessActivity" android:exported="false" />
         <service android:name=".FileProcessingService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".KeepAliveService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".GenerateService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".TransferService" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity android:name=".ColabActivity" android:exported="false" />
         <activity android:name=".SeparationPlayerActivity" android:exported="false"/><activity android:name=".PlayerActivity" android:exported="false" android:supportsPictureInPicture="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" />

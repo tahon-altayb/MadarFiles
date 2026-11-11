@@ -1,4 +1,4 @@
-name: Verify and build Gemini executive agent
+name: Verify and build Gemini executive agent with brief contract
 'on':
   push:
     branches:
@@ -7,6 +7,7 @@ name: Verify and build Gemini executive agent
     - delivery/motion-native-t4-20261106
     - delivery/agent-executive-20261106
     - delivery/agent-recovery-20261106
+    - agent/brief-contract-1931
 permissions:
   contents: read
   actions: read
@@ -33,6 +34,21 @@ jobs:
 
         node qa/agent-motion.test.cjs
 
+        node qa/motion-brief.test.cjs
+
+        node qa/motion-image-revision.test.cjs
+
+        node qa/motion-parity.test.cjs
+
+        python3 qa/motion-runtime-cuda.test.py
+
+        node qa/agent-motion-brief.test.cjs
+
+        node qa/motion-questions-flow.test.cjs
+
+        node qa/chat-threads.test.cjs
+        node qa/colab-generate-chat.test.cjs
+
         node qa/upgrade.test.cjs
 
         node qa/workspace-plus.test.cjs
@@ -55,6 +71,8 @@ jobs:
         python3 qa/agent-briefing.test.py
 
         python3 qa/motion-copy.test.py
+
+        python3 qa/motion-contract-director.test.py
 
         node qa/motion-clock.test.cjs
 
@@ -173,15 +191,15 @@ jobs:
         script: gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest
           -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.MotionTransferTest,com.madar.files.ColabAuthorizationTest,com.madar.files.ColabMusicTest,com.madar.files.MotionCheckpointTest,com.madar.files.MotionStartupTest,com.madar.files.ColabAllocationTest,com.madar.files.AgentExecutiveTest
     - name: Verify update package and signing certificate
-      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 66 --version-name 1.9.31 --firebase-config
+      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 97 --version-name 1.9.62 --firebase-config
         app/google-services.json
     - name: Prepare APK
-      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.31.apk
+      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.62.apk
     - name: Upload verified update APK
       uses: actions/upload-artifact@v4
       with:
-        name: MadarFiles-1.9.31-APK
-        path: MadarFiles-1.9.31.apk
+        name: MadarFiles-1.9.62-APK
+        path: MadarFiles-1.9.62.apk
         if-no-files-found: error
         retention-days: 30
     - name: Save validation reports

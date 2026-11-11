@@ -64,12 +64,29 @@ final class AgentDiagnostics {
   long elapsed=Math.max(0,android.os.SystemClock.elapsedRealtime()-began);String issue=error==null?"":status.equals("cancelled")?"CANCELLED":code(error);
   android.content.SharedPreferences p=c.getSharedPreferences("assistant_diagnostics",0);JSONArray old;
   try{old=new JSONArray(p.getString("timeline","[]"));}catch(JSONException invalid){old=new JSONArray();}
-  try{JSONArray next=new JSONArray();for(int i=Math.max(0,old.length()-19);i<old.length();i++)next.put(old.get(i));next.put(new JSONObject().put("stage",stage).put("status",status).put("milliseconds",elapsed).put("code",issue));p.edit().putString("provider","gemini").putString("stage",stage).putString("status",status).putString("issue",issue).putLong("milliseconds",elapsed).putString("timeline",next.toString()).apply();}catch(JSONException ignored){}
+  try{JSONArray next=new JSONArray();for(int i=Math.max(0,old.length()-19);i<old.length();i++)next.put(old.get(i));next.put(new JSONObject().put("stage",stage).put("status",status).put("milliseconds",elapsed).put("code",issue));android.content.SharedPreferences.Editor edit=p.edit();if(status.equals("failed")&&issue.matches("GEMINI_(TIMEOUT|NETWORK|REQUEST_FAILED|UNAVAILABLE)")){long now=System.currentTimeMillis(),before=p.getLong("downAt",0);edit.putLong("downAt",now).putInt("downCount",before>0&&now-before<3*3600*1000L?p.getInt("downCount",0)+1:1);}else if(status.equals("done"))edit.remove("downAt").remove("downCount");edit.putString("provider","gemini").putString("stage",stage).putString("status",status).putString("issue",issue).putLong("milliseconds",elapsed).putString("timeline",next.toString()).apply();}catch(JSONException ignored){}
  }
+ /** Gemini timed out or was unreachable recently (ten minutes; six hours after three failures in a row): the next motion job skips the
+  *  online interpretation and uses the chat's own contract instead of waiting minutes again. */
+ static String arabic(String code){
+  switch(code){
+   case "GEMINI_TIMEOUT":return "انتهت المهلة بدون رد";
+   case "GEMINI_NETWORK":return "ما وصل الطلب لخادم Google (شبكة أو حجب أو توثيق التطبيق)";
+   case "GEMINI_REQUEST_FAILED":return "رفض الخادم الطلب أو فشل";
+   case "GEMINI_APP_CHECK":return "تعذر توثيق التطبيق مع Firebase (التطبيق منزّل من خارج المتجر)";
+   case "GEMINI_QUOTA":return "انتهت الحصة المتاحة";
+   case "GEMINI_PERMISSION":return "رفضت الخدمة التفويض";
+   case "GEMINI_UNAVAILABLE":return "تخطيته لأنه ما رد قبل دقائق";
+   default:return code.isEmpty()?"سبب غير معروف":code;
+  }
+ }
+ static boolean recentlyDown(Context c){android.content.SharedPreferences p=c.getSharedPreferences("assistant_diagnostics",0);long at=p.getLong("downAt",0);long age=System.currentTimeMillis()-at;
+  // Three failures in a row (the owner's phone: every call timed out for days) rest Gemini for six hours, not ten minutes.
+  long rest=p.getInt("downCount",0)>=3?6*3600*1000L:10*60*1000L;return at>0&&age>=0&&age<rest;}
  static JSONObject report(Context c)throws JSONException{
   android.content.SharedPreferences p=c.getSharedPreferences("assistant_diagnostics",0);
   JSONArray events;try{events=new JSONArray(p.getString("timeline","[]"));}catch(JSONException invalid){events=new JSONArray();}
-  return new JSONObject().put("type","agentDiagnostics").put("provider",p.getString("provider","")).put("status",p.getString("status","")).put("stage",p.getString("stage","")).put("milliseconds",p.getLong("milliseconds",0)).put("issue",p.getString("issue","")).put("timeline",events);
+  return new JSONObject().put("type","agentDiagnostics").put("provider",p.getString("provider","")).put("status",p.getString("status","")).put("stage",p.getString("stage","")).put("milliseconds",p.getLong("milliseconds",0)).put("issue",p.getString("issue","")).put("timeline",events).put("groq",GroqClient.configured(c)).put("geminiResting",recentlyDown(c));
  }
  private AgentDiagnostics(){}
 }

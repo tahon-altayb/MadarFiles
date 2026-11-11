@@ -1,0 +1,22 @@
+// Chats list: select several chats (or all) and delete them together; their attachments are released.
+const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('assert/strict');
+(async()=>{const browser=await chromium.launch({...(process.env.MADAR_CHROME_PATH?{executablePath:process.env.MADAR_CHROME_PATH}:{channel:process.env.CI?'chrome':undefined}),headless:true});
+ const page=await browser.newPage({viewport:{width:412,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+ await page.addInitScript(()=>{window.requests=[];window.Android={request:s=>requests.push(JSON.parse(s))};});
+ const base=path.resolve('app/src/main/assets');await page.route('https://madar.local/**',r=>{const url=new URL(r.request().url());const file=path.join(base,url.pathname.slice(1)||'index.html');if(!fs.existsSync(file))return r.fulfill({status:404,body:''});return r.fulfill({body:fs.readFileSync(file),contentType:file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html'});});
+ await page.goto('https://madar.local/');
+ const att=n=>({attachmentId:String(n).repeat(8)+'-'+String(n).repeat(4)+'-'+String(n).repeat(4)+'-'+String(n).repeat(4)+'-'+String(n).repeat(12),kind:'image',name:'p'+n+'.jpg'});
+ await page.evaluate(([a,b,c])=>{state.busy=false;receive({type:'agentChats',data:{version:1,active:'one',threads:[{id:'one',title:'الأولى',messages:[],attachments:[a]},{id:'two',title:'الثانية',messages:[],attachments:[b,a]},{id:'three',title:'الثالثة',messages:[],attachments:[c]}]}});},[att(1),att(2),att(3)]);
+ await page.locator('#agentOpen').click();await page.locator('#agentThreadsOpen').click();
+ await page.locator('.agentThreadTools button',{hasText:'تحديد'}).first().click();
+ await page.locator('.agentThreadRow button',{hasText:'الأولى'}).click();await page.locator('.agentThreadRow button',{hasText:'الثالثة'}).click();
+ assert.match(await page.locator('.agentThreadTools').innerText(),/حذف المحدد \(2\)/);
+ fs.mkdirSync('qa/evidence/chat-review',{recursive:true});await page.screenshot({path:'qa/evidence/chat-review/chat-select.png'});
+ await page.locator('.agentThreadTools button',{hasText:'حذف المحدد'}).click();
+ assert.deepEqual(await page.locator('.agentThreadRow').allInnerTexts().then(t=>t.map(x=>x.replace(/\s*حذف\s*$/,'').trim())),['الثانية']);
+ const released=await page.evaluate(()=>requests.filter(r=>r.action==='agentDeleteAttachments').at(-1).ids);assert.deepEqual(released,[ '33333333-3333-3333-3333-333333333333'],'an attachment still used by another chat is kept');
+ if(!(await page.locator('#agentThreads').isVisible()))await page.locator('#agentThreadsOpen').click();
+ await page.locator('.agentThreadTools button',{hasText:'حذف كل المحادثات'}).click();
+ assert.equal(await page.evaluate(()=>JSON.parse(JSON.stringify(requests.filter(r=>r.action==='agentChatsSave').at(-1).data.threads)).every(t=>t.id!=='two')),true);
+ assert.deepEqual(errors,[]);await browser.close();console.log('chats: select several or all and delete together');
+})().catch(e=>{console.error(e);process.exit(1);});

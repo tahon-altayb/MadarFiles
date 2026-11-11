@@ -1,0 +1,83 @@
+name: Real shop motion end to end
+on:
+  push:
+    branches: [qa/shop-motion-e2e]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shop-e2e-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 170
+    strategy:
+      fail-fast: false
+      matrix:
+        voice: [none]
+        case: [four, seven]
+        mode: [attached]
+        variant: [plain]
+        include:
+          - voice: none
+            case: seven
+            mode: inspired
+            variant: plain
+          - voice: none
+            case: telecom
+            mode: attached
+            variant: plain
+          - voice: none
+            case: grocery
+            mode: attached
+            variant: plain
+          - voice: none
+            case: gym
+            mode: inspired
+            variant: plain
+          - voice: none
+            case: telecom
+            mode: attached
+            variant: draft
+          - voice: none
+            case: gym
+            mode: inspired
+            variant: draft
+          - voice: none
+            case: grocery
+            mode: attached
+            variant: groq
+          - voice: none
+            case: seven
+            mode: attached
+            variant: groq
+          - voice: none
+            case: answers
+            mode: attached
+            variant: groq
+          - voice: none
+            case: answers
+            mode: attached
+            variant: plain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate the shop advert with the real model and renderer
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get install -y -qq ffmpeg fonts-noto-core fonts-noto-ui-core
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          python3 qa/motion-shop-generation.test.py --voice ${{ matrix.voice }} --case ${{ matrix.case }} --mode ${{ matrix.mode }} ${{ matrix.variant == 'draft' && '--draft' || '' }}${{ matrix.variant == 'groq' && '--groq' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shop-motion-${{ matrix.voice }}-${{ matrix.case }}-${{ matrix.mode }}${{ matrix.variant != 'plain' && format('-{0}',matrix.variant) || '' }}
+          path: qa/evidence/shop/

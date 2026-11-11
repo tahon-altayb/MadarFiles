@@ -99,10 +99,15 @@ final class ColabRuntime implements AutoCloseable {
  }
  void reviewState(String owner,boolean busy){journal().edit().putString("reviewOwner",owner).putBoolean("reviewBusy",busy).commit();}
  void create(MusicSeparator.Progress progress)throws Exception {create(progress,false);}
+ /** Generation jobs ask for specific GPUs in order (SDXL: T4 first; Wan video: L4 or A100 only). */
+ String[] allowed;
+ void create(MusicSeparator.Progress progress,String[] gpus)throws Exception{allowed=gpus;try{create(progress,false);}finally{allowed=null;}}
  void create(MusicSeparator.Progress progress,boolean music)throws Exception {
   ColabProbe.check(cancel);MotionGpuSession.beforeRuntime(this);MusicGpuSession.beforeRuntime(this);if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");cleanupPrevious();JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
   android.content.SharedPreferences settings=context.getSharedPreferences("colab_connection",0);
-  List<JSONObject> specs=music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
+  List<JSONObject> specs=music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);
+  if(allowed!=null){final List<String> order=Arrays.asList(allowed);specs.removeIf(v->!order.contains(v.optString("accelerator")));specs.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));if(specs.isEmpty())throw new IOException("هذا التوليد يحتاج كرت "+String.join(" أو ",allowed)+"، وحساب Colab ما يتيحه الحين؛ جرّب لاحقًا");}
+  if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
   for(int i=0;i<Math.min(2,specs.size());i++){
    ColabProbe.check(cancel);JSONObject spec=specs.get(i);String id="madar-"+UUID.randomUUID();runtime="runtimes/"+id;
    if(!journal().edit().putString("name",runtime).putString("project",grant.project).putString("requestId",UUID.randomUUID().toString()).putString("spec",spec.toString()).remove("operation").commit())throw new IOException("تعذر حفظ حالة جلسة Colab");

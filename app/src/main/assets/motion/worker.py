@@ -65,7 +65,7 @@ def assemble(request):
     total=0;seen=set()
     for f in files:
         name=f['name']
-        if not re.fullmatch(r'(asset_[a-f0-9]{32}\.jpg|speech_[0-9]{1,2}\.wav|voice\.wav|recording\.media)',name) or name in seen:raise ValueError('INPUT_PATH')
+        if not re.fullmatch(r'(asset_[a-f0-9]{32}\.jpg|speech_[0-9]{1,2}\.wav|voice\.wav|recording\.media|brand-(?:heading|body)\.(?:otf|ttf))',name) or name in seen:raise ValueError('INPUT_PATH')
         seen.add(name);size=f['size'];chunks=f['chunks'];total+=size
         if not isinstance(size,int) or not 0<size<=32*1024*1024 or not isinstance(chunks,int) or chunks!=math.ceil(size/CHUNK) or total>96*1024*1024:raise ValueError('INPUT_SIZE')
         out=Path(name)
@@ -110,6 +110,15 @@ def align(request,node):
     status('audio',22)
     names=['recording.media'] if mode=='recording' else [f'speech_{i}.wav' for i in range(len(p['scenes']))]
     joined=[];master_rate=24000 if mode=='silma' else 16000
+    # Silence after each voiced scene lets a short narration fill the requested film length.
+    pads=[0.0]*len(names)
+    if mode=='silma' and p.get('targetSeconds'):
+        sys.path.insert(0,str(ROOT));import contract
+        spoken=[]
+        for name in names:
+            run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','90.1','-ac','1','-ar','16000','-c:a','pcm_s16le','measure.wav'],120)
+            with wave.open('measure.wav','rb') as w:spoken.append(w.getnframes()/16000)
+        pads=contract.pad_plan(spoken,float(p['targetSeconds']))
     for i,name in enumerate(names):
         out=f'normalized_{i}.wav';run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','900.1' if mode=='recording' else '90.1','-ac','1','-ar','16000','-c:a','pcm_s16le',out],120)
         with wave.open(out,'rb') as w:
@@ -118,7 +127,7 @@ def align(request,node):
         if not 3200<=len(data)<=(28_800_000 if mode=='recording' else 2_880_000):raise ValueError('AUDIO_DURATION')
         master=f'master_{i}.wav';run(['ffmpeg','-v','error','-y','-i',name,'-vn','-t','900.1' if mode=='recording' else '90.1','-ac','1','-ar',str(master_rate),'-c:a','pcm_s16le',master],120)
         with wave.open(master,'rb') as m:joined.append(m.readframes(m.getnframes()))
-        if mode!='recording':joined.append(bytes(master_rate//2))
+        if mode!='recording':joined.append(bytes(int(round(master_rate*(.25+pads[i])))*2))
         files.append(out)
     with wave.open('voice.wav','wb') as w:w.setparams((1,2,master_rate,0,'NONE',''));w.writeframes(b''.join(joined))
     status('install',26);binary=asr_python();Path('asr-inputs.json').write_text(json.dumps(files));Path('asr-run.py').write_text(ASR_CODE)
@@ -127,6 +136,10 @@ def align(request,node):
     else:run([binary,'-I','asr-run.py'],1500,env=isolated_env())
     if mode=='recording':
         segments=json.loads(Path('segments.json').read_text());segments[0]['whole']=True;Path('segments.json').write_text(json.dumps(segments))
+    elif any(pads):
+        segments=json.loads(Path('segments.json').read_text())
+        for segment,pad in zip(segments,pads):segment['pad']=pad
+        Path('segments.json').write_text(json.dumps(segments))
     run([node,'-e',"const fs=require('fs'),C=require('./core');const p=C.align(JSON.parse(fs.readFileSync('request.json')).project,JSON.parse(fs.readFileSync('segments.json')));fs.writeFileSync('project.json',JSON.stringify(p));"],60)
     return Path('voice.wav')
 def visual_revision(p,node):
@@ -137,26 +150,81 @@ def visual_revision(p,node):
     code="""const fs=require('fs'),C=require('./creative');const p=JSON.parse(fs.readFileSync('visual-revision.json')),names=p.visualRevisionAssets;
     for(let i=0;i<p.scenes.length;i++){const s=p.scenes[i];if(s.graphic!=='creative')throw Error('VISUAL_REVISION_GRAPH');
      if(p.visualRevisionRole==='logo'){const hit=(a,b)=>Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)>.008&&Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)>.008;const blocked=s.composition.elements.filter(e=>['text','metric','image','device'].includes(e.kind)||(e.kind==='icon'&&e.w*e.h>=.025));let slot;for(const y of [.80,.06,.66,.90])for(const x of [.80,.06,.45]){const box={x,y,w:.12,h:.08};if(!slot&&!blocked.some(e=>hit(e,box)))slot=box;}if(!slot)throw Error('VISUAL_REVISION_SPACE');s.composition.elements=s.composition.elements.filter(e=>!(e.kind==='icon'&&hit(e,slot)));s.composition.elements.push({kind:'image',...slot,color:'card',motion:'fade',delay:.1,asset:names[0]});C.validate(s.composition);
+     }else if(p.visualRevisionRole!=='logo'){if(i===0){const r=C.reviseImages(p,names,p.visualRevisionLogo||'');if(!r.placed.length)throw Error('VISUAL_REVISION_SPACE');}continue;
      }else{const b=C.textBindings(s);if(!b.heading||b.supporting.length!==1)throw Error('VISUAL_REVISION_COPY');const group=names.filter((_,n)=>n%p.scenes.length===i);if(!group.length)group.push(names[i%names.length]);let at=s.composition.elements.findIndex(e=>['image','device'].includes(e.kind));if(at<0){const icons=s.composition.elements.map((e,n)=>({e,n})).filter(v=>v.e.kind==='icon'&&v.e.w*v.e.h>=.025).sort((a,b)=>b.e.w*b.e.h-a.e.w*a.e.h);if(icons.length)at=icons[0].n;}
      if(at<0){s.composition=C.compose({title:b.heading.text,caption:b.supporting[0].text,narration:s.narration,reference:0},{aspect:p.aspect,images:group,index:i});at=s.composition.elements.findIndex(e=>['image','device'].includes(e.kind));}
      const box=s.composition.elements[at],cols=Math.ceil(Math.sqrt(group.length)),rows=Math.ceil(group.length/cols),gap=group.length>1?.008:0;const media=group.map((asset,n)=>{const item={...box,kind:box.kind==='device'?'device':'image',asset,x:box.x+(n%cols)*(box.w/cols),y:box.y+Math.floor(n/cols)*(box.h/rows),w:box.w/cols-gap,h:box.h/rows-gap,delay:Math.min(.65,box.delay+n*.04)};delete item.icon;return item;});s.composition.elements.splice(at,1,...media);C.validate(s.composition);}
 
-    }delete p.visualRevisionAssets;delete p.visualRevisionRole;fs.writeFileSync('visual-revision.json',JSON.stringify(p));"""
+    }delete p.visualRevisionAssets;delete p.visualRevisionRole;delete p.visualRevisionLogo;fs.writeFileSync('visual-revision.json',JSON.stringify(p));"""
     run([node,'-e',code],30)
     revised=json.loads(Path('visual-revision.json').read_text());p.clear();p.update(revised)
 
+def energetic_track(p,rate):
+    """Whooshes on every cut, a hit where each headline lands, pops for the other elements and a riser into
+    the closing, all synthesised here (no music, no sound files), on the clock creative.js animates with."""
+    import random
+    length=math.ceil(p['duration']*30)/30;total=int(math.ceil(length*rate));mix=[0.0]*total;rng=random.Random(7341)
+    def put(at,samples,gain):
+        start=int(at*rate)
+        for n,v in enumerate(samples):
+            k=start+n
+            if 0<=k<total:mix[k]+=v*gain
+    def sweep(seconds,low,high,peak=.6,down=None):
+        # Band-passed noise whose centre glides low→high (→down): the «ووووش» of a whip pan.
+        n=int(seconds*rate);out=[];lp=bp=0.0
+        for i in range(n):
+            x=i/max(1,n-1);centre=low+(high-low)*min(1,x/peak) if down is None or x<peak else high+(down-high)*(x-peak)/(1-peak)
+            f=2*math.sin(math.pi*min(centre,rate/6)/rate);hp=rng.uniform(-1,1)-lp-.28*bp;bp+=f*hp;lp+=f*bp
+            env=(x/peak)**2 if x<peak else (1-(x-peak)/(1-peak))**1.6
+            out.append(bp*env*.55)
+        return out
+    def hit(seconds=.42,top=125,bottom=42):
+        # A pitched-down thump with a short click on top: the headline landing.
+        n=int(seconds*rate);out=[];phase=0.0
+        for i in range(n):
+            t=i/rate;freq=bottom+(top-bottom)*math.exp(-t*18);phase+=2*math.pi*freq/rate
+            out.append(math.sin(phase)*math.exp(-t*7.5)+(rng.uniform(-1,1)*math.exp(-t*260)*.55))
+        return out
+    def pop(freq=880):
+        n=int(.07*rate);out=[];phase=0.0
+        for i in range(n):
+            t=i/rate;phase+=2*math.pi*(freq*(1+t*6))/rate;out.append(math.sin(phase)*math.exp(-t*55))
+        return out
+    def shimmer():
+        n=int(.9*rate);return [sum(math.sin(2*math.pi*f*i/rate)/(k+1) for k,f in enumerate([2637,3951,5274]))*math.exp(-i/rate*4.2)*.5 for i in range(n)]
+    scenes=p['scenes'];last=len(scenes)-1
+    # «متوازن» (balanced, the default) keeps the whoosh and a lighter hit; «حماسي» adds pops, a riser and shimmer.
+    full=p.get('soundEffects')=='energetic'
+    for order,scene in enumerate(scenes):
+        start,span=scene['start'],scene['end']-scene['start']
+        elements=(scene.get('composition') or {}).get('elements',[])
+        if order>0:put(start-.26,sweep(.44,350,3400,.62,700),.5 if full else .32)
+        if full and order==last and last>0:put(start-.95,sweep(.95,250,5200,.97),.32);put(start+.9,shimmer(),.12)
+        head=next((e for e in elements if e.get('kind')=='text' and (e.get('textRole')=='heading' or e.get('text')==scene.get('title'))),None)
+        land=start+(head['delay']*min(span,2) if head else 0)+.2
+        put(land,hit(.5 if order in (0,last) else .42,140 if order in (0,last) else 125),(.9 if order in (0,last) else .7)*(1 if full else .45))
+        for e in elements if full else []:
+            if e is head or e.get('kind') not in ('text','metric','image','device','icon'):continue
+            at=start+e.get('delay',0)*min(span,2)
+            if at<scene['end']-.2 and abs(at-land)>.12:put(at+.05,pop(700 if e.get('kind') in ('image','device') else 980),.16)
+    peak=max(1e-6,max(abs(v) for v in mix));scale=(.70 if full else .45)/peak
+    return [int(max(-1,min(1,v*scale))*32767) for v in mix]
+
 def sound_effects(p,path):
-    if p.get('soundEffects','none')!='soft':return
+    if p.get('soundEffects','none') not in ('soft','energetic','balanced'):return
     import array,random
     rate=24000;length=math.ceil(p['duration']*30)/30;data=array.array('h',[0])*int(math.ceil(length*rate));rng=random.Random(7341)
-    for scene in p['scenes']:
+    if p['soundEffects'] in ('energetic','balanced'):
+        data=array.array('h',energetic_track(p,rate))
+    else:
+     for scene in p['scenes']:
         start=int(scene['start']*rate);span=min(int(.16*rate),len(data)-start);previous=0.0
         for n in range(max(0,span)):
             previous=.8*previous+.2*rng.uniform(-1,1);envelope=math.sin(math.pi*n/max(1,span-1))**2;data[start+n]=int(previous*2200*envelope)
     if sys.byteorder!='little':data.byteswap()
     with wave.open('motion-effects.wav','wb') as out:out.setparams((1,2,rate,0,'NONE',''));out.writeframes(data.tobytes())
     args=['ffmpeg','-v','error','-y','-i',str(path),'-i','motion-effects.wav']
-    if p['voiceMode']!='none':args+=['-filter_complex','[0:a][1:a]amix=inputs=2:normalize=0:duration=first[a]','-map','0:v:0','-map','[a]']
+    if p['voiceMode']!='none':args+=['-filter_complex','[1:a]volume=%s[f];[0:a][f]amix=inputs=2:normalize=0:duration=first[a]'%('0.45' if p['soundEffects'] in ('energetic','balanced') else '1'),'-map','0:v:0','-map','[a]']
     else:args+=['-map','0:v:0','-map','1:a:0']
     args+=['-c:v','copy','-c:a','aac','-b:a','192k','-t',str(length),'-movflags','+faststart','output-effects.mp4'];run(args,120);Path('output-effects.mp4').replace(path)
 
@@ -166,6 +234,12 @@ def render(request,node):
     public=ROOT/'public';public.mkdir(exist_ok=True)
     names=set(s['image'] for s in p['scenes'] if s.get('image'))
     names.update(e['asset'] for s in p['scenes'] for e in s.get('composition',{}).get('elements',[]) if e.get('kind') in ['image','device'])
+    # The owner's own font files, when this project uses them (otherwise Cairo only).
+    fonts=p.get('fonts') if isinstance(p.get('fonts'),dict) else None
+    if fonts:
+        for key in ['headingFile','bodyFile']:
+            if not re.fullmatch(r'brand-(?:heading|body)\.(?:otf|ttf)',str(fonts.get(key,''))):raise ValueError('FONT_PATH')
+        names.update([fonts['headingFile'],fonts['bodyFile']])
     for name in ['Cairo.ttf','voice.wav']+sorted(names):
         if not Path(name).is_file():
             if name=='voice.wav' and p['voiceMode']=='none':continue
@@ -182,7 +256,7 @@ def render(request,node):
     expected=math.ceil(p['duration']*30)/30
     video=[s for s in info['streams'] if s['codec_type']=='video'];audio=[s for s in info['streams'] if s['codec_type']=='audio']
     width=1920 if p['aspect']=='16:9' else 1080;height=1920 if p['aspect']=='9:16' else 1080
-    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none' or p.get('soundEffects')=='soft'):raise ValueError('OUTPUT_FORMAT')
+    if len(video)!=1 or video[0]['codec_name']!='h264' or video[0]['width']!=width or video[0]['height']!=height or abs(float(info['format']['duration'])-expected)>.15 or bool(audio)!=(p['voiceMode']!='none' or p.get('soundEffects') in ('soft','energetic','balanced')):raise ValueError('OUTPUT_FORMAT')
     return path
 def director_python():
     target=ROOT.parent/'madar-motion-director-gguf-v1';binary=target/'bin/python'
@@ -237,7 +311,9 @@ def compose(request,node):
         run([node,'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')));"],30)
     else:
         status('director',24);binary=director_python()
-        try:run([binary,'-I','director.py'],1800,env=env)
+        # CPU QA is several times slower than the T4; it may extend the director limit to measure the real work.
+        limit=int(os.environ['MADAR_MOTION_QA_DIRECTOR_SECONDS']) if os.environ.get('MADAR_MOTION_QA')=='1' and os.environ.get('MADAR_MOTION_QA_DIRECTOR_SECONDS','').isdigit() else 1800
+        try:run([binary,'-I','director.py'],limit,env=env)
         except subprocess.CalledProcessError:
             state=json.loads(Path('progress.json').read_text())
             raise ValueError(state.get('code','DIRECTOR_FAILED'))
@@ -250,6 +326,11 @@ def compose(request,node):
         if p.get('motionCheckpoint')!='voiced':status('speech',46);speech()
         checkpoint(p,generated+[f'speech_{i}.wav' for i in range(len(p['scenes']))],phase='voiced')
     align(request,node);p=json.loads(Path('project.json').read_text());request['project']=p
+    sys.path.insert(0,str(ROOT));import contract
+    check=contract.duration_check(sum(float(s.get('seconds',0)) for s in p['scenes']),p.get('targetSeconds'))
+    if check:
+        p['verification']=[z for z in p.get('verification',[]) if z.get('id')!='duration']+[check]
+        Path('project.json').write_text(json.dumps(p,ensure_ascii=False))
     # Do not report guessed alignment as complete. The editor can recover this project for review.
     checked=subprocess.run([str(node),'-e',"const fs=require('fs');require('./core').validate(JSON.parse(fs.readFileSync('project.json')),true);"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
     result=render(request,node) if checked.returncode==0 else None
