@@ -8,7 +8,7 @@
  function downloads(value=''){
   pausePreviews();state.tool='downloadLink';$('sheet').classList.remove('editing','studio15');$('sheet').hidden=true;
   const home=$('linkHome');if(!home){state.kind='links';render();return downloads(value);}home.hidden=false;
-  home.innerHTML='<div class="linkWelcome"><span class="eyebrow">الرابط منك، والباقي على مدار</span><h2>مقطعك، بالجودة التي تختارها.</h2></div><form id="linkEntry"><input id="linkUrl" type="text" inputmode="url" autocomplete="off" dir="auto" placeholder="ألصق رابط المقطع هنا" aria-label="رابط المقطع"><button type="submit" id="linkInspect" class="primary">تحميل ↓</button></form><div class="platforms"><span>YouTube</span><span>TikTok</span><span>Snapchat</span><span>Instagram</span><span>X</span><span>Facebook</span></div><p id="linkHint" class="hint">يتعرف مدار على المنصة تلقائيًا، ثم يعرض الجودات المتاحة قبل التنزيل.</p><div id="linkDetails" hidden></div><button type="button" id="linkUpdate" class="text">تحديث محرك التحميل</button>';
+  home.innerHTML='<div class="linkWelcome"><span class="eyebrow">الرابط منك، والباقي على مدار</span><h2>مقطعك، بالجودة التي تختارها.</h2></div><form id="linkEntry"><input id="linkUrl" type="text" inputmode="url" autocomplete="off" dir="auto" placeholder="ألصق رابط المقطع هنا" aria-label="رابط المقطع"><button type="submit" id="linkInspect" class="primary">تحميل ↓</button></form><div class="platforms"><span>YouTube</span><span>TikTok</span><span>Snapchat</span><span>Instagram</span><span>X</span><span>Facebook</span></div><p id="linkHint" class="hint">يتعرف مدار على المنصة تلقائيًا، ثم يعرض الجودات المتاحة قبل التنزيل. تبي صورة متحركة؟ نزّل المقطع ثم اضغط «تحويله إلى GIF».</p><div id="linkDetails" hidden></div><button type="button" id="linkUpdate" class="text">تحديث محرك التحميل</button>';
   $('linkUrl').value=value;linkInfo=null;$('export').disabled=true;
   $('linkUrl').oninput=()=>{linkInfo=null;$('linkDetails').hidden=true;$('export').disabled=true;};
   $('linkEntry').onsubmit=e=>{e.preventDefault();if(state.busy)return;const url=$('linkUrl').value.trim();if(!url)return toast('ألصق الرابط أولًا');$('linkUrl').blur();setBusy(true,'قراءة المقطع والجودات');transfer=true;native('linkInspect',{url});};
@@ -98,7 +98,9 @@
   if(e.type==='source'&&qrPick){const tool=qrPick;qrPick=null;receiveBefore(e);state.kind='qr';render();qr(tool);return;}
   receiveBefore(e);
   if(e.type==='project'&&state.tool==='editor')restoreLook(e.look||{editorBrightness:0,editorContrast:0,editorSaturation:0,editorRotation:0});
-  if(e.type==='result'&&state.tool==='downloadLink'){const row=document.createElement('div');row.id='downloadNext';$('downloadNext')?.remove();row.append(button('استخدام الملف في أدوات مدار',()=>{native('useDownloaded',{name:e.name});$('result').hidden=true;$('sheet').hidden=true;}));$('result').querySelector('section').append(row);}
+  if(e.type==='result'&&state.tool==='downloadLink'){const row=document.createElement('div');row.id='downloadNext';$('downloadNext')?.remove();row.append(button('استخدام الملف في أدوات مدار',()=>{native('useDownloaded',{name:e.name});$('result').hidden=true;$('sheet').hidden=true;}));if(String(e.mime||'').startsWith('video/'))row.append(button('تحويله إلى GIF',()=>{window.madarGifNext=true;native('useDownloaded',{name:e.name});$('result').hidden=true;$('sheet').hidden=true;}));$('result').querySelector('section').append(row);}
  };
  render();
 })();
+// A downloaded clip can go straight to the GIF tool: once it becomes the working file, the tool opens on it.
+(()=>{const before=window.receive;window.receive=function(e){before(e);if(e.type==='source'&&window.madarGifNext){window.madarGifNext=false;if(e.kind==='video')setTimeout(()=>{try{openTool('gif');}catch(ignored){}},0);}else if(['error','cancelled'].includes(e.type))window.madarGifNext=false;};})();

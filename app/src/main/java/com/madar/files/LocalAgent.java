@@ -99,7 +99,7 @@ final class LocalAgent {
   int length=0;for(int i=0;i<input.length();i++){JSONObject turn=input.getJSONObject(i);String role=turn.getString("role"),text=turn.getString("text");length+=text.length();if(!Arrays.asList("user","assistant").contains(role)||text.length()>1000||length>12000)throw new IOException("سياق المساعد غير صالح");out.put(new JSONObject().put("role",role).put("text",text));}return out;
  }
  JSONObject plan(Context c,String user,JSONObject source,JSONArray previous,AtomicBoolean cancel)throws Exception {
-  if(user.trim().isEmpty()||user.length()>1000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 1000 حرف");
+  if(user.trim().isEmpty()||user.length()>6000)throw new IOException("اكتب طلبًا واضحًا لا يتجاوز 6000 حرف");
   ColabProbe.check(cancel);JSONObject direct=AgentIntents.resolve(user,source,previous);
   if(direct!=null)return provider(AgentTools.validate(direct,source.optString("kind")),"direct");
   // Gemini just timed out and the on-device model is ready: answer locally instead of waiting again.

@@ -51,6 +51,7 @@ public class VideoExportService extends Service {
             if(tool.equals("subtitles")||tool.equals("translateReviewed")){startSpeech(input,o);return START_NOT_STICKY;}
             if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
             if(tool.equals("music")){startMusic(input,o,duration);return START_NOT_STICKY;}
+            if(tool.equals("gif")){startGif(input,o,duration);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));if(previewDraft)media.setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0).setEndPositionMs(Math.min(duration,10000)).build());
             if(tool.equals("trim")){
                 double start=o.getDouble("start"),end=o.getDouble("end");if(previewDraft)end=Math.min(end,start+10);if(!Double.isFinite(start)||!Double.isFinite(end)||start<0||end<=start||end*1000>duration+100)throw new IllegalArgumentException("حدود القص غير صالحة");
@@ -85,6 +86,33 @@ public class VideoExportService extends Service {
     private void startCopyTrim(File input,JSONObject options)throws Exception{
         musicCancel.set(false);publish(new JSONObject().put("type","progress").put("progress",-1).put("message","قص دون إعادة ترميز؛ البداية عند أقرب إطار رئيسي سابق"));
         musicWorker=new Thread(()->{try{LosslessTrim.Result r=LosslessTrim.trim(this,input,options.optDouble("start"),options.optDouble("end"),musicCancel);JSONObject data=FilesUtil.info(r.file).put("type","result").put("actualStart",r.startUs/1000000.0);handler.post(()->{if(!terminal){publish(data);musicWorker=null;finish("done",null);}});}catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}catch(Exception e){handler.post(()->{musicWorker=null;finish("error","تعذر القص دون ترميز. جرّب القص الدقيق. "+e.getMessage());});}},"madar-copy-trim");musicWorker.start();
+    }
+    /** A short part of the video as an animated GIF: frames are read at the chosen rate and width, no sound. */
+    private void startGif(File input,JSONObject options,long durationMs)throws Exception{
+        final double start=Math.max(0,Math.min(options.optDouble("gifStart",0),durationMs/1000.0-.2)),seconds=Math.max(.5,Math.min(15,Math.min(options.optDouble("gifSeconds",5),durationMs/1000.0-start)));
+        final int fps=Math.max(5,Math.min(15,options.optInt("gifFps",10))),wanted=Math.max(160,Math.min(640,options.optInt("gifWidth",480)));
+        musicCancel.set(false);publish(new JSONObject().put("type","progress").put("progress",0).put("message","تجهيز إطارات الصورة المتحركة"));
+        musicWorker=new Thread(()->{File target=FilesUtil.output(this,"gif");android.media.MediaMetadataRetriever reader=new android.media.MediaMetadataRetriever();
+            try{reader.setDataSource(input.getAbsolutePath());
+                int w=Integer.parseInt(reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)),h=Integer.parseInt(reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+                String turned=reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);if("90".equals(turned)||"270".equals(turned)){int t=w;w=h;h=t;}
+                if(w<2||h<2)throw new java.io.IOException("أبعاد الفيديو غير معروفة");
+                int gw=Math.min(wanted,w),gh=Math.max(2,Math.round(gw*(float)h/w));int frames=(int)Math.max(2,Math.round(seconds*fps));int[] pixels=new int[gw*gh];
+                try(java.io.OutputStream out=new java.io.BufferedOutputStream(new java.io.FileOutputStream(target),1<<16);GifWriter gif=new GifWriter(out,gw,gh,Math.round(100f/fps))){
+                    for(int n=0;n<frames;n++){
+                        if(musicCancel.get())throw new java.util.concurrent.CancellationException();
+                        android.graphics.Bitmap frame=reader.getScaledFrameAtTime((long)((start+n/(double)fps)*1000000),android.media.MediaMetadataRetriever.OPTION_CLOSEST,gw,gh);
+                        if(frame==null){if(n==0)throw new java.io.IOException("تعذر قراءة إطارات هذا الفيديو");break;}
+                        android.graphics.Bitmap fitted=frame.getWidth()==gw&&frame.getHeight()==gh?frame:android.graphics.Bitmap.createScaledBitmap(frame,gw,gh,true);
+                        fitted.getPixels(pixels,0,gw,0,0,gw,gh);gif.frame(pixels);if(fitted!=frame)fitted.recycle();frame.recycle();
+                        final int percent=(n+1)*100/frames;handler.post(()->{try{if(!terminal)publish(new JSONObject().put("type","progress").put("progress",percent).put("message","تحويل الإطارات إلى GIF"));}catch(Exception ignored){}});
+                    }
+                }
+                JSONObject data=FilesUtil.info(target).put("type","result");handler.post(()->{if(terminal){target.delete();return;}publish(data);musicWorker=null;finish("done",null);});
+            }catch(java.util.concurrent.CancellationException e){target.delete();handler.post(()->{musicWorker=null;finish("cancelled",null);});
+            }catch(Exception|OutOfMemoryError e){target.delete();handler.post(()->{musicWorker=null;finish("error","تعذر تحويل المقطع إلى GIF. "+(e.getMessage()==null?"جرّب مدة أقصر أو عرضًا أصغر":e.getMessage()));});
+            }finally{try{reader.release();}catch(Exception ignored){}}
+        },"madar-gif");musicWorker.start();
     }
     private void startContainer(File input,JSONObject options)throws Exception{
         musicCancel.set(false);publish(new JSONObject().put("type","progress").put("progress",-1).put("message","نسخ المسارات إلى الحاوية الجديدة دون إعادة ترميز"));
