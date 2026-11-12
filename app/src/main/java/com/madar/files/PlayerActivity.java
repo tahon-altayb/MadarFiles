@@ -145,10 +145,21 @@ public class PlayerActivity extends Activity {
   if(SystemClock.elapsedRealtime()<miniDeadline){timer.postDelayed(this,150);return;}
   miniPending=false;moveTaskToBack(true);
  }};
- private void leavePlayer(){miniPending=false;timer.removeCallbacks(miniEntry);if(playback!=null&&!playback.closed){playback.foreground();moveTaskToBack(true);}else finish();}
+ // Back means «I am done with the player»: ask, then close the clip and return to where the owner came from (Madar or the
+ // screen that opened the file). Listening in the background is a choice here, or simply leaving with Home.
+ private void leavePlayer(){miniPending=false;timer.removeCallbacks(miniEntry);if(playback==null||playback.closed){finish();return;}
+  if(leaveDialog!=null&&leaveDialog.isShowing())return;
+  leaveDialog=new AlertDialog.Builder(this).setTitle("الخروج من المشغل").setMessage("تبي تقفل المقطع وتطلع من المشغل؟")
+   .setPositiveButton("خروج",(d,w)->finish())
+   .setNeutralButton("كمّل في الخلفية",(d,w)->keepInBackground())
+   .setNegativeButton("إلغاء",null).show();}
+ private AlertDialog leaveDialog;
+ private void keepInBackground(){if(playback!=null&&!playback.closed){playback.foreground();moveTaskToBack(true);}else finish();}
  @Override public boolean dispatchTouchEvent(MotionEvent event){if(event.getActionMasked()==MotionEvent.ACTION_DOWN&&(cleanRequested||censorPending||playback!=null&&playback.censorRequested))revealCleanStatus();return super.dispatchTouchEvent(event);}
  @Override public void onBackPressed(){leavePlayer();}
- @Override protected void onUserLeaveHint(){super.onUserLeaveHint();miniPending=false;timer.removeCallbacks(miniEntry);}
+ @Override protected void onUserLeaveHint(){super.onUserLeaveHint();miniPending=false;timer.removeCallbacks(miniEntry);
+  // Leaving with Home or the recents gesture keeps the clip playing behind Madar and the other apps.
+  if(playback!=null&&!playback.closed&&playback.wanted()&&!isFinishing())try{playback.foreground();}catch(RuntimeException ignored){}}
  @Override public void onPictureInPictureModeChanged(boolean pip,android.content.res.Configuration configuration){super.onPictureInPictureModeChanged(pip,configuration);view.setUseController(!pip&&!locked);if(pip){view.hideController();showControls(false);cleanStatus.setVisibility(View.GONE);}else{showControls(true);syncPlayback();}}
  @Override protected void onPostResume(){super.onPostResume();screenResumed=true;if(miniPending){timer.removeCallbacks(miniEntry);timer.post(miniEntry);}}
  @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("censorPending",censorPending);state.putLong("censorPosition",pendingCensorPosition);state.putBoolean("censorComplete",pendingCensorComplete);state.putBoolean("censorWanted",pendingCensorWanted);super.onSaveInstanceState(state);}
@@ -156,5 +167,5 @@ public class PlayerActivity extends Activity {
  @Override protected void onStop(){super.onStop();if(playback!=null)playback.unobserve(playbackObserver);if(view!=null&&!isInPictureInPictureMode())view.setPlayer(null);}
  @Override protected void onResume(){super.onResume();if(playback!=null){if(playback.closed||PlaybackSession.current!=playback){finish();return;}playback.claimScreen(screenOwner);view.setPlayer(playback.controls);playback.observe(playbackObserver);syncPlayback();if(!isInPictureInPictureMode())showControls(true);}}
  @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);miniPending=false;timer.removeCallbacks(miniEntry);setIntent(intent);try{PlayerInput next=PlayerInput.read(this,intent);if(playback!=null&&!playback.closed&&playback.input.identity.equals(next.identity)){playback.claimScreen(screenOwner);view.setPlayer(playback.controls);playback.observe(playbackObserver);syncPlayback();showControls(true);return;}}catch(Exception ignored){}recreate();}
- @Override protected void onDestroy(){if(mediaResolver!=null)mediaResolver.close();if(observedPlayer!=null&&activityListener!=null)observedPlayer.removeListener(activityListener);if(playback!=null){playback.unobserve(playbackObserver);if(isFinishing()&&playback.ownsScreen(screenOwner))playback.close();}if(equalizer!=null)equalizer.release();timer.removeCallbacksAndMessages(null);if(view!=null)view.setPlayer(null);super.onDestroy();}
+ @Override protected void onDestroy(){if(leaveDialog!=null&&leaveDialog.isShowing())leaveDialog.dismiss();if(mediaResolver!=null)mediaResolver.close();if(observedPlayer!=null&&activityListener!=null)observedPlayer.removeListener(activityListener);if(playback!=null){playback.unobserve(playbackObserver);if(isFinishing()&&playback.ownsScreen(screenOwner))playback.close();}if(equalizer!=null)equalizer.release();timer.removeCallbacksAndMessages(null);if(view!=null)view.setPlayer(null);super.onDestroy();}
 }
