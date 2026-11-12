@@ -6,7 +6,7 @@ const C=require('../app/src/main/assets/motion/creative.js');
 const java=fs.readFileSync(path.join(__dirname,'../app/src/main/java/com/madar/files/MotionCreative.java'),'utf8');
 const list=name=>{const m=java.match(new RegExp(name+'=Arrays\\.asList\\(([^)]*)\\)'));assert.ok(m,name);return m[1].split(',').map(x=>x.trim().replace(/"/g,''));};
 const icons=list('ICONS');
-const base=['play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat'];
+const base=['play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat','stamp'];
 for(const id of [...base,...C.ILLUSTRATIONS])assert.ok(icons.includes(id),'MotionCreative.java does not accept icon '+id);
 // Every layout creative.js composes for a vertical film stays inside the Java limits.
 const A=c=>'asset_'+c.repeat(32)+'.jpg';const shots=[{title:'مفتوحين 24 ساعة',caption:'نستقبلكم ليل نهار.'},{title:'فطاير طازجة',caption:'فطيرة جبن وزعتر.'},{title:'شاي على الجمر',caption:'نحضره كل صباح.'},{title:'نص عام',caption:'وصف قصير.'}];

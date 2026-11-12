@@ -20,7 +20,7 @@ function validate(c){
  for(const e of c.elements){if(!kinds.includes(e.kind)||!motions.includes(e.motion)||!colors.includes(e.color)||!num(e.x,0,.96)||!num(e.y,0,.96)||!num(e.w,.02,1)||!num(e.h,.005,1)||e.x+e.w>1.001||e.y+e.h>1.001||!num(e.delay,0,.7))throw Error('عنصر خارج حدود المشهد');
   if(['text','metric'].includes(e.kind)&&(typeof e.text!=='string'||!e.text.trim()||e.text.length>100||!num(e.size,20,110)))throw Error('نص المشهد غير صالح');
   if(['image','device'].includes(e.kind)&&!/^asset_[a-f0-9]{32}\.jpg$/.test(e.asset||''))throw Error('صورة التكوين غير صالحة');
-  if(e.kind==='icon'&&!['play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat',...ILLUSTRATIONS].includes(e.icon))throw Error('رمز غير صالح');
+  if(e.kind==='icon'&&!['play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat','stamp',...ILLUSTRATIONS].includes(e.icon))throw Error('رمز غير صالح');
  }
  // Text blocks cannot collide with each other; decorative layers may deliberately overlap.
  const text=c.elements.filter(e=>['text','metric'].includes(e.kind));for(let i=0;i<text.length;i++)for(let j=i+1;j<text.length;j++){const a=text[i],b=text[j];if(Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)>.008&&Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)>.008)throw Error('النصوص متداخلة');}
@@ -31,7 +31,7 @@ function safeText(e){return e.y>=.085&&e.y+e.h<=.785&&e.x>=.065&&e.x+e.w<=(e.y+e
 function validateDesign(c,shot,aspect='9:16'){
  validate(c);const ratio=aspect==='16:9'?9/16:aspect==='1:1'?1:16/9;
  const meaningful=c.elements.filter(e=>['text','metric','icon','image','device'].includes(e.kind));
- if(!c.elements.some(e=>['icon','image','device'].includes(e.kind)&&e.w*e.h>=.025))throw Error('Give the topic a visible purposeful illustration');
+ if(!c.elements.some(e=>['icon','image','device'].includes(e.kind)&&e.w*e.h>=.025)&&c.elements.filter(e=>e.kind==='icon'&&e.icon==='stamp').length<3&&c.elements.filter(e=>e.kind==='metric').length<2)throw Error('Give the topic a visible purposeful illustration');
  for(const e of c.elements){
   if(['text','metric'].includes(e.kind)&&aspect==='9:16'&&!safeText(e))throw Error('Keep text inside the mobile safe zone: y from .09 to .78, x from .07, right edge .88 (.86 below mid-screen)');
   if(['text','metric'].includes(e.kind)){
@@ -85,6 +85,15 @@ function semanticIcon(shot){
 // Adaptive fallback uses real brief content and owned assets; geometry varies with aspect and shot.
 // The closing caption in parts: phrases are joined with « · »; one of them may be the delivery apps and one the account.
 const DELIVERY_APPS=/هنقر\s?ستيشن|هنجر\s?ستيشن|كيتا|جاهز|مرسول|تويو|ذا\s?شفز|شفز|نينجا|كريم|طلبات|مستر مندوب|شقردي|لقمة|توصيل|hungerstation|keeta|jahez|toyou|mrsool|careem|ninja|chefz/gi;
+// A caption that lists three to five short things («تجديد الإقامات · رخص العمل · رخصة بلدي») is a list scene: every item
+// gets its own row that flies in and is stamped with a check, instead of one run-on line of small text. When every
+// item ends with a price («الأساسية 500 ريال · المتقدمة 850 ريال») the rows are price cards whose numbers count up.
+function listParts(body){
+ const parts=String(body||'').split(/\s+·\s+|\s*،\s*/).map(v=>v.trim().replace(/[.·،]+$/,'')).filter(Boolean);
+ if(parts.length<3||parts.length>5||parts.some(v=>v.length>30||v.split(/\s+/).length>5))return null;
+ const prices=parts.map(v=>v.replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).match(/^(.{2,22}?)\s+(\d{1,3}(?:,\d{3})*|\d{1,6})(?:[.,]\d{1,2})?\s*(ريال|ر\.س|%|٪)$/));
+ return prices.every(Boolean)?{prices:prices.map(m=>({name:m[1].trim(),value:m[2].replace(/,/g,'')+' '+m[3].replace('٪','%')}))}:{items:parts};
+}
 function closingParts(body){
  const parts=String(body||'').split(/\s+·\s+/).map(v=>v.trim()).filter(Boolean),free=[];let apps='',social=null;
  for(const part of parts){
@@ -143,6 +152,15 @@ function compose(shot,{aspect='9:16',images=[],index=0,seed=0,logo=false,closing
    elements.push(centred(named?card.social.label:card.social.label+' '+card.social.handle,y,.045,44,delay,'muted'),...tiles(socials,y+.052,tile,.035,delay+.06));
    if(named)elements.push(centred(card.social.handle,y+.058+tile*9/16,.055,k?52:58,delay+.14));
   }else if(card.social)elements.push(...row(y,'social',card.social.label,card.social.handle,Math.min(.58,delay)));
+ }else if(!closing&&!wide&&!square&&!asset&&!logo&&shot.caption&&listParts(body)){
+  const parts=listParts(body),rows=parts.prices||parts.items,n=rows.length,top=.245,room=.535,gap=.014,rh=Math.min(.118,(room-gap*(n-1))/n),size=n>4?66:72;
+  elements=[text(title,.07,.09,.81,.135,108,0)];
+  const mid=(y,px)=>({y:y+(rh-px*1.18/1920)/2,h:px*1.6/1920});
+  rows.forEach((item,i)=>{const y=top+i*(rh+gap),d=Math.min(.62,.10+i*(.48/n)),side=i%2?'left':'right';
+   elements.push(e('shape',.07,y,.79,rh,'card',side,d));
+   if(parts.prices)elements.push(e('text',.44,mid(y,size).y,.38,mid(y,size).h,'ink',side,d,{text:item.name,size}),e('metric',.10,mid(y,n>3?70:80).y,.32,mid(y,n>3?70:80).h,'accent','scale',Math.min(.7,d+.06),{text:item.value,size:n>3?70:80}));
+   else elements.push(e('text',.21,mid(y,size).y,.61,mid(y,size).h,'ink',side,d,{text:item,size}),e('icon',.095,y+rh*.16,.085,rh*.68,'accent','scale',Math.min(.7,d+.08),{icon:'stamp'}));});
+  return validate({backdrop:'plain',layout:parts.prices?'prices':'list',elements});
  }else if(marks.length&&!closing&&!wide&&!square&&!asset&&!logo){
   // A scene that names delivery apps or platforms shows their icons side by side, each with its name under it.
   const list=marks.slice(0,3),w=list.length>2?.215:list.length>1?.30:.34,gap=list.length>2?.04:.08,total=list.length*w+(list.length-1)*gap,x0=(1-total)/2,top=.42;
@@ -458,7 +476,15 @@ function draw(ctx,p,s,time,images){
  const W=ctx.canvas.width,H=ctx.canvas.height;const palettes={paper:['#f2ece0','#263033','#9a7339','#fbf8f0','#737873'],night:['#192426','#f4eee2','#c9a76b','#243437','#adb7b1'],sand:['#ded1b9','#26373c','#815e32','#f1e7d5','#626d6a']};
  // A brand palette taken from the client's logo replaces the generic theme when present and valid.
  const hex=v=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v),brand=p.brand&&['background','ink','accent','card','muted'].every(k=>hex(p.brand[k]))?p.brand:null;
- const [background,ink,accent,card,muted]=brand?[brand.background,brand.ink,brand.accent,brand.card,brand.muted]:palettes[p.theme],palette={background,ink,accent,card,muted};const local=p.motionEnabled===false?10:time-s.start,span=s.end-s.start,progress=clamp((time-s.start)/span);ctx.save();ctx.fillStyle=background;ctx.fillRect(0,0,W,H);ctx.lineWidth=2*W/1080;
+ const base=brand?[brand.background,brand.ink,brand.accent,brand.card,brand.muted]:palettes[p.theme];
+ // «حماسي» films change colour with the cut, like a designed advert: a middle scene may stand on the accent colour or on
+ // the ink colour (same palette, roles swapped, contrast kept). The opening, the closing and the other styles keep the theme.
+ const rgb=v=>[1,3,5].map(i=>parseInt(v.slice(i,i+2),16)),lum=v=>{const [r,g,b]=rgb(v).map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;},ratio=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);},mix=(a,b,k)=>'#'+rgb(a).map((x,i)=>Math.round(x+(rgb(b)[i]-x)*k).toString(16).padStart(2,'0')).join('');
+ const at=Array.isArray(p.scenes)?p.scenes.indexOf(s):-1,block=p.motionEnabled!==false&&p.soundEffects==='energetic'&&at>0&&at<p.scenes.length-1?[0,1,0,2][at%4]:0;
+ let [background,ink,accent,card,muted]=base;
+ if(block===1){const on=ratio(base[0],base[2])>=ratio(base[1],base[2])?base[0]:base[1];if(ratio(on,base[2])>=3){background=base[2];ink=on;accent=on;card=mix(base[2],on,.16);muted=mix(base[2],on,.72);}}
+ else if(block===2&&ratio(base[1],base[0])>=4){background=base[1];ink=base[0];card=mix(base[1],base[0],.10);muted=mix(base[1],base[0],.62);if(ratio(accent,background)<2.2)accent=base[0];}
+ const palette={background,ink,accent,card,muted};const local=p.motionEnabled===false?10:time-s.start,span=s.end-s.start,progress=clamp((time-s.start)/span);ctx.save();ctx.fillStyle=background;ctx.fillRect(0,0,W,H);ctx.lineWidth=2*W/1080;
  const c=s.composition;ctx.save();ctx.globalAlpha=.12;ctx.strokeStyle=accent;
  if(c.backdrop==='grid'){for(let x=0;x<W;x+=W/10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}for(let y=0;y<H;y+=W/10){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}}
  if(c.backdrop==='orbit'||c.backdrop==='radial'){for(let i=0;i<4;i++){ctx.beginPath();ctx.ellipse(W*.5,H*.5,W*(.25+i*.12),H*(.17+i*.13),c.backdrop==='orbit'?-.45+local*.018:0,0,Math.PI*2);ctx.stroke();}}
@@ -473,10 +499,10 @@ function draw(ctx,p,s,time,images){
  // (worker.py) puts a whoosh on every cut and a hit where the headline lands, on the same clock.
  // Three styles the owner picks: «حماسي» (energetic), «متوازن» (balanced, the default) and «هادئ» (soft, the calm one).
  const level=p.motionEnabled===false||order<0?0:p.soundEffects==='energetic'?1:p.soundEffects==='soft'?0:.45,energy=level>0,head=c.elements.find(e=>e.kind==='text'&&(e.textRole==='heading'||e.text===s.title)),land=head?head.delay*Math.min(span,2)+.22:.3;
- if(energy){const q=order>0?clamp(local/(.36+.12*(1-level))):1,enter=1-(1-q)**4,lq=order<p.scenes.length-1?clamp((local-(span-.22))/.22):0,leave=lq**3,dx=(((1-enter)**2)*.2-leave*.24)*W*side*level,zoom=1+(.13*(1-enter)+.09*leave)*level,blur=(18*(1-q)**2+22*leave)*W/1080*level,hit=local-land,shake=level>.9&&hit>0&&hit<.32?W*.007*(1-hit/.32)*Math.sin(hit*95):0;
+ if(energy){const q=order>0?clamp(local/(.36+.12*(1-level))):1,enter=1-(1-q)**4,lq=order<p.scenes.length-1?clamp((local-(span-.22))/.22):0,leave=lq**3,dx=(((1-enter)**2)*.2-leave*.24)*W*side*level,zoom=1+(.13*(1-enter)+.09*leave)*level,blur=level>.9?0:(18*(1-q)**2+22*leave)*W/1080*level,hit=local-land,shake=level>.9&&hit>0&&hit<.32?W*.007*(1-hit/.32)*Math.sin(hit*95):0;
   if(blur>.4)ctx.filter=`blur(${blur.toFixed(1)}px)`;ctx.translate(W/2+dx+shake,H/2+shake*.6);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);}
  else if(p.motionEnabled!==false&&order>=0){const enter=order>0?1-(1-clamp(local/.45))**3:1,leave=order<p.scenes.length-1?clamp((local-(span-.32))/.32)**3:0,dx=((1-enter)-leave)*W*.09*side,zoom=1+.035*(1-enter)+.02*leave;ctx.translate(W/2+dx,H/2);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);}
- for(const e of c.elements){const t=local-e.delay*Math.min(span,2);if(t<0)continue;const q=clamp(t/(energy?.42:.65)),ease=1-(1-q)**3,back=energy?1+2.70158*(q-1)**3+1.70158*(q-1)**2:ease;let x=e.x*W,y=e.y*H,w=e.w*W,h=e.h*H;ctx.save();ctx.globalAlpha=p.motionEnabled===false?1:Math.min(1,ease*(energy?1.6:1))*Math.min(1,(s.end-time)/.2);if(e.motion==='rise')y+=H*(energy?.06:.035)*(1-back);if(e.motion==='left')x+=W*(energy?.14:.08)*(1-back);if(e.motion==='right')x-=W*(energy?.14:.08)*(1-back);
+ for(const e of c.elements){const t=local-e.delay*Math.min(span,2);if(t<0)continue;const q=clamp(t/(energy?.42:.65)),ease=1-(1-q)**3,back=energy?1+2.70158*(q-1)**3+1.70158*(q-1)**2:ease;let x=e.x*W,y=e.y*H,w=e.w*W,h=e.h*H;ctx.save();ctx.globalAlpha=p.motionEnabled===false?1:Math.min(1,ease*(energy?1.6:1))*Math.min(1,(s.end-time)/.2);if(e.motion==='rise')y+=H*(energy?.06:.035)*(1-back);const far=energy&&c.layout&&['shape','text'].includes(e.kind)?.14+.86*level:energy?.14:.08;if(e.motion==='left')x+=W*far*(1-back);if(e.motion==='right')x-=W*far*(1-back);
   if(energy&&e===head){const slam=1+.32*level-.32*level*back;ctx.translate(x+w/2,y+h/2);ctx.scale(slam,slam);ctx.translate(-x-w/2,-y-h/2);}
   else if(energy&&e.kind!=='line'&&e.motion!=='scale'&&['image','device','icon','metric','shape'].includes(e.kind)){const pop=.86+.14*back;ctx.translate(x+w/2,y+h/2);ctx.scale(pop,pop);ctx.translate(-x-w/2,-y-h/2);}if(p.motionEnabled!==false&&['image','device'].includes(e.kind)){ctx.translate(x+w/2,y+h/2);const push=1+progress*.035;ctx.scale(push,push);ctx.translate(-x-w/2,-y-h/2);}
  if(e.motion==='scale'){const k=.82+.18*(energy?back:ease);ctx.translate(x+w/2,y+h/2);ctx.scale(k,k);ctx.translate(-x-w/2,-y-h/2);}const color=palette[e.color];if(p.motionEnabled!==false&&['image','device','icon'].includes(e.kind))y+=Math.sin(local*1.1+e.x*4)*H*.004;
@@ -484,13 +510,24 @@ function draw(ctx,p,s,time,images){
  if(e.kind==='shape')rounded(ctx,x,y,w,h,24*W/1080,color);
  if(e.kind==='line'){ctx.strokeStyle=color;ctx.lineWidth=4*W/1080;ctx.beginPath();ctx.moveTo(x,y+h/2);ctx.lineTo(x+w*(e.motion==='draw'?ease:1),y+h/2);ctx.stroke();}
  if(e.kind==='icon'&&p.motionEnabled!==false&&order===p.scenes.length-1&&order>0){const pulse=1+.045*Math.sin(local*3.2);ctx.translate(x+w/2,y+h/2);ctx.scale(pulse,pulse);ctx.translate(-x-w/2,-y-h/2);}
- if(e.kind==='icon'){if(ILLUSTRATIONS.includes(e.icon))illustration(ctx,e.icon,x,y,w,h,palette,local);else icon(ctx,e.icon,x,y,w,h,color);}
+ if(e.kind==='icon'&&e.icon==='stamp'){/* A filled badge with a check: the row is done. */const r=Math.min(w,h)/2,cx=x+w/2,cy=y+h/2;ctx.fillStyle=accent;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=ratio(background,accent)>=ratio(ink,accent)?background:ink;ctx.lineWidth=r*.26;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(cx-r*.42,cy+r*.02);ctx.lineTo(cx-r*.1,cy+r*.34);ctx.lineTo(cx+r*.46,cy-r*.3);ctx.stroke();}
+ else if(e.kind==='icon'){if(ILLUSTRATIONS.includes(e.icon))illustration(ctx,e.icon,x,y,w,h,palette,local);else icon(ctx,e.icon,x,y,w,h,color);}
  if(['image','device'].includes(e.kind)){const img=images[e.asset];if(img){const device=e.kind==='device',pad=device?Math.max(7,W*.009):0,bleed=e.w>=.99,radius=bleed?0:24*W/1080,contain=device||e.fit==='contain';if(!contain||device)rounded(ctx,x,y,w,h,device?w*.10:radius,device?ink:card);ctx.save();rounded(ctx,x+pad,y+pad,w-pad*2,h-pad*2,device?w*.075:Math.max(0,radius-4));ctx.clip();const bw=w-pad*2,bh=h-pad*2,crop=Math.max((bw/bh)/(img.width/img.height),(img.width/img.height)/(bw/bh)),fit=contain||crop>1.1;if(fit&&!contain){/* Cover would cut away too much (a menu or a wide shot): soft backdrop, whole picture on top. */const back=Math.max(bw/img.width,bh/img.height);ctx.filter='blur('+Math.round(W*.02)+'px) brightness(.55)';ctx.drawImage(img,x+(w-img.width*back)/2,y+(h-img.height*back)/2,img.width*back,img.height*back);ctx.filter='none';}const scale=(fit?Math.min:Math.max)(bw/img.width,bh/img.height);ctx.drawImage(img,x+(w-img.width*scale)/2,y+(h-img.height*scale)/2,img.width*scale,img.height*scale);ctx.restore();if(device){ctx.fillStyle=ink;rounded(ctx,x+w*.36,y+pad,w*.28,pad*.75,pad,ink);}}}
  ctx.restore();}
  ctx.restore();
  ctx.filter='none';
  // The cut's flash, brightest on the first frames of the new scene.
- if(level>.9&&order>0&&local<.16){ctx.save();ctx.globalAlpha=.25*(1-local/.16);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);ctx.restore();}
+ // «حماسي»: the closing headline lands with a burst of paper in the film's colours.
+ if(level>.9&&order===p.scenes.length-1&&order>0&&local>land&&local<land+2.2){const u=local-land;let seed=9173;const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};ctx.save();
+  for(let i=0;i<64;i++){const a=rnd()*Math.PI*2,v=(.35+rnd()*.75)*W,rot=rnd()*6.28,size=(.022+rnd()*.026)*W,k=1-Math.pow(2,-9*Math.min(1,u/1.1));ctx.globalAlpha=clamp(1.5-u/1.3);ctx.fillStyle=[accent,ink,muted,accent][i%4];ctx.save();ctx.translate(W/2+Math.cos(a)*v*k,H*.36+Math.sin(a)*v*k+u*u*H*.11);ctx.rotate(rot+u*5);ctx.fillRect(-size/2,-size/2,size,size*.62);ctx.restore();}
+  ctx.restore();}
+ // «حماسي»: every cut is a two-colour diagonal wipe that closes over the leaving scene and opens on the next one
+ // (the bands cover the whole frame on the cut itself), on the same clock as the whoosh.
+ if(level>.9&&order>=0){const out=order<p.scenes.length-1?clamp((local-(span-.2))/.2):0,inn=order>0?clamp(local/.24):1;
+  if(out>0||inn<1){const dir=out>0?side:-side,k=out>0?out*out*(3-2*out):1+inn*inn*(3-2*inn),lean=H*.16,reach=W+lean*2+W*.2,lead=-lean-W*.1+reach*(k>1?k-1:k),band=(x0,x1,color)=>{ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(x0+lean,0);ctx.lineTo(x1+lean,0);ctx.lineTo(x1-lean,H);ctx.lineTo(x0-lean,H);ctx.closePath();ctx.fill();};
+   ctx.save();if(dir<0){ctx.translate(W,0);ctx.scale(-1,1);}
+   if(k<=1){band(-W,lead,base[2]);band(lead-W*.07,lead,base[1]);}else{band(lead,W*2,base[2]);band(lead,lead+W*.07,base[1]);}
+   ctx.restore();}}
  ctx.fillStyle=accent;ctx.fillRect(W*.06,H*.955,W*.88*progress,Math.max(2,H*.002));
  ctx.restore();
 }

@@ -171,7 +171,7 @@ def craft_issues(copy):
   words=len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('title','')))
   if words>6:issues.append({'scene':i+1,'quality':'headline','fix':'Headline has '+str(words)+' words; make it 2-5 strong words readable at a glance.'})
   cap=len(re.findall(r'[\u0621-\u064aA-Za-z0-9]+',shot.get('caption','')))
-  if cap>14:issues.append({'scene':i+1,'quality':'caption','fix':'Caption has '+str(cap)+' words; one sentence of at most 12 words with one concrete detail.'})
+  if cap>14 and str(shot.get('caption','')).count(' · ')<2:issues.append({'scene':i+1,'quality':'caption','fix':'Caption has '+str(cap)+' words; one sentence of at most 12 words with one concrete detail.'})
   joined=key(' '.join(scene_texts(shot)))
   hits=[c for c in CLICHES if c in joined]
   if hits:issues.append({'scene':i+1,'quality':'cliche','fix':'Replace the empty cliché '+repr(hits[0])+' with a concrete fact from the brief, page or images (a menu item, price, place detail).'})
@@ -729,7 +729,8 @@ def tidy_copy(scenes,c=None):
   # A caption is read in one glance: at most 14 words, cut at a clause and never on a dangling word.
  for i,z in enumerate(scenes[:-1]):
   cap=str(z.get('caption',''))
-  if len(cap.split())>12:
+  # A list caption («… · … · …») is shown as rows, one per item, so its length is not one sentence's.
+  if len(cap.split())>12 and cap.count(' · ')<2:
    first=re.split(r'(?<=[.!؟،,;])\s*',cap)[0].strip(' .،,')
    words=first.split()
    # A relative clause is where a long sentence can stop («… الطازجتين | اللتين ستشعر بهما في كل لقمه»).

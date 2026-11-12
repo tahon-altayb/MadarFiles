@@ -773,7 +773,7 @@ if not chunks:
   with open('director-calls.log','a') as trace:trace.write(json.dumps({'call':'app icons','found':sorted(brand_assets),'missed':missed,'seconds':round(time.time()-began,1)},ensure_ascii=False)+'\n')
 scenes=[];prior=[]
 used_art=[]
-BASIC_ICONS={'play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat'}
+BASIC_ICONS={'play','file','audio','check','spark','arrow','grain','book','shield','image','phone','chat','stamp'}
 for i,shot in enumerate(story['scenes']):
  stage('design',24+i*3,i+1,len(story['scenes']))
  prompt={'shot':shot,'scene_index':i,'aspect':story.get('aspect','9:16'),'available_assets':([] if shot['reference']==-1 else [images[shot['reference']]]),'previous_shots':prior,'concept':story.get('concept','')}
