@@ -315,8 +315,14 @@ def decode_source(source, seconds=None):
     command = ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', 'source.m4a', '-map', '0:a:0', '-vn']
     if type(seconds) in (int, float) and 0 < seconds <= 24 * 3600:
         command += ['-t', f'{seconds:.6f}']
-    # A mono clip fills both channels at full level, as the phone's own decoder did (ffmpeg's default lowers it 3 dB).
-    command += (['-af', 'pan=stereo|c0=c0|c1=c0'] if channels == 1 else ['-ac', '2'])
+    # The encoder's priming before the clip's time 0 is dropped to the sample, as the phone's decoder drops it
+    # (kept, the sound came 21 ms late against the picture). A mono clip fills both channels at full level, as the
+    # phone's own decoder did (ffmpeg's default lowers it 3 dB).
+    lead = source.get('lead_seconds', 0)
+    if type(lead) not in (int, float) or not 0 <= lead <= 2:
+        raise ValueError('MUSIC_SOURCE_MANIFEST')
+    trim = [f'aresample={RATE}', f'atrim=start_sample={round(lead * RATE)}', 'asetpts=PTS-STARTPTS'] if lead > 0 else []
+    command += ['-af', ','.join(trim + (['pan=stereo|c0=c0|c1=c0'] if channels == 1 else ['aformat=channel_layouts=stereo']))]
     command += ['-ar', str(RATE), '-f', 's16le', '-acodec', 'pcm_s16le', 'input.pcm']
     done = subprocess.run(command, capture_output=True, timeout=900)
     Path('source.m4a').unlink(missing_ok=True)

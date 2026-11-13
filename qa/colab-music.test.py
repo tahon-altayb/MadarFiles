@@ -413,6 +413,19 @@ class CompressedSourceTest(unittest.TestCase):
                 os.chdir(directory);frames=w.decode_source(self._parts(directory,clip.read_bytes()),1.5)
                 self.assertTrue(abs(frames-int(1.5*w.RATE))<=1100,frames)
             finally:os.chdir(previous)
+    def test_the_priming_before_time_zero_is_dropped(self):
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            previous=os.getcwd();clip=self._aac(directory,2)
+            try:
+                os.chdir(directory);data=clip.read_bytes()
+                whole=w.decode_source(self._parts(directory,data));full=np.fromfile('input.pcm',dtype='<i2').reshape(-1,2)
+                source=self._parts(directory,data);source['lead_seconds']=0.5;cut=w.decode_source(source);part=np.fromfile('input.pcm',dtype='<i2').reshape(-1,2)
+                self.assertEqual(cut,whole-int(0.5*w.RATE));self.assertTrue(np.abs(part.astype(int)-full[int(0.5*w.RATE):].astype(int)).max()<=1)
+                for lead in (-1,3,'x'):
+                    source=self._parts(directory,data);source['lead_seconds']=lead
+                    with self.assertRaisesRegex(ValueError,'MUSIC_SOURCE_MANIFEST'):w.decode_source(source)
+            finally:os.chdir(previous)
     def test_what_is_not_the_announced_audio_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             previous=os.getcwd();clip=self._aac(directory,2)

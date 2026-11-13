@@ -64,7 +64,10 @@ public class AudioDecodeTest {
   File source=asset("sample.mp4");AudioPipeline.Compressed compact=null;AudioPipeline.Decoded original=null,copied=null;
   try{compact=AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean());assertNotNull("AAC audio is carried as it is",compact);
    assertTrue(compact.file.length()>500&&compact.file.length()<source.length());assertTrue(compact.offsetUs>=0&&compact.durationUs>0);
-   original=AudioPipeline.decode(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});copied=AudioPipeline.decode(context,compact.file,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
+   original=AudioPipeline.decode(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
+   // The copy carries the encoder's priming from its time 0; dropped by leadUs (as Colab drops it), it is the clip's sound.
+   assertTrue("the priming is announced: "+compact.leadUs,compact.leadUs>=0&&compact.leadUs<200000);
+   copied=compact.leadUs>0?AudioPipeline.decodeRange(context,compact.file,compact.leadUs,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{}):AudioPipeline.decode(context,compact.file,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
    assertEquals(original.sampleRate,copied.sampleRate);assertArrayEquals(Files.readAllBytes(original.pcm.toPath()),Files.readAllBytes(copied.pcm.toPath()));
    // A limit cuts the copy short.
    AudioPipeline.Compressed half=AudioPipeline.audioOnly(context,source,Math.max(100000,compact.durationUs/2),new AtomicBoolean());assertNotNull(half);

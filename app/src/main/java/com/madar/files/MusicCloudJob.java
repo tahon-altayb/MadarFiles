@@ -56,7 +56,7 @@ final class MusicCloudJob {
    }
   }
   StringBuilder hex=new StringBuilder();for(byte value:whole.digest())hex.append(String.format(Locale.ROOT,"%02x",value));
-  JSONObject request=new JSONObject().put("protocol",2).put("pipeline",session.pipeline).put("source",new JSONObject().put("bytes",size).put("sha256",hex.toString()).put("parts",parts));
+  JSONObject request=new JSONObject().put("protocol",2).put("pipeline",session.pipeline).put("source",new JSONObject().put("bytes",size).put("sha256",hex.toString()).put("parts",parts).put("lead_seconds",audio.leadUs/1e6));
   runtime.put(folder+"/request.json",request.toString(),"text");
   session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,size,0);
   long expected=Math.round(Math.min(endUs>0?Math.max(0,endUs-audio.offsetUs):Long.MAX_VALUE,audio.durationUs+50000)/1e6*44100);

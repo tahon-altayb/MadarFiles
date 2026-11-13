@@ -10,7 +10,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class AudioPipeline {
  static final class Decoded {File pcm;int sampleRate;long offsetUs;Decoded(File f,int r,long o){pcm=f;sampleRate=r;offsetUs=o;}}
  /** The clip's own compressed audio in a small file: where its first sample sits in the clip and how long it runs. */
- static final class Compressed {final File file;final long offsetUs,durationUs;Compressed(File f,long o,long d){file=f;offsetUs=o;durationUs=d;}}
+ /** leadUs: the encoder's priming at the start of the copy (before the clip's time 0), which the decoder on Colab must drop. */
+ static final class Compressed {final File file;final long offsetUs,durationUs,leadUs;Compressed(File f,long o,long d,long lead){file=f;offsetUs=o;durationUs=d;leadUs=lead;}}
  /**
   * Copies the clip's AAC audio, without decoding it, into a small .m4a (up to endUs): music removal on a slow tablet
   * spent a minute decoding and four minutes uploading 100 MB of decoded sound that Colab can decode itself from a
@@ -24,13 +25,15 @@ final class AudioPipeline {
    if(track<0)return null;MediaFormat format=ex.getTrackFormat(track);if(!"audio/mp4a-latm".equals(format.getString(MediaFormat.KEY_MIME)))return null;
    ex.selectTrack(track);muxer=new android.media.MediaMuxer(out.getAbsolutePath(),android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);int target=muxer.addTrack(format);muxer.start();
    int room=Math.max(262144,format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)?format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE):0);ByteBuffer buffer=ByteBuffer.allocate(room);MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
-   long first=-1,last=0,bytes=0,previous=0;
-   for(;;){ColabProbe.check(cancel);buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;long time=Math.max(0,ex.getSampleTime());if(endUs>0&&time>=endUs)break;
-    if(first<0)first=time;time=Math.max(previous,time);previous=time;last=time;
+   // Times stay as the clip has them: AAC's first packet sits before time 0 (the encoder's priming, about 21 ms), and
+   // the phone's decoder drops it by that time. The copy starts at 0, so the priming is announced as leadUs instead.
+   long first=Long.MIN_VALUE,last=0,bytes=0,previous=Long.MIN_VALUE;
+   for(;;){ColabProbe.check(cancel);buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;long time=ex.getSampleTime();if(endUs>0&&time>=endUs)break;
+    if(first==Long.MIN_VALUE)first=time;time=Math.max(previous,time);previous=time;last=time;
     info.set(0,n,time-first,(ex.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0);muxer.writeSampleData(target,buffer,info);bytes+=n;ex.advance();}
    muxer.stop();muxer.release();muxer=null;
-   if(bytes<=0||first<0||out.length()<=0||out.length()>200L*1024*1024)return null;
-   complete=true;return new Compressed(out,first,Math.max(0,last-first));
+   if(bytes<=0||first==Long.MIN_VALUE||first<-2000000||out.length()<=0||out.length()>200L*1024*1024)return null;
+   long lead=Math.max(0,-first);complete=true;return new Compressed(out,Math.max(0,first),Math.max(0,last-first-lead),lead);
   }catch(java.util.concurrent.CancellationException stopped){throw stopped;}
   catch(Exception unsupported){return null;}
   finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(!complete)out.delete();}
