@@ -59,4 +59,21 @@ public class AudioDecodeTest {
   catch(java.util.concurrent.CancellationException expected){/* stopped before a packet was read */}
   finally{source.delete();}
  }
+ /** The clip's audio copied without decoding (what goes up to Colab) is the same sound: decoded, it gives the same bytes. */
+ @Test public void theCompressedCopyCarriesTheSameAudio()throws Exception{
+  File source=asset("sample.mp4");AudioPipeline.Compressed compact=null;AudioPipeline.Decoded original=null,copied=null;
+  try{compact=AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean());assertNotNull("AAC audio is carried as it is",compact);
+   assertTrue(compact.file.length()>500&&compact.file.length()<source.length());assertTrue(compact.offsetUs>=0&&compact.durationUs>0);
+   original=AudioPipeline.decode(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});copied=AudioPipeline.decode(context,compact.file,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
+   assertEquals(original.sampleRate,copied.sampleRate);assertArrayEquals(Files.readAllBytes(original.pcm.toPath()),Files.readAllBytes(copied.pcm.toPath()));
+   // A limit cuts the copy short.
+   AudioPipeline.Compressed half=AudioPipeline.audioOnly(context,source,Math.max(100000,compact.durationUs/2),new AtomicBoolean());assertNotNull(half);
+   try{assertTrue(half.durationUs<compact.durationUs&&half.file.length()<compact.file.length());}finally{half.file.delete();}
+  }finally{source.delete();if(compact!=null)compact.file.delete();if(original!=null)original.pcm.delete();if(copied!=null)copied.pcm.delete();}
+ }
+ @Test public void aStopDuringTheCopyEndsIt()throws Exception{
+  File source=asset("sample.mp4");
+  try{AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean(true));fail("the copy went on after the stop");}
+  catch(java.util.concurrent.CancellationException expected){/* stopped */}finally{source.delete();}
+ }
 }

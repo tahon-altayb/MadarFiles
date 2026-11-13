@@ -9,6 +9,32 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 final class AudioPipeline {
  static final class Decoded {File pcm;int sampleRate;long offsetUs;Decoded(File f,int r,long o){pcm=f;sampleRate=r;offsetUs=o;}}
+ /** The clip's own compressed audio in a small file: where its first sample sits in the clip and how long it runs. */
+ static final class Compressed {final File file;final long offsetUs,durationUs;Compressed(File f,long o,long d){file=f;offsetUs=o;durationUs=d;}}
+ /**
+  * Copies the clip's AAC audio, without decoding it, into a small .m4a (up to endUs): music removal on a slow tablet
+  * spent a minute decoding and four minutes uploading 100 MB of decoded sound that Colab can decode itself from a
+  * tenth of that. Returns null when this audio cannot be carried this way (another codec, an unreadable track); the
+  * caller then decodes and uploads as before.
+  */
+ static Compressed audioOnly(Context c,File input,long endUs,AtomicBoolean cancel)throws Exception{
+  MediaExtractor ex=new MediaExtractor();android.media.MediaMuxer muxer=null;File out=File.createTempFile("madar_source_",".m4a",c.getCacheDir());boolean complete=false;
+  try{
+   ex.setDataSource(input.getAbsolutePath());int track=-1;for(int i=0;i<ex.getTrackCount();i++){String mime=ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME);if(mime!=null&&mime.startsWith("audio/")){track=i;break;}}
+   if(track<0)return null;MediaFormat format=ex.getTrackFormat(track);if(!"audio/mp4a-latm".equals(format.getString(MediaFormat.KEY_MIME)))return null;
+   ex.selectTrack(track);muxer=new android.media.MediaMuxer(out.getAbsolutePath(),android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);int target=muxer.addTrack(format);muxer.start();
+   int room=Math.max(262144,format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)?format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE):0);ByteBuffer buffer=ByteBuffer.allocate(room);MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
+   long first=-1,last=0,bytes=0,previous=0;
+   for(;;){ColabProbe.check(cancel);buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;long time=Math.max(0,ex.getSampleTime());if(endUs>0&&time>=endUs)break;
+    if(first<0)first=time;time=Math.max(previous,time);previous=time;last=time;
+    info.set(0,n,time-first,(ex.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0);muxer.writeSampleData(target,buffer,info);bytes+=n;ex.advance();}
+   muxer.stop();muxer.release();muxer=null;
+   if(bytes<=0||first<0||out.length()<=0||out.length()>200L*1024*1024)return null;
+   complete=true;return new Compressed(out,first,Math.max(0,last-first));
+  }catch(java.util.concurrent.CancellationException stopped){throw stopped;}
+  catch(Exception unsupported){return null;}
+  finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(!complete)out.delete();}
+ }
  static int track(MediaExtractor ex,String prefix){for(int i=0;i<ex.getTrackCount();i++)if(ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME).startsWith(prefix))return i;return -1;}
  static Decoded decode(Context c,File source,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{return decodeInternal(c,source,0,limitUs,false,cancel,progress);}
  static Decoded decodeRange(Context c,File source,long startUs,long endUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{

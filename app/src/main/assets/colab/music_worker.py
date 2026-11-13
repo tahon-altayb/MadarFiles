@@ -280,6 +280,52 @@ def read_wire(part, name, expected):
     return data
 
 
+def decode_source(source, seconds=None):
+    """Decodes the clip's own compressed audio (sent in parts, a tenth of the decoded size) into input.pcm at
+    44.1 kHz stereo 16-bit, exactly what the decoded packs carried, and returns its length in frames."""
+    import subprocess
+    parts = source.get('parts') if isinstance(source, dict) else None
+    if not isinstance(parts, list) or not 0 < len(parts) <= 128:
+        raise ValueError('MUSIC_SOURCE_MANIFEST')
+    digest, total = hashlib.sha256(), 0
+    with open('source.m4a', 'wb') as out:
+        for i, part in enumerate(parts):
+            size = part.get('bytes') if isinstance(part, dict) else None
+            if type(size) is not int or not 0 < size <= 4 * 1024 * 1024:
+                raise ValueError('MUSIC_SOURCE_MANIFEST')
+            path = Path(f'source_{i}.bin')
+            data = path.read_bytes() if path.is_file() and path.stat().st_size == size else b''
+            if len(data) != size or hashlib.sha256(data).hexdigest() != part.get('sha256'):
+                raise ValueError('MUSIC_SOURCE_HASH')
+            out.write(data)
+            digest.update(data)
+            total += size
+            path.unlink()
+    if total != source.get('bytes') or digest.hexdigest() != source.get('sha256'):
+        raise ValueError('MUSIC_SOURCE_HASH')
+    probe = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=channels,codec_name',
+                            '-of', 'json', 'source.m4a'], capture_output=True, text=True, timeout=60)
+    try:
+        stream = json.loads(probe.stdout)['streams'][0]
+        channels = int(stream['channels'])
+    except (ValueError, KeyError, IndexError, TypeError) as error:
+        raise ValueError('MUSIC_SOURCE_UNREADABLE') from error
+    if not 1 <= channels <= 8:
+        raise ValueError('MUSIC_SOURCE_UNREADABLE')
+    command = ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', 'source.m4a', '-map', '0:a:0', '-vn']
+    if type(seconds) in (int, float) and 0 < seconds <= 24 * 3600:
+        command += ['-t', f'{seconds:.6f}']
+    # A mono clip fills both channels at full level, as the phone's own decoder did (ffmpeg's default lowers it 3 dB).
+    command += (['-af', 'pan=stereo|c0=c0|c1=c0'] if channels == 1 else ['-ac', '2'])
+    command += ['-ar', str(RATE), '-f', 's16le', '-acodec', 'pcm_s16le', 'input.pcm']
+    done = subprocess.run(command, capture_output=True, timeout=900)
+    Path('source.m4a').unlink(missing_ok=True)
+    size = Path('input.pcm').stat().st_size if Path('input.pcm').is_file() else 0
+    if done.returncode != 0 or size < 4 or size % 4:
+        raise ValueError('MUSIC_SOURCE_DECODE')
+    return size // 4
+
+
 def write_pack(name, data):
     # Keep raw files for legacy clients; announce compressed bytes only when smaller.
     Path(name).write_bytes(data)
@@ -372,23 +418,36 @@ def run_v2(req):
     stride = 32 * RATE
     output_stride = 16 * RATE
     inputs = req.get('inputs')
-    if type(frames) is not int or frames <= 0:
-        raise ValueError('MUSIC_DURATION')
-    if not isinstance(inputs, list) or len(inputs) != (frames + stride - 1) // stride:
-        raise ValueError('MUSIC_MANIFEST')
+    compressed = req.get('source')
+    if compressed is None:
+        if type(frames) is not int or frames <= 0:
+            raise ValueError('MUSIC_DURATION')
+        if not isinstance(inputs, list) or len(inputs) != (frames + stride - 1) // stride:
+            raise ValueError('MUSIC_MANIFEST')
     pipeline = req.get('pipeline', 'voc_ft')
     if pipeline not in ('voc_ft', FX_PIPELINE):
         raise ValueError('MUSIC_PIPELINE')
     if pipeline == FX_PIPELINE: prepare_fx()
     else: prepare()
-    with open('input.pcm', 'wb') as out:
-        for i, part in enumerate(inputs):
-            expected = min(stride, frames - i * stride) * 4
-            if not isinstance(part, dict) or part.get('bytes') != expected:
-                raise ValueError('MUSIC_MANIFEST')
-            if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
-                raise ValueError('MUSIC_DISK')
-            out.write(read_wire(part, f'input_{i}.pcm', expected))
+    if compressed is not None:
+        # The phone sent the clip's own compressed audio. When it cannot be read here the job ends without a result
+        # and says so, and the phone sends the decoded audio the long way in its next job; the service stays up.
+        try:
+            frames = decode_source(compressed, req.get('seconds'))
+        except Exception as error:
+            code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', str(error)) else type(error).__name__
+            Path('input.pcm').unlink(missing_ok=True)
+            status('done', 97, extra=dict(source_failed=code))
+            return
+    else:
+        with open('input.pcm', 'wb') as out:
+            for i, part in enumerate(inputs):
+                expected = min(stride, frames - i * stride) * 4
+                if not isinstance(part, dict) or part.get('bytes') != expected:
+                    raise ValueError('MUSIC_MANIFEST')
+                if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
+                    raise ValueError('MUSIC_DISK')
+                out.write(read_wire(part, f'input_{i}.pcm', expected))
     if pipeline == FX_PIPELINE:
         return publish_fx(frames)
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))

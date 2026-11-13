@@ -92,6 +92,12 @@ final class ColabMusic {
    java.util.concurrent.FutureTask<Void> task=initializer;if(task==null||!task.isDone())return false;
    try{task.get();return false;}catch(InterruptedException stop){Thread.currentThread().interrupt();return false;}catch(java.util.concurrent.ExecutionException|java.util.concurrent.CancellationException failed){return true;}
   }
+  /** The job from the clip's own compressed audio. A SourceRejected leaves the session healthy for the decoded upload. */
+  Result runSource(AudioPipeline.Compressed audio,long endUs,MusicSeparator.Progress progress)throws Exception{
+   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.runSource(this,audio,endUs,progress);healthy=true;return result;}
+   catch(MusicCloudJob.SourceRejected rejected){healthy=true;throw rejected;}
+   catch(Exception error){diagnostic.failed(error);throw error;}
+  }
   Result run(AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
    healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,progress,live);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}

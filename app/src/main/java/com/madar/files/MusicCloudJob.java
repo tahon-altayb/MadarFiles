@@ -17,9 +17,9 @@ final class MusicCloudJob {
  }
  static ColabMusic.Result run(ColabMusic.Session session,AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
   long sourceFrames=audio.pcm.length()/4,frames=Math.round(sourceFrames*44100.0/audio.sampleRate);if(frames<=0)throw new IOException("Colab · MUSIC_DURATION");
-  ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean complete=false,cold=session.batch==0;long began=now();
+  ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean cold=session.batch==0;long began=now();
   session.awaitStorage();String folder=session.root+"_b"+(session.batch++);runtime.jupyter("PUT","api/contents/"+folder,new JSONObject().put("type","directory"),1024*1024);
-  File output=File.createTempFile("madar_cloud_vocals_",".pcm",session.context.getCacheDir());ColabMusic.Result result=new ColabMusic.Result();result.pcm=output;
+  File output=File.createTempFile("madar_cloud_vocals_",".pcm",session.context.getCacheDir());boolean uploaded=false;
   if(live!=null)LiveSeparation.attach(live,output,audio.offsetUs);
   try{
    long uploadAt=now(),wireBytes=0;JSONArray inputs=new JSONArray();diagnostic.record("UPLOAD_AUDIO");
@@ -33,15 +33,49 @@ final class MusicCloudJob {
     }
    }
    runtime.put(folder+"/request.json",new JSONObject().put("protocol",2).put("pipeline",session.pipeline).put("frames",frames).put("inputs",inputs).toString(),"text");
-   session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,wireBytes,frames);
+   session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,wireBytes,frames);uploaded=true;
+  }finally{if(!uploaded)output.delete();}
+  return collect(session,folder,new long[]{frames},0,progress,live,output,cold,began);
+ }
+ /** The job answered that it could not read the compressed audio: the caller sends the decoded audio instead, in the same session. */
+ static final class SourceRejected extends IOException {SourceRejected(String code){super("Colab · "+code);}}
+ /**
+  * The same job from the clip's own compressed audio: a few megabytes go up instead of a hundred, and Colab decodes
+  * them. The length in frames is learned from the job (it must match the clip's length within two seconds).
+  */
+ static ColabMusic.Result runSource(ColabMusic.Session session,AudioPipeline.Compressed audio,long endUs,MusicSeparator.Progress progress)throws Exception{
+  ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean cold=session.batch==0;long began=now();
+  session.awaitStorage();String folder=session.root+"_b"+(session.batch++);runtime.jupyter("PUT","api/contents/"+folder,new JSONObject().put("type","directory"),1024*1024);
+  long uploadAt=now(),size=audio.file.length();JSONArray parts=new JSONArray();java.security.MessageDigest whole=java.security.MessageDigest.getInstance("SHA-256");diagnostic.record("UPLOAD_SOURCE");
+  try(InputStream input=new BufferedInputStream(new FileInputStream(audio.file))){
+   byte[] block=new byte[3*1024*1024];long sent=0;
+   for(int index=0;sent<size;index++){ColabProbe.check(session.cancel);session.checkInitialization();int n=0;while(n<block.length){int read=input.read(block,n,block.length-n);if(read<0)break;n+=read;}
+    if(n<=0)throw new IOException("Colab · MUSIC_SOURCE_READ");byte[] data=n==block.length?block:java.util.Arrays.copyOf(block,n);whole.update(data);
+    parts.put(new JSONObject().put("bytes",n).put("sha256",ColabMusic.sha(data)));runtime.put(folder+"/source_"+index+".bin",Base64.encodeToString(data,Base64.NO_WRAP),"base64");sent+=n;
+    progress.update(17+(int)(9*sent/size),"رفع الصوت المضغوط · "+(sent/1024/1024)+" / "+Math.max(1,size/1024/1024)+" ميجا");
+   }
+  }
+  StringBuilder hex=new StringBuilder();for(byte value:whole.digest())hex.append(String.format(Locale.ROOT,"%02x",value));
+  JSONObject request=new JSONObject().put("protocol",2).put("pipeline",session.pipeline).put("source",new JSONObject().put("bytes",size).put("sha256",hex.toString()).put("parts",parts));
+  runtime.put(folder+"/request.json",request.toString(),"text");
+  session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,size,0);
+  long expected=Math.round(Math.min(endUs>0?Math.max(0,endUs-audio.offsetUs):Long.MAX_VALUE,audio.durationUs+50000)/1e6*44100);
+  return collect(session,folder,new long[]{0},expected,progress,null,File.createTempFile("madar_cloud_vocals_",".pcm",session.context.getCacheDir()),cold,began);
+ }
+ /** Waits for the job, fetches its packs as they are made and checks the whole result. total[0] is the length in frames (0: learned from the job, within two seconds of `near`). */
+ private static ColabMusic.Result collect(ColabMusic.Session session,String folder,final long[] total,final long near,MusicSeparator.Progress progress,LiveSeparation.Session live,final File output,boolean cold,long began)throws Exception{
+  ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean complete=false;ColabMusic.Result result=new ColabMusic.Result();result.pcm=output;
+  try{
    long readyAt=now();session.awaitReady();session.lastColdStartMs=cold?Math.max(0,now()-began):0;diagnostic.measure("PREPARE",now()-readyAt,0,0);
    MusicMailbox.submit(runtime,session.root,folder);diagnostic.record("MUSIC_SUBMITTED");
    final long[] fetched={0},fetchMs={0},gpuMs={0};long processAt=now();
    try(OutputStream out=new BufferedOutputStream(new FileOutputStream(output))){
     MusicMailbox.await(runtime,session.root,folder,session.cancel,diagnostic::record,state->{
      String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));
+     if(state.has("source_failed"))throw new SourceRejected(MusicStartup.workerError(state.optString("source_failed")));
      if(state.has("pack_count")){
-      schema(state,folder,frames,session.pipeline);long count=state.optLong("pack_count",-1),expected=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES;
+      if(total[0]==0){long learned=state.optLong("frames",-1);if(learned<=0||Math.abs(learned-near)>2L*44100)throw new IOException("Colab · MUSIC_SOURCE_LENGTH");total[0]=learned;diagnostic.record("SOURCE_DECODED");}
+      final long frames=total[0];schema(state,folder,frames,session.pipeline);long count=state.optLong("pack_count",-1),expected=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES;
       if(count<0||count>expected)throw new IOException("Colab · MUSIC_PACK_SCHEMA");JSONArray recent=state.optJSONArray("recent_packs");
       while(fetched[0]<count){ColabProbe.check(session.cancel);long at=now(),index=fetched[0];JSONObject meta=null;
        if(recent!=null)for(int i=0;i<recent.length();i++){JSONObject item=recent.getJSONObject(i);if(item.optLong("index",-1)==index){meta=item;break;}}
@@ -57,6 +91,7 @@ final class MusicCloudJob {
      }
     });
    }
+   final long frames=total[0];if(frames<=0)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
    diagnostic.record("FETCH_RESULT");JSONObject manifest=ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536));schema(manifest,folder,frames,session.pipeline);
    if(!"cuda".equals(manifest.optString("provider"))||manifest.optLong("completed_frames",-1)!=frames||manifest.optLong("pack_count",-1)!=fetched[0]||fetched[0]!=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES||output.length()!=frames*4)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
    session.lastProcessMs=now()-processAt;diagnostic.measure("PROCESS_FETCH",session.lastProcessMs,output.length(),frames);diagnostic.measure("FETCH",fetchMs[0],output.length(),frames);diagnostic.measure("GPU",gpuMs[0],0,frames);diagnostic.record("RESULT_VERIFIED");complete=true;return result;

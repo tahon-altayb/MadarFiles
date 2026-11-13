@@ -32,6 +32,23 @@ final class MusicExport {
   ColabMusic.Session gpu=null;AudioPipeline.Decoded decoded=null;boolean complete=false;Result result=new Result();
   try{
    gpu=MusicGpuSession.acquire(c,ColabCredentials.take(),cancel,progress,profile);gpu.startWarmup();
+   // The short way first: the clip's own compressed audio goes up and Colab decodes it. The tablet that spent a minute
+   // decoding and four minutes uploading 100 MB sends about a tenth of that and decodes nothing. Whatever this way
+   // cannot carry (another codec, a refusal by the job) takes the decoded way below, in the same session.
+   if(live==null&&fastUpload(c)){
+    AudioPipeline.Compressed compact=null;
+    try{progress.update(15,"تجهيز الصوت المضغوط للرفع");compact=AudioPipeline.audioOnly(c,input,endUs,cancel);
+     if(compact==null)gpu.diagnostic.record("SOURCE_UNSUPPORTED");
+     else{gpu.diagnostic.measure("SOURCE",0,compact.file.length(),0);ColabMusic.Result clean=gpu.runSource(compact,endUs,progress);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=compact.offsetUs;complete=true;return result;}
+    }catch(MusicCloudJob.SourceRejected rejected){gpu.diagnostic.record("SOURCE_FALLBACK");fastUploadFailed(c);}
+    catch(java.util.concurrent.CancellationException stopped){throw stopped;}
+    catch(Exception failed){
+     // Any other failure on the short way ends this attempt; unless he cancelled or the session itself could not start,
+     // the next attempts take the decoded way, so a fault here is met once and not every time.
+     if(!cancel.get()&&!gpu.warmupFailed())fastUploadFailed(c);throw failed;
+    }
+    finally{if(compact!=null)compact.file.delete();}
+   }
    long began=android.os.SystemClock.elapsedRealtime();decoded=decodeWhileStarting(c,input,endUs,cancel,progress,gpu);gpu.diagnostic.measure("DECODE",android.os.SystemClock.elapsedRealtime()-began,decoded.pcm.length(),decoded.pcm.length()/4);
    if(live!=null)live.buffer=new WatchBuffer(endUs/1e6);ColabMusic.Result clean=gpu.run(decoded,progress,live);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=decoded.offsetUs;complete=true;return result;
   }finally{if(decoded!=null)decoded.pcm.delete();if(gpu!=null){if(!complete)gpu.healthy=false;gpu.close();result.warning=gpu.warning;}}
@@ -50,5 +67,8 @@ final class MusicExport {
    throw stopped;
   }finally{finished.set(true);watcher.interrupt();}
  }
+ /** The compressed upload is used unless a job refused it in the last week (it then costs a wasted upload each time). */
+ static boolean fastUpload(Context c){return System.currentTimeMillis()>=c.getSharedPreferences("music_cloud",0).getLong("fast_upload_after",0);}
+ static void fastUploadFailed(Context c){c.getSharedPreferences("music_cloud",0).edit().putLong("fast_upload_after",System.currentTimeMillis()+7L*86400000).apply();}
  private MusicExport(){}
 }

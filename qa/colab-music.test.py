@@ -373,4 +373,79 @@ def run():
             with self.assertRaises(ValueError):w.validate_request(dict(frames=frames,chunks=[]))
 
 
+class CompressedSourceTest(unittest.TestCase):
+    """The clip's own compressed audio decoded on Colab: the same sound the phone's decoded packs carried."""
+    def _aac(self, folder, channels, seconds=3):
+        import subprocess
+        path = Path(folder)/'clip.m4a'
+        subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',f'sine=frequency=440:sample_rate=48000:duration={seconds}','-ac',str(channels),'-c:a','aac','-b:a','128k',str(path)],check=True)
+        return path
+    def _parts(self, folder, data, size=4096):
+        parts=[]
+        for i in range(0,len(data),size):
+            block=data[i:i+size];(Path(folder)/f'source_{len(parts)}.bin').write_bytes(block);parts.append(dict(bytes=len(block),sha256=hashlib.sha256(block).hexdigest()))
+        return dict(bytes=len(data),sha256=hashlib.sha256(data).hexdigest(),parts=parts)
+    def setUp(self):
+        import shutil
+        if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):self.skipTest('ffmpeg is not installed on this runner')
+    def test_stereo_and_mono_decode_to_the_wire_format(self):
+        import numpy as np, subprocess
+        for channels in (2,1):
+            with tempfile.TemporaryDirectory() as directory:
+                previous=os.getcwd();clip=self._aac(directory,channels)
+                try:
+                    os.chdir(directory);source=self._parts(directory,clip.read_bytes())
+                    frames=w.decode_source(source)
+                    pcm=np.fromfile('input.pcm',dtype='<i2').reshape(-1,2)
+                    self.assertEqual(frames,len(pcm));self.assertTrue(abs(frames-3*w.RATE)<w.RATE//10,frames)
+                    self.assertFalse(Path('source.m4a').exists());self.assertFalse(Path('source_0.bin').exists())
+                    # Both channels carry the tone at the clip's own level (a mono clip is not lowered).
+                    reference=subprocess.run(['ffmpeg','-v','error','-i',str(clip),'-ar',str(w.RATE),'-f','s16le','-'],capture_output=True,check=True).stdout
+                    native=np.frombuffer(reference,dtype='<i2').reshape(-1,channels)
+                    self.assertEqual(len(native),frames)
+                    for side in (0,1):self.assertTrue(np.abs(pcm[:,side].astype(int)-native[:,min(side,channels-1)].astype(int)).max()<=1,channels)
+                    self.assertGreater(int(np.abs(pcm).max()),2000)
+                finally:os.chdir(previous)
+    def test_a_time_limit_cuts_the_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous=os.getcwd();clip=self._aac(directory,2,seconds=4)
+            try:
+                os.chdir(directory);frames=w.decode_source(self._parts(directory,clip.read_bytes()),1.5)
+                self.assertTrue(abs(frames-int(1.5*w.RATE))<=1100,frames)
+            finally:os.chdir(previous)
+    def test_what_is_not_the_announced_audio_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous=os.getcwd();clip=self._aac(directory,2)
+            try:
+                os.chdir(directory);data=clip.read_bytes()
+                source=self._parts(directory,data);source['parts'][0]['sha256']='0'*64
+                with self.assertRaisesRegex(ValueError,'MUSIC_SOURCE_HASH'):w.decode_source(source)
+                source=self._parts(directory,data);source['sha256']='0'*64
+                with self.assertRaisesRegex(ValueError,'MUSIC_SOURCE_HASH'):w.decode_source(source)
+                with self.assertRaisesRegex(ValueError,'MUSIC_SOURCE_MANIFEST'):w.decode_source(dict(bytes=1,sha256='0'*64,parts=[]))
+                with self.assertRaisesRegex(ValueError,'MUSIC_SOURCE_MANIFEST'):w.decode_source('source.m4a')
+                junk=os.urandom(5000)
+                with self.assertRaisesRegex(ValueError,'MUSIC_SOURCE_(UNREADABLE|DECODE)'):w.decode_source(self._parts(directory,junk))
+            finally:os.chdir(previous)
+    def test_an_unreadable_source_ends_the_job_softly_and_a_readable_one_reaches_the_model(self):
+        import numpy as np
+        class Engine:
+            def process(self,sample_rate,samples):
+                return SimpleNamespace(sample_rate=sample_rate,stems=[SimpleNamespace(data=samples*.5),SimpleNamespace(data=samples*.5)])
+        with tempfile.TemporaryDirectory() as directory:
+            previous=os.getcwd();clip=self._aac(directory,2);saved=(w.ENGINE,w.GPU_VERIFIED,w._PROTOCOL,w.prepare)
+            try:
+                job=Path(directory)/'madar_job_b0';job.mkdir();os.chdir(job);w._PROTOCOL=2;w.ENGINE=Engine();w.prepare=lambda:None
+                w.run_v2(dict(protocol=2,source=self._parts(job,os.urandom(4000))))
+                state=json.loads(Path('progress.json').read_text());self.assertEqual(state['stage'],'done');self.assertRegex(state['source_failed'],'MUSIC_SOURCE_(UNREADABLE|DECODE)')
+                self.assertFalse(Path('result.json').exists());self.assertFalse(Path('input.pcm').exists())
+                Path('progress.json').unlink()
+                w.run_v2(dict(protocol=2,source=self._parts(job,clip.read_bytes())))
+                result=json.loads(Path('result.json').read_text());frames=result['frames']
+                self.assertTrue(abs(frames-3*w.RATE)<w.RATE//10);self.assertEqual(result['completed_frames'],frames);self.assertEqual(result['pack_count'],(frames+16*w.RATE-1)//(16*w.RATE))
+                self.assertNotIn('source_failed',json.loads(Path('progress.json').read_text()))
+            finally:
+                w.ENGINE,w.GPU_VERIFIED,w._PROTOCOL,w.prepare=saved;os.chdir(previous)
+
+
 if __name__=='__main__':unittest.main()
