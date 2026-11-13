@@ -16,7 +16,7 @@ public class ColabRefusalTest {
   assertEquals("Colab · HTTP_401",new ColabRuntime.HttpFailure(401,null).getMessage());assertEquals(403,new ColabRuntime.HttpFailure(403,null,"").status);
  }
  @Test public void theReportKeepsOnlyKnownReasonWords(){
-  for(String code:new String[]{"HTTP_403","GOOGLE_USER_PROJECT_DENIED","GOOGLE_SERVICE_DISABLED","DECODE_STOPPED_EARLY"})assertTrue(code,ColabDiagnostics.safe(code));
+  for(String code:new String[]{"HTTP_403","GOOGLE_USER_PROJECT_DENIED","GOOGLE_SERVICE_DISABLED","DECODE_STOPPED_EARLY","RUNTIME_STEP_CLEANUP","RUNTIME_STEP_SPECS","RUNTIME_STEP_REQUEST","RUNTIME_STEP_RESUME"})assertTrue(code,ColabDiagnostics.safe(code));
   for(String code:new String[]{"GOOGLE_SECRET","API","GOOGLE_","TOKEN"})assertFalse(code,ColabDiagnostics.safe(code));
   assertEquals("",ColabProbe.reasonAdvice("SOMETHING_NEW"));assertEquals("",ColabProbe.reasonAdvice(null));assertFalse(ColabProbe.reasonAdvice("SERVICE_DISABLED").isEmpty());
  }
