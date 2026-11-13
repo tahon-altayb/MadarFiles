@@ -51,16 +51,26 @@ final class ColabProbe {
   // Only recognized machine reasons are used; server messages may echo credentials.
   String reason="";JSONObject error=body==null?null:body.optJSONObject("error");JSONArray details=error==null?null:error.optJSONArray("details");
   if(details!=null)for(int i=0;i<Math.min(20,details.length());i++){JSONObject item=details.optJSONObject(i);if(item==null)continue;String value=item.optString("reason");if(value.matches("SERVICE_DISABLED|SERVICE_NOT_VISIBLE|ACCESS_TOKEN_SCOPE_INSUFFICIENT|USER_PROJECT_DENIED|CONSUMER_INVALID")){reason=value;break;}}
-  String message;
-  switch(reason){
-   case "SERVICE_DISABLED":message="فعّل Colab API في المشروع المحدد ثم أعد الفحص";break;
-   case "SERVICE_NOT_VISIBLE":message="المشروع غير مصرح له بخدمة Colab؛ راجع المشروع الذي حصل على الموافقة";break;
-   case "ACCESS_TOKEN_SCOPE_INSUFFICIENT":message="لم تُمنح صلاحية Colab للحساب؛ أعد الاتصال وراجع شاشة الموافقة";break;
-   case "USER_PROJECT_DENIED":message="الحساب لا يملك صلاحية استخدام خدمات المشروع المحدد؛ اختر حساب المشروع";break;
-   case "CONSUMER_INVALID":message="معرّف المشروع أو إعداد استهلاك الخدمة غير صالح";break;
-   default:message=status==401?"انتهى تصريح الدخول؛ اضغط اتصال مجددًا":status==403?"رفضت Google الوصول؛ تحقق من حساب الاختبار والمشروع الموافق عليه وصلاحية Colab":status==429?"وصل Colab إلى حد الطلبات؛ انتظر ثم أعد الفحص":status>=500?"خدمة Colab غير متاحة مؤقتًا؛ أعد الفحص لاحقًا":"تعذر فحص Colab؛ راجع إعداد المشروع";
-  }
+  String message=reasonAdvice(reason);
+  if(message.isEmpty())message=status==401?"انتهى تصريح الدخول؛ اضغط اتصال مجددًا":status==403?"رفضت Google الوصول؛ تحقق من حساب الاختبار والمشروع الموافق عليه وصلاحية Colab":status==429?"وصل Colab إلى حد الطلبات؛ انتظر ثم أعد الفحص":status>=500?"خدمة Colab غير متاحة مؤقتًا؛ أعد الفحص لاحقًا":"تعذر فحص Colab؛ راجع إعداد المشروع";
   return new Failure(status,message+" ("+status+(reason.isEmpty()?"":" · "+reason)+")");
+ }
+ /** What to do about a refusal Google explained (its ErrorInfo reason); "" when the reason is not one of the known ones. */
+ static String reasonAdvice(String reason){
+  switch(reason==null?"":reason){
+   case "SERVICE_DISABLED":return "فعّل Colab API في المشروع المحدد ثم أعد الفحص";
+   case "SERVICE_NOT_VISIBLE":return "المشروع غير مصرح له بخدمة Colab؛ راجع المشروع الذي حصل على الموافقة";
+   case "ACCESS_TOKEN_SCOPE_INSUFFICIENT":return "لم تُمنح صلاحية Colab للحساب؛ أعد الاتصال وراجع شاشة الموافقة";
+   case "USER_PROJECT_DENIED":return "الحساب لا يملك صلاحية استخدام خدمات المشروع المحدد؛ اختر حساب المشروع";
+   case "CONSUMER_INVALID":return "معرّف المشروع أو إعداد استهلاك الخدمة غير صالح";
+   default:return "";
+  }
+ }
+ /** The known reason in a Google error body ("" when it gives none of them). */
+ static String knownReason(JSONObject error){
+  JSONArray details=error==null?null:error.optJSONArray("details");
+  if(details!=null)for(int i=0;i<Math.min(20,details.length());i++){JSONObject item=details.optJSONObject(i);if(item==null)continue;String value=item.optString("reason");if(value.matches("SERVICE_DISABLED|SERVICE_NOT_VISIBLE|ACCESS_TOKEN_SCOPE_INSUFFICIENT|USER_PROJECT_DENIED|CONSUMER_INVALID"))return value;}
+  return "";
  }
  static long retryDelay(int status,int attempt,String retryAfter){
   if(attempt>=2||!(status==408||status==429||status>=500&&status<=599||status==0))return -1;

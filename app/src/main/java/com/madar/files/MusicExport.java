@@ -32,9 +32,23 @@ final class MusicExport {
   ColabMusic.Session gpu=null;AudioPipeline.Decoded decoded=null;boolean complete=false;Result result=new Result();
   try{
    gpu=MusicGpuSession.acquire(c,ColabCredentials.take(),cancel,progress,profile);gpu.startWarmup();
-   long began=android.os.SystemClock.elapsedRealtime();decoded=AudioPipeline.decode(c,input,endUs,cancel,progress);gpu.diagnostic.measure("DECODE",android.os.SystemClock.elapsedRealtime()-began,decoded.pcm.length(),decoded.pcm.length()/4);
+   long began=android.os.SystemClock.elapsedRealtime();decoded=decodeWhileStarting(c,input,endUs,cancel,progress,gpu);gpu.diagnostic.measure("DECODE",android.os.SystemClock.elapsedRealtime()-began,decoded.pcm.length(),decoded.pcm.length()/4);
    if(live!=null)live.buffer=new WatchBuffer(endUs/1e6);ColabMusic.Result clean=gpu.run(decoded,progress,live);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=decoded.offsetUs;complete=true;return result;
   }finally{if(decoded!=null)decoded.pcm.delete();if(gpu!=null){if(!complete)gpu.healthy=false;gpu.close();result.warning=gpu.warning;}}
+ }
+ /**
+  * Decodes the audio while the Colab session starts, and stops as soon as the session cannot start: a tablet decoded
+  * for 82 s before showing a refusal Google had given in the second second.
+  */
+ static AudioPipeline.Decoded decodeWhileStarting(Context c,File input,long endUs,AtomicBoolean cancel,MusicSeparator.Progress progress,ColabMusic.Session gpu)throws Exception{
+  final AtomicBoolean halt=new AtomicBoolean(),finished=new AtomicBoolean();
+  Thread watcher=new Thread(()->{try{while(!finished.get()){if(cancel.get()||gpu.warmupFailed()){halt.set(true);return;}Thread.sleep(150);}}catch(InterruptedException ignored){}},"madar-decode-watch");watcher.setDaemon(true);watcher.start();
+  try{return AudioPipeline.decode(c,input,endUs,halt,progress);}
+  catch(java.util.concurrent.CancellationException stopped){
+   // The session's own failure is the answer (thrown by the check); otherwise he cancelled.
+   if(!cancel.get()&&gpu.warmupFailed()){gpu.diagnostic.record("DECODE_STOPPED_EARLY");gpu.checkInitialization();}
+   throw stopped;
+  }finally{finished.set(true);watcher.interrupt();}
  }
  private MusicExport(){}
 }

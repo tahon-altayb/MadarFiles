@@ -87,6 +87,11 @@ final class ColabMusic {
    ColabProbe.check(cancel);if(initializer.isDone())awaitReady();
   }
   void checkInitialization()throws Exception{if(initializer!=null&&initializer.isDone())awaitReady();}
+  /** True once the session's start has failed (Google refused the account, no GPU): nothing sent to it can succeed. */
+  synchronized boolean warmupFailed(){
+   java.util.concurrent.FutureTask<Void> task=initializer;if(task==null||!task.isDone())return false;
+   try{task.get();return false;}catch(InterruptedException stop){Thread.currentThread().interrupt();return false;}catch(java.util.concurrent.ExecutionException|java.util.concurrent.CancellationException failed){return true;}
+  }
   Result run(AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
    healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,progress,live);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}

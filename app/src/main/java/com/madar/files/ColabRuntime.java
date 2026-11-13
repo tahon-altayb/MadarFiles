@@ -20,7 +20,23 @@ final class ColabRuntime implements AutoCloseable {
  private String runtime="",proxyToken="";private HttpUrl base;private long refreshAt;
  static final class NetworkFailure extends IOException {final String code;NetworkFailure(IOException e){super("Colab · "+(e instanceof javax.net.ssl.SSLException?"IO_TLS":e instanceof java.net.UnknownHostException?"IO_DNS":e instanceof java.net.SocketTimeoutException?"IO_TIMEOUT":"IO_NETWORK"));code=getMessage().substring(8);}}
  static final class ProtocolFailure extends IOException {ProtocolFailure(String message){super(message);}}
- static final class HttpFailure extends IOException {final int status;final ColabAllocation.Failure allocation;HttpFailure(int n){this(n,null);}HttpFailure(int n,ColabAllocation.Failure failure){super("Colab · HTTP_"+n);status=n;allocation=failure;}}
+ static final class HttpFailure extends IOException {
+  final int status;final ColabAllocation.Failure allocation;
+  /** null for a refusal of the session itself (its files, its kernel); otherwise Google's reason for refusing the account or project ("" when it gave none). */
+  final String denied;
+  HttpFailure(int n){this(n,null,null);}HttpFailure(int n,ColabAllocation.Failure failure){this(n,failure,null);}
+  HttpFailure(int n,ColabAllocation.Failure failure,String reason){super("Colab · HTTP_"+n);status=n;allocation=failure;denied=reason;}
+  /**
+   * Google refusing the account says what to do about it: a family tablet signed in with an account that is not on the
+   * approved project showed only «HTTP_403» after 82 s of decoding. The code stays first for the diagnostic report.
+   */
+  @Override public String getMessage(){
+   if(denied==null||status!=403)return super.getMessage();
+   String advice=ColabProbe.reasonAdvice(denied);
+   if(advice.isEmpty())advice="رفضت Google طلب جلسة Colab لهذا الحساب. الحساب المسجّل على هذا الجهاز لازم تكون له صلاحية على مشروع Google Cloud المكتوب في «إعدادات Colab». افتح الإعدادات، تأكد من معرّف المشروع، ثم اضغط «اتصال» واختر حساب المشروع (أو أضف هذا الحساب إلى المشروع)";
+   return super.getMessage()+(denied.isEmpty()?"":" · GOOGLE_"+denied)+"\n"+advice;
+  }
+ }
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop){this(c,g,stop,null);}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t){this(c,g,stop,t,null);}
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t,GrantRenewal renewal){context=c;grant=g;cancel=stop;transport=t;grantRenewal=renewal;}
@@ -63,7 +79,12 @@ final class ColabRuntime implements AutoCloseable {
     if(Arrays.asList(400,403,412,429).contains(response.code())&&method.equals("POST")&&response.request().url().host().equals("colaboratory.googleapis.com")&&response.request().url().encodedPath().equals("/v1beta/runtimes")){
      try{JSONObject error=boundedError(response.body(),stop).optJSONObject("error");if(error!=null)allocation=ColabAllocation.failure(error,response.code());}catch(IOException|JSONException ignored){}
     }
-    throw new HttpFailure(response.code(),allocation);
+    // Why Google refused the account or the project (never the body itself: only one of the known reason words).
+    String denied=null;
+    if(allocation==null&&response.code()==403&&response.request().url().host().equals("colaboratory.googleapis.com")){
+     denied="";try{denied=ColabProbe.knownReason(boundedError(response.body(),stop).optJSONObject("error"));}catch(IOException|JSONException ignored){}
+    }
+    throw new HttpFailure(response.code(),allocation,denied);
    }if(response.body()==null)return new JSONObject();
    try(InputStream in=response.body().byteStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
     byte[] bytes=new byte[8192];int n;while((n=in.read(bytes))!=-1){ColabProbe.check(stop);if(out.size()+n>maximum)throw new ProtocolFailure("Colab · RESPONSE_TOO_LARGE");out.write(bytes,0,n);}
