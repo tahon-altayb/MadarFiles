@@ -249,3 +249,13 @@ body:has(.overlay:not([hidden])) .agentFab{display:none}
 main{padding-bottom:96px}
 /* The Colab button keeps the page's side margins like the other buttons. */
 #colabConnect{display:block;width:calc(100% - 36px);margin:14px auto 4px}
+
+/* The quality orbit turns into place (the widget's «لصق وتحميل» lands here); each choice stays upright while the ring turns. */
+@media (prefers-reduced-motion:no-preference){
+ .qualityOrbit{animation:orbitTurn .95s cubic-bezier(.2,.8,.2,1) both}
+ .qualityOrbit button{transform-origin:0 0;animation:orbitUpright .95s cubic-bezier(.2,.8,.2,1) both}
+ @keyframes orbitTurn{from{rotate:-160deg;opacity:.15;scale:.84}to{rotate:0deg;opacity:1;scale:1}}
+ @keyframes orbitUpright{from{rotate:160deg}to{rotate:0deg}}
+}
+
+#widgetsOpen{display:block;width:calc(100% - 36px);margin:8px auto 4px}

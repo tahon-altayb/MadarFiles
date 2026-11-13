@@ -42,11 +42,25 @@ public class MainActivity extends Activity {
     private JSONArray collectionNames=new JSONArray();
     private String requestedKind;private volatile boolean reviewTranslating;private final java.util.concurrent.atomic.AtomicBoolean reviewCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private boolean ready;
+    /** What a widget or an icon shortcut asked for, kept until the page is ready and the window has focus (the clipboard is readable only then). */
+    private JSONObject widgetRequest;
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);widgetIntent();}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)deliverWidget();}
+    private void widgetIntent(){
+        Intent intent=getIntent();if(intent==null||!MadarWidgets.ACTION.equals(intent.getAction()))return;
+        try{widgetRequest=MadarWidgets.request(intent);}catch(JSONException e){widgetRequest=null;}
+        intent.setAction(Intent.ACTION_MAIN);deliverWidget();
+    }
+    private void deliverWidget(){
+        if(widgetRequest==null||!ready||!hasWindowFocus())return;
+        JSONObject request=widgetRequest;widgetRequest=null;
+        try{if("paste".equals(request.optString("act")))request.put("url",MadarWidgets.clipboardLink(this));send(request);}catch(JSONException ignored){}
+    }
     private boolean receiverRegistered;
     private final BroadcastReceiver updates=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){String value=i.getStringExtra("event");if(value!=null)try{send(new JSONObject(value));}catch(JSONException ignored){}}};
     static String seconds(long began){return String.format(java.util.Locale.US,"%.1f",(android.os.SystemClock.elapsedRealtime()-began)/1000.0);}
     @Override public void onCreate(Bundle saved){
-        super.onCreate(saved);if(saved!=null)pendingMotion=saved.getString("pendingMotion","");if(saved!=null&&saved.containsKey("pendingGenerate"))try{pendingGenerate=new JSONObject(saved.getString("pendingGenerate"));}catch(JSONException ignored){}if(saved!=null&&saved.containsKey("pendingDrive"))try{pendingDrive=new JSONObject(saved.getString("pendingDrive"));}catch(Exception ignored){}if(saved!=null&&saved.containsKey("pendingColab"))try{pendingColab=new JSONObject(saved.getString("pendingColab"));pendingColabSource=saved.getString("pendingColabSource");working=true;}catch(Exception ignored){}
+        super.onCreate(saved);MadarWidgets.shortcuts(this);if(saved!=null)pendingMotion=saved.getString("pendingMotion","");if(saved!=null&&saved.containsKey("pendingGenerate"))try{pendingGenerate=new JSONObject(saved.getString("pendingGenerate"));}catch(JSONException ignored){}if(saved!=null&&saved.containsKey("pendingDrive"))try{pendingDrive=new JSONObject(saved.getString("pendingDrive"));}catch(Exception ignored){}if(saved!=null&&saved.containsKey("pendingColab"))try{pendingColab=new JSONObject(saved.getString("pendingColab"));pendingColabSource=saved.getString("pendingColabSource");working=true;}catch(Exception ignored){}
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         web=new WebView(this);web.setBackgroundColor(Color.rgb(248,244,237));
         // A parent container must own the insets: WebView padding does not inset HTML content.
@@ -143,7 +157,8 @@ public class MainActivity extends Activity {
             case "agentLearning":getSharedPreferences("local_agent",0).edit().putBoolean("learn",request.optBoolean("enabled")).apply();break;
             case "agentForget":LocalAgent.forget(this);send(new JSONObject().put("type","agentStatus").put("ready",true).put("localReady",LocalAgent.ready(this)).put("offline",getSharedPreferences("local_agent",0).getBoolean("offline",false)).put("learning",false));break;
             case "agentRemember":if(getSharedPreferences("local_agent",0).getBoolean("learn",true))LocalAgent.remember(this,request.getString("kind"),request.getString("tool"),request.getJSONObject("options"));break;
-            case "ready":ready=true;history();restoreSource();if(VideoExportService.lastEvent!=null)send(new JSONObject(VideoExportService.lastEvent));if(TransferService.active&&TransferService.lastEvent!=null)send(new JSONObject(TransferService.lastEvent));if(FileProcessingService.active&&FileProcessingService.lastEvent!=null)send(new JSONObject(FileProcessingService.lastEvent));if(ImageBatchService.active||ImageBatchService.starting)batchStatus();if(Intent.ACTION_SEND.equals(getIntent().getAction())){Uri u=getIntent().getParcelableExtra(Intent.EXTRA_STREAM);getIntent().setAction(Intent.ACTION_MAIN);if(u!=null)importFile(u,null);else{String sharedText=getIntent().getStringExtra(Intent.EXTRA_TEXT);if(sharedText!=null)send(new JSONObject().put("type","sharedLink").put("url",sharedText));}}break;
+            case "widgets":startActivity(new Intent(this,WidgetGalleryActivity.class));break;
+            case "ready":ready=true;widgetIntent();history();restoreSource();if(VideoExportService.lastEvent!=null)send(new JSONObject(VideoExportService.lastEvent));if(TransferService.active&&TransferService.lastEvent!=null)send(new JSONObject(TransferService.lastEvent));if(FileProcessingService.active&&FileProcessingService.lastEvent!=null)send(new JSONObject(FileProcessingService.lastEvent));if(ImageBatchService.active||ImageBatchService.starting)batchStatus();if(Intent.ACTION_SEND.equals(getIntent().getAction())){Uri u=getIntent().getParcelableExtra(Intent.EXTRA_STREAM);getIntent().setAction(Intent.ACTION_MAIN);if(u!=null)importFile(u,null);else{String sharedText=getIntent().getStringExtra(Intent.EXTRA_TEXT);if(sharedText!=null)send(new JSONObject().put("type","sharedLink").put("url",sharedText));}}break;
             case "prepareMediaPreview":int mediaToken=request.getInt("token");try{if(source!=null&&!isBusy())mediaProxy.prepare(source,mediaToken);else throw new IOException("انتظر انتهاء العملية الحالية");}catch(Exception e){send(new JSONObject().put("type","proxyError").put("token",mediaToken).put("message","تعذر تجهيز المعاينة؛ يمكنك فتح الأصل في المشغل. "+message(e)));}break;
             case "cancelMediaPreview":mediaProxy.stopPreparing();break;
             case "pick":if(isBusy())return;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);String k=request.optString("kind","image");requestedKind=k;pick.setType(k.equals("audio")?"audio/*":k.equals("video")?"video/*":k.equals("pdf")?"application/pdf":"image/*");startActivityForResult(pick,10);break;

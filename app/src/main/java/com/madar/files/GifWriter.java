@@ -12,6 +12,14 @@ final class GifWriter implements AutoCloseable {
   // Loop forever.
   out.write(new byte[]{0x21,(byte)0xFF,11,'N','E','T','S','C','A','P','E','2','.','0',3,1,0,0,0});
  }
+ /**
+  * The GIF's size for a video of w x h at the wanted width: never larger than the video, and both sides even. WhatsApp
+  * turns a GIF into a video when it is sent, and a video cannot have an odd side: a portrait clip came out 480x853 and
+  * played as an empty box in the chat.
+  */
+ static int[] fit(int w,int h,int wanted){
+  int gw=Math.max(2,Math.min(wanted,w)&~1),gh=Math.max(2,Math.round(gw*(float)h/w)&~1);return new int[]{gw,gh};
+ }
  private void word(int v)throws IOException{out.write(v&255);out.write(v>>8&255);}
  /** Adds one frame of width*height ARGB pixels (alpha is ignored). */
  void frame(int[] argb)throws IOException{

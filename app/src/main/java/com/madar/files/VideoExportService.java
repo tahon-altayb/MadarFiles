@@ -97,7 +97,7 @@ public class VideoExportService extends Service {
                 int w=Integer.parseInt(reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)),h=Integer.parseInt(reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
                 String turned=reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);if("90".equals(turned)||"270".equals(turned)){int t=w;w=h;h=t;}
                 if(w<2||h<2)throw new java.io.IOException("أبعاد الفيديو غير معروفة");
-                int gw=Math.min(wanted,w),gh=Math.max(2,Math.round(gw*(float)h/w));int frames=(int)Math.max(2,Math.round(seconds*fps));int[] pixels=new int[gw*gh];
+                int[] fitted0=GifWriter.fit(w,h,wanted);int gw=fitted0[0],gh=fitted0[1];int frames=(int)Math.max(2,Math.round(seconds*fps));int[] pixels=new int[gw*gh];
                 try(java.io.OutputStream out=new java.io.BufferedOutputStream(new java.io.FileOutputStream(target),1<<16);GifWriter gif=new GifWriter(out,gw,gh,Math.round(100f/fps))){
                     for(int n=0;n<frames;n++){
                         if(musicCancel.get())throw new java.util.concurrent.CancellationException();

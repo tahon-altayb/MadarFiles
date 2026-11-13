@@ -19,4 +19,10 @@ public class GifWriterTest {
   assertEquals(out.length-1,at);assertTrue(loop);assertEquals(4,frames);assertEquals(4,controls);
  }
  @Test(expected=IllegalArgumentException.class) public void rejectsAFrameOfTheWrongSize()throws Exception{try(GifWriter gif=new GifWriter(new ByteArrayOutputStream(),8,8,10)){gif.frame(new int[10]);}}
+ /** WhatsApp turns a GIF into a video, and a video cannot have an odd side: a portrait clip came out 480x853 and played as an empty box. */
+ @Test public void bothSidesAreEvenAndNeverLargerThanTheVideo(){
+  assertArrayEquals(new int[]{480,852},GifWriter.fit(1080,1920,480));assertArrayEquals(new int[]{480,270},GifWriter.fit(1920,1080,480));
+  assertArrayEquals(new int[]{320,320},GifWriter.fit(321,321,640));assertArrayEquals(new int[]{160,284},GifWriter.fit(720,1280,160));
+  for(int w=2;w<1300;w+=37)for(int h=2;h<2400;h+=53)for(int wanted:new int[]{160,321,480,640}){int[] size=GifWriter.fit(w,h,wanted);assertTrue(size[0]%2==0&&size[1]%2==0&&size[0]>=2&&size[1]>=2&&size[0]<=Math.max(2,w)&&size[0]<=wanted);}
+ }
 }

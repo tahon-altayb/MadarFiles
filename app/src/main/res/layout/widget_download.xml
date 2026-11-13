@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_card" android:layoutDirection="rtl" android:padding="8dp">
+ <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:gravity="center_vertical">
+  <FrameLayout android:layout_width="44dp" android:layout_height="44dp">
+   <ProgressBar android:layout_width="match_parent" android:layout_height="match_parent" android:indeterminateOnly="true" android:indeterminateDrawable="@drawable/widget_orbit_spin" android:indeterminateDuration="9000" android:indeterminateBehavior="repeat" android:interpolator="@android:anim/linear_interpolator"/>
+   <TextView android:id="@+id/glyph" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:text="↓" android:textColor="#F8F4ED" android:textSize="18sp" android:textStyle="bold" android:includeFontPadding="false"/>
+  </FrameLayout>
+  <LinearLayout android:id="@+id/texts" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="10dp" android:layout_marginEnd="8dp">
+   <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_download_title" android:textColor="#FFFDF8" android:textSize="15sp" android:textStyle="bold" android:singleLine="true" android:ellipsize="end" android:textAlignment="viewStart"/>
+   <TextView android:id="@+id/hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_download_hint" android:textColor="#B9C7C2" android:textSize="12sp" android:singleLine="true" android:ellipsize="end" android:textAlignment="viewStart"/>
+   <TextView android:id="@+id/platforms" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="@string/widget_download_platforms" android:textColor="#8FA39D" android:textSize="11sp" android:singleLine="true" android:ellipsize="end" android:textAlignment="viewStart" android:visibility="gone"/>
+  </LinearLayout>
+  <TextView android:id="@+id/go" android:layout_width="wrap_content" android:layout_height="40dp" android:minWidth="48dp" android:paddingStart="16dp" android:paddingEnd="16dp" android:gravity="center" android:background="@drawable/widget_button" android:text="@string/widget_download_go" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold" android:singleLine="true"/>
+ </LinearLayout>
+</FrameLayout>
