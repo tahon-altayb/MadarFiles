@@ -205,6 +205,9 @@ jobs:
         path: MadarFiles-1.9.66.apk
         if-no-files-found: error
         retention-days: 30
+    - name: Show the emulator's pictures in the log
+      if: always()
+      run: python3 scripts/show_pictures.py app/build/outputs/connected_android_test_additional_output
     - name: Save validation reports
       if: always()
       uses: actions/upload-artifact@v4
