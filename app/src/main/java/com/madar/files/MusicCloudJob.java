@@ -43,7 +43,7 @@ final class MusicCloudJob {
   * The same job from the clip's own compressed audio: a few megabytes go up instead of a hundred, and Colab decodes
   * them. The length in frames is learned from the job (it must match the clip's length within two seconds).
   */
- static ColabMusic.Result runSource(ColabMusic.Session session,AudioPipeline.Compressed audio,long endUs,MusicSeparator.Progress progress)throws Exception{
+ static ColabMusic.Result runSource(ColabMusic.Session session,AudioPipeline.Compressed audio,long endUs,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
   ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean cold=session.batch==0;long began=now();
   session.awaitStorage();String folder=session.root+"_b"+(session.batch++);runtime.jupyter("PUT","api/contents/"+folder,new JSONObject().put("type","directory"),1024*1024);
   long uploadAt=now(),size=audio.file.length();JSONArray parts=new JSONArray();java.security.MessageDigest whole=java.security.MessageDigest.getInstance("SHA-256");diagnostic.record("UPLOAD_SOURCE");
@@ -60,7 +60,9 @@ final class MusicCloudJob {
   runtime.put(folder+"/request.json",request.toString(),"text");
   session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,size,0);
   long expected=Math.round(Math.min(endUs>0?Math.max(0,endUs-audio.offsetUs):Long.MAX_VALUE,audio.durationUs+50000)/1e6*44100);
-  return collect(session,folder,new long[]{0},expected,progress,null,File.createTempFile("madar_cloud_vocals_",".pcm",session.context.getCacheDir()),cold,began);
+  // He listens while it separates (the music tool always offers it): the clean sound plays from the clip's own audio start.
+  File output=File.createTempFile("madar_cloud_vocals_",".pcm",session.context.getCacheDir());if(live!=null)LiveSeparation.attach(live,output,audio.offsetUs);
+  return collect(session,folder,new long[]{0},expected,progress,live,output,cold,began);
  }
  /** Waits for the job, fetches its packs as they are made and checks the whole result. total[0] is the length in frames (0: learned from the job, within two seconds of `near`). */
  private static ColabMusic.Result collect(ColabMusic.Session session,String folder,final long[] total,final long near,MusicSeparator.Progress progress,LiveSeparation.Session live,final File output,boolean cold,long began)throws Exception{

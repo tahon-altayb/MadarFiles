@@ -35,11 +35,12 @@ final class MusicExport {
    // The short way first: the clip's own compressed audio goes up and Colab decodes it. The tablet that spent a minute
    // decoding and four minutes uploading 100 MB sends about a tenth of that and decodes nothing. Whatever this way
    // cannot carry (another codec, a refusal by the job) takes the decoded way below, in the same session.
-   if(live==null&&fastUpload(c)){
+   // (Listening while it separates was on for every music job, and kept 1.9.67 on the long way: it is carried here too.)
+   if(fastUpload(c)){
     AudioPipeline.Compressed compact=null;
     try{progress.update(15,"تجهيز الصوت المضغوط للرفع");compact=AudioPipeline.audioOnly(c,input,endUs,cancel);
      if(compact==null)gpu.diagnostic.record("SOURCE_UNSUPPORTED");
-     else{gpu.diagnostic.measure("SOURCE",0,compact.file.length(),0);ColabMusic.Result clean=gpu.runSource(compact,endUs,progress);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=compact.offsetUs;complete=true;return result;}
+     else{gpu.diagnostic.measure("SOURCE",0,compact.file.length(),0);ColabMusic.Result clean=gpu.runSource(compact,endUs,progress,live);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=compact.offsetUs;complete=true;return result;}
     }catch(MusicCloudJob.SourceRejected rejected){gpu.diagnostic.record("SOURCE_FALLBACK");fastUploadFailed(c);}
     catch(java.util.concurrent.CancellationException stopped){throw stopped;}
     catch(Exception failed){
