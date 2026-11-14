@@ -38,7 +38,7 @@ final class MusicExport {
    // (Listening while it separates was on for every music job, and kept 1.9.67 on the long way: it is carried here too.)
    if(fastUpload(c)){
     AudioPipeline.Compressed compact=null;
-    try{progress.update(15,"تجهيز الصوت المضغوط للرفع");compact=AudioPipeline.audioOnly(c,input,endUs,cancel);
+    try{progress.update(15,"تجهيز الصوت المضغوط للرفع");compact=AudioPipeline.audioOnly(c,input,endUs,cancel,gpu.diagnostic::record);
      if(compact==null)gpu.diagnostic.record("SOURCE_UNSUPPORTED");
      else{gpu.diagnostic.measure("SOURCE",0,compact.file.length(),0);ColabMusic.Result clean=gpu.runSource(compact,endUs,progress,live);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=compact.offsetUs;complete=true;return result;}
     }catch(MusicCloudJob.SourceRejected rejected){gpu.diagnostic.record("SOURCE_FALLBACK");fastUploadFailed(c);}

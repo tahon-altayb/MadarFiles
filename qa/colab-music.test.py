@@ -426,6 +426,16 @@ class CompressedSourceTest(unittest.TestCase):
                     source=self._parts(directory,data);source['lead_seconds']=lead
                     with self.assertRaisesRegex(ValueError,'MUSIC_SOURCE_MANIFEST'):w.decode_source(source)
             finally:os.chdir(previous)
+    def test_opus_and_vorbis_in_webm_decode_too(self):
+        import subprocess
+        for codec in ('libopus','libvorbis'):
+            with tempfile.TemporaryDirectory() as directory:
+                previous=os.getcwd();clip=Path(directory)/'clip.webm'
+                subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','sine=frequency=440:sample_rate=48000:duration=3','-ac','2','-c:a',codec,str(clip)],check=True)
+                try:
+                    os.chdir(directory);frames=w.decode_source(self._parts(directory,clip.read_bytes()))
+                    self.assertTrue(abs(frames-3*w.RATE)<w.RATE//10,(codec,frames))
+                finally:os.chdir(previous)
     def test_what_is_not_the_announced_audio_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             previous=os.getcwd();clip=self._aac(directory,2)

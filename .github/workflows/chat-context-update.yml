@@ -194,15 +194,15 @@ jobs:
         script: gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest
           -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.MotionTransferTest,com.madar.files.ColabAuthorizationTest,com.madar.files.ColabMusicTest,com.madar.files.MotionCheckpointTest,com.madar.files.MotionStartupTest,com.madar.files.ColabAllocationTest,com.madar.files.AgentExecutiveTest,com.madar.files.WidgetsTest,com.madar.files.AudioDecodeTest
     - name: Verify update package and signing certificate
-      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 103 --version-name 1.9.68 --firebase-config
+      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 104 --version-name 1.9.69 --firebase-config
         app/google-services.json
     - name: Prepare APK
-      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.68.apk
+      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.69.apk
     - name: Upload verified update APK
       uses: actions/upload-artifact@v4
       with:
-        name: MadarFiles-1.9.68-APK
-        path: MadarFiles-1.9.68.apk
+        name: MadarFiles-1.9.69-APK
+        path: MadarFiles-1.9.69.apk
         if-no-files-found: error
         retention-days: 30
     - name: Show the emulator's pictures in the log

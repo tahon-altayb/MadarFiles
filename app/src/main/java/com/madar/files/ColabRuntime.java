@@ -204,10 +204,13 @@ final class ColabRuntime implements AutoCloseable {
  JSONObject jupyter(String method,String path,JSONObject data,int maximum,long timeoutMs)throws Exception{
   // Replay only reads and PUT of the exact same owned content. Never replay kernel/runtime creation.
   for(int attempt=0;;attempt++)try{return request(runtimeRequest(path),method,data,cancel,maximum,timeoutMs);}catch(IOException e){
-   if(attempt>0||!(method.equals("GET")||method.equals("PUT")))throw e;
+   // A PUT carries the same owned content each time, so an upload rides out a Wi-Fi that drops for a few seconds
+   // (a tablet lost a 100 MB upload after 215 s to one IO_NETWORK); other requests are replayed once, as before.
+   if(attempt>=(method.equals("PUT")?3:1)||!(method.equals("GET")||method.equals("PUT")))throw e;
+   if(method.equals("PUT"))transferEvents.accept("UPLOAD_RETRY");
    if(e instanceof HttpFailure){int status=((HttpFailure)e).status;if(status==401||status==403)refresh();else if(status!=429&&status!=500&&status!=502&&status!=503&&status!=504)throw e;}
    else if(!(e instanceof NetworkFailure))throw e;
-   long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(1);while(System.nanoTime()<end){ColabProbe.check(cancel);Thread.sleep(50);}
+   long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(attempt==0?1:attempt==1?4:10);while(System.nanoTime()<end){ColabProbe.check(cancel);Thread.sleep(50);}
   }
  }
  void put(String path,String content,String format)throws Exception{jupyter("PUT",contentPath(path,null),new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}

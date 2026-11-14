@@ -79,4 +79,20 @@ public class AudioDecodeTest {
   try{AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean(true));fail("the copy went on after the stop");}
   catch(java.util.concurrent.CancellationException expected){/* stopped */}finally{source.delete();}
  }
+ /** Opus (yt-dlp's downloads) and Vorbis are carried too, in a .webm, and decode to the clip's own length. */
+ @Test public void opusAndVorbisAreCarriedToo()throws Exception{
+  for(String name:new String[]{"sample-opus.mp4","sample-vorbis.webm"}){
+   File source=asset(name);AudioPipeline.Compressed compact=null;AudioPipeline.Decoded original=null,copied=null;final StringBuilder why=new StringBuilder();
+   try{compact=AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),why::append);
+    assertNotNull(name+" is carried as it is ("+why+")",compact);assertTrue(compact.file.getName().endsWith(".webm"));
+    original=AudioPipeline.decode(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
+    copied=compact.leadUs>0?AudioPipeline.decodeRange(context,compact.file,compact.leadUs,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{}):AudioPipeline.decode(context,compact.file,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
+    long a=original.pcm.length()/4,b=copied.pcm.length()/4;assertTrue(name+": "+a+" frames against "+b,a>original.sampleRate*3&&Math.abs(a-b)<=1024);
+   }finally{source.delete();if(compact!=null)compact.file.delete();if(original!=null)original.pcm.delete();if(copied!=null)copied.pcm.delete();}
+  }
+ }
+ @Test public void aRefusalSaysWhy()throws Exception{
+  File text=File.createTempFile("not_media_",".mp4",context.getCacheDir());java.nio.file.Files.write(text.toPath(),"not a clip".getBytes());final StringBuilder why=new StringBuilder();
+  try{assertNull(AudioPipeline.audioOnly(context,text,Long.MAX_VALUE/4,new AtomicBoolean(),why::append));assertEquals("SOURCE_ERROR_READ",why.toString());}finally{text.delete();}
+ }
 }

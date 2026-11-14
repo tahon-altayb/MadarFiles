@@ -18,25 +18,40 @@ final class AudioPipeline {
   * tenth of that. Returns null when this audio cannot be carried this way (another codec, an unreadable track); the
   * caller then decodes and uploads as before.
   */
- static Compressed audioOnly(Context c,File input,long endUs,AtomicBoolean cancel)throws Exception{
-  MediaExtractor ex=new MediaExtractor();android.media.MediaMuxer muxer=null;File out=File.createTempFile("madar_source_",".m4a",c.getCacheDir());boolean complete=false;
+ static Compressed audioOnly(Context c,File input,long endUs,AtomicBoolean cancel)throws Exception{return audioOnly(c,input,endUs,cancel,why->{});}
+ /** The short name of a codec for the report (OPUS, VORBIS, MPEG...), never anything from the file itself. */
+ static String codecName(String mime){
+  if(mime==null)return "NONE";switch(mime){case "audio/mp4a-latm":return "AAC";case "audio/opus":return "OPUS";case "audio/vorbis":return "VORBIS";case "audio/mpeg":return "MPEG";case "audio/ac3":return "AC3";case "audio/eac3":return "EAC3";case "audio/flac":return "FLAC";case "audio/raw":return "RAW";case "audio/3gpp":case "audio/amr-wb":return "AMR";default:return "OTHER";}
+ }
+ /**
+  * The clip's audio, copied without decoding: AAC into an .m4a, Opus and Vorbis into a .webm (yt-dlp's downloads often
+  * carry Opus; 1.9.68 took the long way for one with «SOURCE_UNSUPPORTED» and nothing more). `why` hears the reason
+  * whenever the answer is null: SOURCE_NO_AUDIO, SOURCE_CODEC_<name>, SOURCE_EMPTY, SOURCE_TOO_LARGE or SOURCE_ERROR_<what failed>.
+  */
+ static Compressed audioOnly(Context c,File input,long endUs,AtomicBoolean cancel,java.util.function.Consumer<String> why)throws Exception{
+  MediaExtractor ex=new MediaExtractor();android.media.MediaMuxer muxer=null;File out=null;boolean complete=false;String step="READ";
   try{
    ex.setDataSource(input.getAbsolutePath());int track=-1;for(int i=0;i<ex.getTrackCount();i++){String mime=ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME);if(mime!=null&&mime.startsWith("audio/")){track=i;break;}}
-   if(track<0)return null;MediaFormat format=ex.getTrackFormat(track);if(!"audio/mp4a-latm".equals(format.getString(MediaFormat.KEY_MIME)))return null;
-   ex.selectTrack(track);muxer=new android.media.MediaMuxer(out.getAbsolutePath(),android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);int target=muxer.addTrack(format);muxer.start();
-   int room=Math.max(262144,format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)?format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE):0);ByteBuffer buffer=ByteBuffer.allocate(room);MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
+   if(track<0){why.accept("SOURCE_NO_AUDIO");return null;}
+   MediaFormat format=ex.getTrackFormat(track);String mime=format.getString(MediaFormat.KEY_MIME);boolean aac="audio/mp4a-latm".equals(mime),webm="audio/opus".equals(mime)||"audio/vorbis".equals(mime);
+   if(!aac&&!webm){why.accept("SOURCE_CODEC_"+codecName(mime));return null;}
+   out=File.createTempFile("madar_source_",aac?".m4a":".webm",c.getCacheDir());
+   ex.selectTrack(track);step="MUXER";muxer=new android.media.MediaMuxer(out.getAbsolutePath(),aac?android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4:android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM);
+   step="TRACK";int target=muxer.addTrack(format);step="START";muxer.start();
+   int room=Math.max(262144,format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)?format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE):0);ByteBuffer buffer=ByteBuffer.allocateDirect(room);MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
    // Times stay as the clip has them: AAC's first packet sits before time 0 (the encoder's priming, about 21 ms), and
    // the phone's decoder drops it by that time. The copy starts at 0, so the priming is announced as leadUs instead.
-   long first=Long.MIN_VALUE,last=0,bytes=0,previous=Long.MIN_VALUE;
+   long first=Long.MIN_VALUE,last=0,bytes=0,previous=Long.MIN_VALUE;step="WRITE";
    for(;;){ColabProbe.check(cancel);buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;long time=ex.getSampleTime();if(endUs>0&&time>=endUs)break;
     if(first==Long.MIN_VALUE)first=time;time=Math.max(previous,time);previous=time;last=time;
-    info.set(0,n,time-first,(ex.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0);muxer.writeSampleData(target,buffer,info);bytes+=n;ex.advance();}
-   muxer.stop();muxer.release();muxer=null;
-   if(bytes<=0||first==Long.MIN_VALUE||first<-2000000||out.length()<=0||out.length()>200L*1024*1024)return null;
+    buffer.position(0);buffer.limit(n);info.set(0,n,time-first,(ex.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0);muxer.writeSampleData(target,buffer,info);bytes+=n;ex.advance();}
+   step="STOP";muxer.stop();muxer.release();muxer=null;
+   if(bytes<=0||first==Long.MIN_VALUE||first<-2000000||out.length()<=0){why.accept("SOURCE_EMPTY");return null;}
+   if(out.length()>200L*1024*1024){why.accept("SOURCE_TOO_LARGE");return null;}
    long lead=Math.max(0,-first);complete=true;return new Compressed(out,Math.max(0,first),Math.max(0,last-first-lead),lead);
   }catch(java.util.concurrent.CancellationException stopped){throw stopped;}
-  catch(Exception unsupported){return null;}
-  finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(!complete)out.delete();}
+  catch(Exception unsupported){why.accept("SOURCE_ERROR_"+step);return null;}
+  finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(!complete&&out!=null)out.delete();}
  }
  static int track(MediaExtractor ex,String prefix){for(int i=0;i<ex.getTrackCount();i++)if(ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME).startsWith(prefix))return i;return -1;}
  static Decoded decode(Context c,File source,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{return decodeInternal(c,source,0,limitUs,false,cancel,progress);}
