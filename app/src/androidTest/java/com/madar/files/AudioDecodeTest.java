@@ -111,4 +111,9 @@ public class AudioDecodeTest {
   File vorbis=asset("sample-vorbis.webm");final StringBuilder codec=new StringBuilder();
   try{assertNull(AudioPipeline.audioOnly(context,vorbis,Long.MAX_VALUE/4,new AtomicBoolean(),codec::append));assertEquals("SOURCE_CODEC_VORBIS",codec.toString());}finally{vorbis.delete();}
  }
+ /** H.264 is kept as it is; a picture the .mp4 cannot take is named before any separation starts. */
+ @Test public void thePictureIsCheckedBeforeSeparation()throws Exception{
+  File h264=asset("sample.mp4");try{assertEquals("",AudioPipeline.videoNotKeepable(context,h264));}finally{h264.delete();}
+  File audio=asset("sample-vorbis.webm");try{assertEquals("no picture, nothing to keep","",AudioPipeline.videoNotKeepable(context,audio));}finally{audio.delete();}
+ }
 }

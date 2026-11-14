@@ -43,7 +43,10 @@ final class LinkDownloads {
    for(int attempt=reuse?0:1;;attempt++){
     YoutubeDLRequest r=attempt==0?options(new YoutubeDLRequest(new java.util.ArrayList<String>())):request(url);if(attempt==0)r.addOption("--load-info-json",remembered(c).getAbsolutePath());
     r.addOption("--concurrent-fragments","4");r.addOption("--http-chunk-size","10M");
-    r.addOption("--max-filesize",Math.min(1024L*1024*1024,c.getFilesDir().getUsableSpace()/5));r.addOption("--no-mtime");r.addOption("--restrict-filenames");r.addOption("-o",new File(folder,"media.%(ext)s").getAbsolutePath());if(mode.equals("audio")){r.addOption("-f","bestaudio/best");r.addOption("-x");r.addOption("--audio-format","mp3");r.addOption("--audio-quality","0");}else{String bound=height==0?"":"[height<="+height+"]";r.addOption("-f","bestvideo"+bound+"+bestaudio/best"+bound);r.addOption("--merge-output-format","mp4/mkv");}
+    r.addOption("--max-filesize",Math.min(1024L*1024*1024,c.getFilesDir().getUsableSpace()/5));r.addOption("--no-mtime");r.addOption("--restrict-filenames");r.addOption("-o",new File(folder,"media.%(ext)s").getAbsolutePath());if(mode.equals("audio")){r.addOption("-f","bestaudio/best");r.addOption("-x");r.addOption("--audio-format","mp3");r.addOption("--audio-quality","0");}else{String bound=height==0?"":"[height<="+height+"]";// H.264 with AAC first, in .mp4: every phone plays it, WhatsApp takes it, and Madar's tools (music removal keeps the
+   // picture as it is) can save it. A YouTube clip came as AV1 in .mkv, and its music removal failed when saving.
+   // Other codecs only when the chosen height has no H.264.
+   r.addOption("-f","bestvideo"+bound+"[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo"+bound+"[vcodec^=avc1]+bestaudio/best"+bound+"[ext=mp4]/bestvideo"+bound+"+bestaudio/best"+bound);r.addOption("--merge-output-format","mp4/mkv");}
     try{
      YoutubeDL.INSTANCE.execute(r,PROCESS,(p,eta,line)->{if(cancel.get())cancel();else progress.update(Math.max(0,Math.min(99,p.intValue())),eta>0?"التحميل · متبقٍ نحو "+eta+" ثانية":"تحميل المقطع وتجهيز الملف");return kotlin.Unit.INSTANCE;});
      break;

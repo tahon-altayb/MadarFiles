@@ -55,6 +55,21 @@ final class AudioPipeline {
   catch(Exception unsupported){why.accept("SOURCE_ERROR_"+step);return null;}
   finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(!complete&&out!=null)out.delete();}
  }
+ /**
+  * "" when the clip's picture can be kept as it is in the .mp4 that carries the clean sound; otherwise the name of its
+  * codec (AV1, VP9...). A YouTube download in AV1 inside .mkv failed on a tablet with «Failed to add the track to the
+  * muxer» after four minutes of separation: this is known in a moment, before any of that.
+  */
+ static String videoNotKeepable(Context c,File source){
+  MediaExtractor ex=new MediaExtractor();MediaMuxer muxer=null;File probe=null;
+  try{ex.setDataSource(source.getAbsolutePath());int index=-1;for(int i=0;i<ex.getTrackCount();i++){String mime=ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME);if(mime!=null&&mime.startsWith("video/")){index=i;break;}}
+   if(index<0)return "";MediaFormat format=ex.getTrackFormat(index);String mime=format.getString(MediaFormat.KEY_MIME);
+   probe=File.createTempFile("madar_probe_",".mp4",c.getCacheDir());muxer=new MediaMuxer(probe.getAbsolutePath(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+   try{muxer.addTrack(format);return "";}
+   catch(RuntimeException refused){switch(mime==null?"":mime){case "video/av01":return "AV1";case "video/x-vnd.on2.vp9":return "VP9";case "video/x-vnd.on2.vp8":return "VP8";default:return mime==null?"?":mime.replace("video/","").toUpperCase(java.util.Locale.ROOT);}}
+  }catch(Exception unreadable){return "";}
+  finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(probe!=null)probe.delete();}
+ }
  static int track(MediaExtractor ex,String prefix){for(int i=0;i<ex.getTrackCount();i++)if(ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME).startsWith(prefix))return i;return -1;}
  static Decoded decode(Context c,File source,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{return decodeInternal(c,source,0,limitUs,false,cancel,progress);}
  static Decoded decodeRange(Context c,File source,long startUs,long endUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
