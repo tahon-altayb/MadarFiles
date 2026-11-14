@@ -17,7 +17,15 @@ final class LinkDownloads {
  static synchronized void init(Context c)throws Exception{YoutubeDL.INSTANCE.init(c);FFmpeg.INSTANCE.init(c);}
  static void cancel(){try{YoutubeDL.INSTANCE.destroyProcessById(PROCESS);}catch(Exception ignored){}}
  static YoutubeDLRequest request(String url){return options(new YoutubeDLRequest(url));}
- private static YoutubeDLRequest options(YoutubeDLRequest r){r.addOption("--no-playlist");r.addOption("--no-warnings");r.addOption("--socket-timeout","20");r.addOption("--retries","3");r.addOption("--fragment-retries","3");return r;}
+ /** Where the engine keeps what it learned from YouTube's player (its code and the solved challenge), between readings. */
+ static File engineCache(Context c){File dir=new File(c.getFilesDir(),"yt-dlp-cache");dir.mkdirs();return dir;}
+ static int cachedFiles(File dir){int n=0;File[] list=dir.listFiles();if(list!=null)for(File f:list)n+=f.isDirectory()?cachedFiles(f):1;return n;}
+ private static Context appContext;
+ private static YoutubeDLRequest options(YoutubeDLRequest r){
+  // Reading a YouTube page took 96 s on a tablet: most of it is fetching the site's player code and solving its
+  // challenge, which the engine keeps and reuses only when it has a folder for it (the app gave it none).
+  if(appContext!=null)r.addOption("--cache-dir",engineCache(appContext).getAbsolutePath());
+  r.addOption("--no-playlist");r.addOption("--no-warnings");r.addOption("--socket-timeout","20");r.addOption("--retries","3");r.addOption("--fragment-retries","3");return r;}
  /** What the last reading of a link found, kept for twenty minutes: the download starts from it instead of reading the page a second time. */
  private static File remembered(Context c){return new File(c.getCacheDir(),"link-info.json");}
  static void remember(Context c,String url,String json){
@@ -25,15 +33,15 @@ final class LinkDownloads {
   catch(Exception ignored){remembered(c).delete();}
  }
  static boolean fresh(Context c,String url,long now){android.content.SharedPreferences saved=c.getSharedPreferences("link_downloads",0);long at=saved.getLong("info_at",0);return remembered(c).isFile()&&remembered(c).length()>2&&url.equals(saved.getString("info_url",""))&&now>=at&&now-at<20L*60000;}
- static void update(Context c)throws Exception{init(c);YoutubeDL.INSTANCE.updateYoutubeDL(c,YoutubeDL.UpdateChannel.STABLE.INSTANCE);c.getSharedPreferences("link_downloads",0).edit().putLong("updated",System.currentTimeMillis()).apply();}
+ static void update(Context c)throws Exception{appContext=c.getApplicationContext();init(c);YoutubeDL.INSTANCE.updateYoutubeDL(c,YoutubeDL.UpdateChannel.STABLE.INSTANCE);c.getSharedPreferences("link_downloads",0).edit().putLong("updated",System.currentTimeMillis()).apply();}
  static boolean maybeUpdate(Context c,Progress progress){if(System.currentTimeMillis()-c.getSharedPreferences("link_downloads",0).getLong("updated",0)>7L*86400000&&System.currentTimeMillis()-c.getSharedPreferences("link_downloads",0).getLong("attempted",0)>3600000)try{c.getSharedPreferences("link_downloads",0).edit().putLong("attempted",System.currentTimeMillis()).apply();progress.update(0,"تحديث محرك الروابط…");update(c);return true;}catch(Exception ignored){/* Bundled engine remains usable when update service is unavailable. */return true;}return false;}
  static JSONObject inspect(Context c,String value,AtomicBoolean cancel,Progress progress)throws Exception{
   LinkReport report=new LinkReport(c,"قراءة الجودات");try{return inspect(c,value,cancel,progress,report);}catch(Exception e){report.failed(e);throw e;}
  }
  private static JSONObject inspect(Context c,String value,AtomicBoolean cancel,Progress progress,LinkReport report)throws Exception{
-  long at=android.os.SystemClock.elapsedRealtime();String url=url(value);init(c);report.measure("ENGINE_START",android.os.SystemClock.elapsedRealtime()-at);
+  appContext=c.getApplicationContext();long at=android.os.SystemClock.elapsedRealtime();String url=url(value);init(c);report.measure("ENGINE_START",android.os.SystemClock.elapsedRealtime()-at);
   at=android.os.SystemClock.elapsedRealtime();boolean checked=maybeUpdate(c,progress);if(checked)report.measure("ENGINE_UPDATE",android.os.SystemClock.elapsedRealtime()-at);
-  ColabProbe.check(cancel);YoutubeDLRequest r=request(url);r.addOption("--dump-single-json");r.addOption("--skip-download");at=android.os.SystemClock.elapsedRealtime();report.mark("PAGE_READING");
+  ColabProbe.check(cancel);YoutubeDLRequest r=request(url);r.addOption("--dump-single-json");r.addOption("--skip-download");at=android.os.SystemClock.elapsedRealtime();report.mark("PAGE_READING · محفوظ من قبل "+cachedFiles(engineCache(c))+" ملف");
   String text=YoutubeDL.INSTANCE.execute(r,PROCESS,null).getOut();report.measure("PAGE_READ",android.os.SystemClock.elapsedRealtime()-at);ColabProbe.check(cancel);if(text.length()>16*1024*1024)throw new IOException("بيانات المقطع أكبر من الحد");JSONObject data=new JSONObject(text);remember(c,url,text);if(data.optBoolean("is_live")||data.optString("_type").equals("playlist"))throw new IOException("اختر مقطعًا مسجلًا واحدًا؛ البث المباشر والقوائم غير مدعومين هنا");
   JSONArray source=data.optJSONArray("formats"),formats=new JSONArray();Set<Integer> heights=new TreeSet<>(Collections.reverseOrder());if(source!=null)for(int i=0;i<source.length();i++){JSONObject f=source.getJSONObject(i);int height=f.optInt("height");if(height>0&&height<=4320&&!f.optString("vcodec","none").equals("none")&&!f.optBoolean("has_drm"))heights.add(height);}for(int height:heights)formats.put(new JSONObject().put("height",height).put("label",height+"p"));
   JSONObject result=new JSONObject().put("url",url).put("title",data.optString("title","مقطع").substring(0,Math.min(300,data.optString("title","مقطع").length()))).put("duration",data.optDouble("duration",0)).put("formats",formats).put("extractor",data.optString("extractor_key",""));
@@ -45,6 +53,7 @@ final class LinkDownloads {
   try{return download(c,options,cancel,progress,report);}catch(Exception e){report.failed(e);throw e;}
  }
  private static File download(Context c,JSONObject options,AtomicBoolean cancel,Progress progress,LinkReport report)throws Exception{
+  appContext=c.getApplicationContext();
   String url=url(options.getString("url")),mode=options.optString("mode","video");int height=options.optInt("height",0);if(!Arrays.asList("video","audio").contains(mode)||height<0||height>4320)throw new IOException("خيارات التحميل غير صالحة");if(c.getFilesDir().getUsableSpace()<160L*1024*1024)throw new IOException("وفّر مساحة تخزين قبل التحميل");init(c);ColabProbe.check(cancel);File folder=new File(c.getCacheDir(),"link-"+UUID.randomUUID());if(!folder.mkdir())throw new IOException("تعذر تجهيز مجلد التحميل");boolean success=false;long seconds=0;
   try{
    // A slow tablet spent most of a download reading the page twice and fetching one piece at a time: the reading the
