@@ -25,6 +25,10 @@ final class LinkDownloads {
   // Reading a YouTube page took 96 s on a tablet: most of it is fetching the site's player code and solving its
   // challenge, which the engine keeps and reuses only when it has a folder for it (the app gave it none).
   if(appContext!=null)r.addOption("--cache-dir",engineCache(appContext).getAbsolutePath());
+  // IPv4 only. His tablet's readings took 96-100 s every time with nothing cached, and a download sat 21 s before
+  // each of its two parts and then crawled at 0.4 MB/s: whole multiples of the 20 s connect timeout, the mark of a
+  // network that offers IPv6 but does not carry it, where each connection waits for IPv6 to fail before using IPv4.
+  r.addOption("--force-ipv4");
   r.addOption("--no-playlist");r.addOption("--no-warnings");r.addOption("--socket-timeout","20");r.addOption("--retries","3");r.addOption("--fragment-retries","3");return r;}
  /** What the last reading of a link found, kept for twenty minutes: the download starts from it instead of reading the page a second time. */
  private static File remembered(Context c){return new File(c.getCacheDir(),"link-info.json");}

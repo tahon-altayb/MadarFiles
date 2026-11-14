@@ -59,7 +59,9 @@ final class LinkReport {
  private String network(){
   try{ConnectivityManager manager=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);NetworkCapabilities n=manager.getNetworkCapabilities(manager.getActiveNetwork());
    if(n==null)return "غير متصل";String type=n.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)?"WIFI":n.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)?"CELLULAR":"OTHER";
-   return type+" · حتى "+(n.getLinkDownstreamBandwidthKbps()/1000)+" ميجابت حسب النظام";
+   boolean v6=false;android.net.LinkProperties link=manager.getLinkProperties(manager.getActiveNetwork());
+   if(link!=null)for(android.net.LinkAddress address:link.getLinkAddresses()){java.net.InetAddress ip=address.getAddress();if(ip instanceof java.net.Inet6Address&&!ip.isLinkLocalAddress()&&!ip.isSiteLocalAddress()&&!ip.isLoopbackAddress())v6=true;}
+   return type+" · حتى "+(n.getLinkDownstreamBandwidthKbps()/1000)+" ميجابت حسب النظام · IPv6 "+(v6?"موجود":"غير موجود")+" · التحميل عبر IPv4";
   }catch(Exception e){return "غير معروفة";}
  }
  private void save(){
