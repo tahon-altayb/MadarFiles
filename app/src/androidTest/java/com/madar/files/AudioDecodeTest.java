@@ -79,16 +79,29 @@ public class AudioDecodeTest {
   try{AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean(true));fail("the copy went on after the stop");}
   catch(java.util.concurrent.CancellationException expected){/* stopped */}finally{source.delete();}
  }
- /** Opus (yt-dlp's downloads) and Vorbis are carried too, in a .webm, and decode to the clip's own length. */
+ /** The packets of a clip's audio track, in order (what a copy without decoding must carry unchanged). */
+ private static java.util.List<byte[]> packets(File file,String mime)throws Exception{
+  MediaExtractor ex=new MediaExtractor();java.util.List<byte[]> out=new java.util.ArrayList<>();
+  try{ex.setDataSource(file.getAbsolutePath());int track=-1;for(int i=0;i<ex.getTrackCount();i++)if(mime.equals(ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME)))track=i;
+   assertTrue(file.getName()+" has its "+mime+" track",track>=0);ex.selectTrack(track);ByteBuffer buffer=ByteBuffer.allocateDirect(1<<20);
+   for(;;){buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;byte[] packet=new byte[n];buffer.get(packet,0,n);out.add(packet);ex.advance();}
+   return out;
+  }finally{ex.release();}
+ }
+ /**
+  * Opus (yt-dlp's downloads) and Vorbis are carried too, in a .webm, packet for packet. They are compared as packets,
+  * not decoded: the emulator has no Opus decoder for the phone's own pipeline (Colab decodes them with ffmpeg).
+  */
  @Test public void opusAndVorbisAreCarriedToo()throws Exception{
-  for(String name:new String[]{"sample-opus.mp4","sample-vorbis.webm"}){
-   File source=asset(name);AudioPipeline.Compressed compact=null;AudioPipeline.Decoded original=null,copied=null;final StringBuilder why=new StringBuilder();
+  for(String[] clip:new String[][]{{"sample-opus.mp4","audio/opus"},{"sample-vorbis.webm","audio/vorbis"}}){
+   File source=asset(clip[0]);AudioPipeline.Compressed compact=null;final StringBuilder why=new StringBuilder();
    try{compact=AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),why::append);
-    assertNotNull(name+" is carried as it is ("+why+")",compact);assertTrue(compact.file.getName().endsWith(".webm"));
-    original=AudioPipeline.decode(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
-    copied=compact.leadUs>0?AudioPipeline.decodeRange(context,compact.file,compact.leadUs,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{}):AudioPipeline.decode(context,compact.file,Long.MAX_VALUE/4,new AtomicBoolean(),(p,m)->{});
-    long a=original.pcm.length()/4,b=copied.pcm.length()/4;assertTrue(name+": "+a+" frames against "+b,a>original.sampleRate*3&&Math.abs(a-b)<=1024);
-   }finally{source.delete();if(compact!=null)compact.file.delete();if(original!=null)original.pcm.delete();if(copied!=null)copied.pcm.delete();}
+    assertNotNull(clip[0]+" is carried as it is ("+why+")",compact);assertTrue(compact.file.getName().endsWith(".webm"));
+    java.util.List<byte[]> original=packets(source,clip[1]),copied=packets(compact.file,clip[1]);
+    assertTrue(clip[0]+" has audio",original.size()>20);assertEquals(clip[0]+" packets",original.size(),copied.size());
+    for(int i=0;i<original.size();i++)assertArrayEquals(clip[0]+" packet "+i,original.get(i),copied.get(i));
+    assertTrue(clip[0]+" lasts "+compact.durationUs,compact.durationUs>3000000&&compact.durationUs<4500000);
+   }finally{source.delete();if(compact!=null)compact.file.delete();}
   }
  }
  @Test public void aRefusalSaysWhy()throws Exception{
