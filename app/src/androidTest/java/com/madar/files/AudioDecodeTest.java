@@ -89,11 +89,11 @@ public class AudioDecodeTest {
   }finally{ex.release();}
  }
  /**
-  * Opus (yt-dlp's downloads) and Vorbis are carried too, in a .webm, packet for packet. They are compared as packets,
+  * Opus (yt-dlp's downloads) is carried too, in a .webm, packet for packet. They are compared as packets,
   * not decoded: the emulator has no Opus decoder for the phone's own pipeline (Colab decodes them with ffmpeg).
   */
  @Test public void opusAndVorbisAreCarriedToo()throws Exception{
-  for(String[] clip:new String[][]{{"sample-opus.mp4","audio/opus"},{"sample-vorbis.webm","audio/vorbis"}}){
+  for(String[] clip:new String[][]{{"sample-opus.mp4","audio/opus"}}){
    File source=asset(clip[0]);AudioPipeline.Compressed compact=null;final StringBuilder why=new StringBuilder();
    try{compact=AudioPipeline.audioOnly(context,source,Long.MAX_VALUE/4,new AtomicBoolean(),why::append);
     assertNotNull(clip[0]+" is carried as it is ("+why+")",compact);assertTrue(compact.file.getName().endsWith(".webm"));
@@ -107,5 +107,8 @@ public class AudioDecodeTest {
  @Test public void aRefusalSaysWhy()throws Exception{
   File text=File.createTempFile("not_media_",".mp4",context.getCacheDir());java.nio.file.Files.write(text.toPath(),"not a clip".getBytes());final StringBuilder why=new StringBuilder();
   try{assertNull(AudioPipeline.audioOnly(context,text,Long.MAX_VALUE/4,new AtomicBoolean(),why::append));assertEquals("SOURCE_ERROR_READ",why.toString());}finally{text.delete();}
+  // Vorbis takes the decoded way, and says so.
+  File vorbis=asset("sample-vorbis.webm");final StringBuilder codec=new StringBuilder();
+  try{assertNull(AudioPipeline.audioOnly(context,vorbis,Long.MAX_VALUE/4,new AtomicBoolean(),codec::append));assertEquals("SOURCE_CODEC_VORBIS",codec.toString());}finally{vorbis.delete();}
  }
 }

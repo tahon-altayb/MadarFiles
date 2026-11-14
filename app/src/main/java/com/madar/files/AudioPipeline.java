@@ -24,7 +24,7 @@ final class AudioPipeline {
   if(mime==null)return "NONE";switch(mime){case "audio/mp4a-latm":return "AAC";case "audio/opus":return "OPUS";case "audio/vorbis":return "VORBIS";case "audio/mpeg":return "MPEG";case "audio/ac3":return "AC3";case "audio/eac3":return "EAC3";case "audio/flac":return "FLAC";case "audio/raw":return "RAW";case "audio/3gpp":case "audio/amr-wb":return "AMR";default:return "OTHER";}
  }
  /**
-  * The clip's audio, copied without decoding: AAC into an .m4a, Opus and Vorbis into a .webm (yt-dlp's downloads often
+  * The clip's audio, copied without decoding: AAC into an .m4a, Opus into a .webm (yt-dlp's downloads often
   * carry Opus; 1.9.68 took the long way for one with «SOURCE_UNSUPPORTED» and nothing more). `why` hears the reason
   * whenever the answer is null: SOURCE_NO_AUDIO, SOURCE_CODEC_<name>, SOURCE_EMPTY, SOURCE_TOO_LARGE or SOURCE_ERROR_<what failed>.
   */
@@ -33,7 +33,9 @@ final class AudioPipeline {
   try{
    ex.setDataSource(input.getAbsolutePath());int track=-1;for(int i=0;i<ex.getTrackCount();i++){String mime=ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME);if(mime!=null&&mime.startsWith("audio/")){track=i;break;}}
    if(track<0){why.accept("SOURCE_NO_AUDIO");return null;}
-   MediaFormat format=ex.getTrackFormat(track);String mime=format.getString(MediaFormat.KEY_MIME);boolean aac="audio/mp4a-latm".equals(mime),webm="audio/opus".equals(mime)||"audio/vorbis".equals(mime);
+   MediaFormat format=ex.getTrackFormat(track);String mime=format.getString(MediaFormat.KEY_MIME);// Vorbis is not carried: Android's extractor hands each Vorbis packet with four extra bytes for its own decoder, and
+   // a copy would hand them on (the emulator caught it). Such clips take the decoded way.
+   boolean aac="audio/mp4a-latm".equals(mime),webm="audio/opus".equals(mime);
    if(!aac&&!webm){why.accept("SOURCE_CODEC_"+codecName(mime));return null;}
    out=File.createTempFile("madar_source_",aac?".m4a":".webm",c.getCacheDir());
    ex.selectTrack(track);step="MUXER";muxer=new android.media.MediaMuxer(out.getAbsolutePath(),aac?android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4:android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM);
