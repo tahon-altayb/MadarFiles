@@ -27,6 +27,10 @@ jobs:
           gradle-version: '8.9'
       - name: Android SDK
         run: python3 scripts/ensure_android.py
+      - name: Create disposable validation certificate
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -validity 10000
       - name: Compile and unit tests
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug
       - name: Prepare playback fixture
