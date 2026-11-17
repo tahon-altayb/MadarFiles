@@ -58,6 +58,21 @@ public class PlayerWatchTest {
    assertTrue("Audio must continue while the UI is blocked",after[0]-before[0]>60000);assertEquals("Independent prefilled feeder must not underrun",underruns[0],underruns[1]);assertEquals(0,playerVolume(player),0);
   }finally{instrumentation.runOnMainSync(activity::finish);source.delete();pcm.delete();}
  }
+ @Test public void moderateClockDriftDoesNotSeekOrPauseAvailableCleanAudio()throws Exception{
+  Context c=instrumentation.getTargetContext();File source=File.createTempFile("watch-drift-",".mp4",c.getCacheDir()),pcm=File.createTempFile("watch-drift-",".pcm",c.getCacheDir());
+  try(InputStream in=instrumentation.getContext().getAssets().open("watch-long.mp4");OutputStream out=new FileOutputStream(source)){FilesUtil.copy(in,out);}
+  try(RandomAccessFile out=new RandomAccessFile(pcm,"rw")){out.setLength(24L*44100*4);}
+  LiveSeparation.Session session=LiveSeparation.begin(source,true);LiveSeparation.attach(session,pcm,0);LiveSeparation.publish(session,24*44100);LiveSeparation.end(session,null);
+  PlayerActivity activity=(PlayerActivity)instrumentation.startActivitySync(new Intent(c,PlayerActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("path",source.getPath()).putExtra("separationSession",session.id));
+  try{CleanAudioController clean=(CleanAudioController)field(activity,"clean");ExoPlayer player=(ExoPlayer)field(activity,"player");long deadline=System.currentTimeMillis()+15000;
+   while(clean.playedFrames()<22050&&System.currentTimeMillis()<deadline)Thread.sleep(50);assertTrue(clean.playedFrames()>22050);
+   instrumentation.runOnMainSync(()->{try{java.lang.reflect.Method seek=CleanAudioController.class.getDeclaredMethod("seekVideo",long.class);seek.setAccessible(true);seek.invoke(clean,player.getCurrentPosition()+600);}catch(Exception e){throw new AssertionError(e);}});
+   Thread.sleep(1000);final int[] counts=new int[3];final long[] before=new long[1];
+   instrumentation.runOnMainSync(()->{counts[0]=clean.resetCount;counts[1]=clean.syncSeekCount;counts[2]=clean.bufferPauseCount;before[0]=clean.playedFrames();assertTrue(player.getTrackSelectionParameters().disabledTrackTypes.contains(androidx.media3.common.C.TRACK_TYPE_AUDIO));});
+   Thread.sleep(6000);
+   instrumentation.runOnMainSync(()->{assertEquals(counts[0],clean.resetCount);assertEquals("Moderate drift must not seek the picture",counts[1],clean.syncSeekCount);assertEquals("Already separated audio must not be paused for clock corrections",counts[2],clean.bufferPauseCount);assertTrue(clean.playedFrames()-before[0]>5*44100);assertEquals(0,player.getVolume(),0);});
+  }finally{instrumentation.runOnMainSync(activity::finish);source.delete();pcm.delete();}
+ }
  @Test public void externalHlsPlaysAndCleansItsAudioWithCallerHeaders()throws Exception{
   Context c=instrumentation.getTargetContext();instrumentation.getUiAutomation().grantRuntimePermission(c.getPackageName(),android.Manifest.permission.POST_NOTIFICATIONS);java.util.concurrent.atomic.AtomicBoolean headerSeen=new java.util.concurrent.atomic.AtomicBoolean();
   try(okhttp3.mockwebserver.MockWebServer server=new okhttp3.mockwebserver.MockWebServer()){

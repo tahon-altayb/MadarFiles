@@ -1,0 +1,159 @@
+name: Live separation stability and signed update
+on:
+  push:
+    branches: [fixes/live-separation-20261118]
+    paths-ignore: ['diagnostics/**', 'docs/**', 'scripts/build_separation_comparison.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: live-separation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  playback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Android SDK
+        run: python3 scripts/ensure_android.py
+      - name: Compile and unit tests
+        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug
+      - name: Prepare playback fixture
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          mkdir -p app/src/androidTest/assets
+          ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=15 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 24 -c:v libx264 -preset ultrafast -crf 35 -c:a aac -movflags +faststart app/src/androidTest/assets/watch-long.mp4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual Android audio continuity tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: gradle --no-daemon -PvalidationBuild=true :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.PlayerWatchTest#moderateClockDriftDoesNotSeekOrPauseAvailableCleanAudio,com.madar.files.PlayerWatchTest#feederSurvivesBusyUiAndClockCorrectionWithoutDroppingPcm,com.madar.files.PlayerWatchTest#rollingAudioWaitsForReserveAndResumesWithoutSkippingTheTail'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Live-separation-test-reports
+          path: |
+            app/build/reports
+            app/build/outputs/androidTest-results
+  release:
+    needs: playback
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Android SDK
+        run: python3 scripts/ensure_android.py
+      - name: Load signing key from GitHub Secrets
+        env:
+          MADAR_KEYSTORE_BASE64: ${{ secrets.MADAR_KEYSTORE_BASE64 }}
+          MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+          MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+          MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+        run: |
+          python3 - <<'PYKEY'
+          import os,base64,pathlib,hashlib,subprocess
+          value=os.environ.get('MADAR_KEYSTORE_BASE64','')
+          required=['MADAR_KEYSTORE_BASE64','MADAR_STORE_PASSWORD','MADAR_KEY_PASSWORD','MADAR_KEY_ALIAS']
+          missing=[name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Configure signing Secrets first: '+', '.join(missing)+'. Never generate a replacement release key.')
+          dest=pathlib.Path('.signing/madar-development.keystore')
+          dest.parent.mkdir(mode=0o700,exist_ok=True)
+          dest.write_bytes(base64.b64decode(value,validate=True))
+          dest.chmod(0o600)
+          cert=subprocess.check_output(['keytool','-exportcert','-keystore',str(dest),'-alias',os.environ['MADAR_KEY_ALIAS'],'-storepass:env','MADAR_STORE_PASSWORD'])
+          expected='753b13a984815b725b41a8f2ae2ef07d9d9e8cc64811cbff004d5da8ccedfb5e'
+          if hashlib.sha256(cert).hexdigest()!=expected:
+              raise SystemExit('Signing key is not the original update key; build stopped')
+          PYKEY
+      - name: Load required Firebase project configuration
+        env:
+          MADAR_FIREBASE_CONFIG: ${{ secrets.MADAR_FIREBASE_CONFIG }}
+        run: |
+          python3 - <<'PYFIREBASE'
+          import os,json,pathlib
+          value=os.environ.get('MADAR_FIREBASE_CONFIG','').strip()
+          if not value:
+              raise SystemExit('MADAR_FIREBASE_CONFIG is required for this managed Gemini release')
+          config=json.loads(value)
+          assert config.get('project_info',{}).get('project_id')=='madar-2ab2e', 'Firebase project mismatch'
+          clients=[c for c in config.get('client',[]) if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.madar.files']
+          assert len(clients)==1, 'Firebase Android package mismatch'
+          assert clients[0].get('api_key',[{}])[0].get('current_key'), 'Firebase client key missing'
+          assert clients[0].get('client_info',{}).get('mobilesdk_app_id'), 'Firebase app ID missing'
+          dest=pathlib.Path('app/google-services.json')
+          dest.write_text(value)
+          dest.chmod(0o600)
+          print('Verified Firebase project and Android client configuration; values withheld.')
+          PYFIREBASE
+      - name: Restore processing build assets
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/vendor
+            app/src/main/jniLibs
+            app/src/main/assets/models
+          key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
+          restore-keys: |
+            madar-engines-v1-
+      - name: Prepare offline model and native assets
+        run: |
+          python3 scripts/prepare_models.py
+          python3 scripts/prepare_vision.py
+          python3 scripts/prepare_lame.py
+          python3 scripts/prepare_containers.py
+      - name: Persist processing build assets
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            app/vendor
+            app/src/main/jniLibs
+            app/src/main/assets/models
+          key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
+      - name: Build signed update
+        env:
+          MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+          MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+          MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+        run: gradle --no-daemon :app:assembleRelease :app:lintRelease
+      - name: Verify original update certificate and version
+        run: |
+          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 109 --version-name 1.9.74 --firebase-config app/google-services.json
+          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.74.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MadarFiles-1.9.74-APK
+          path: MadarFiles-1.9.74.apk

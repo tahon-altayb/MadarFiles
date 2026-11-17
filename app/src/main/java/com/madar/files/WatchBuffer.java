@@ -26,10 +26,11 @@ final class WatchBuffer {
  }
  synchronized double required(double played,double playbackSpeed,long now){
   double remaining=Math.max(0,duration-played),rate=speed(now),s=Math.max(.25,playbackSpeed);
-  // Automatic watching uses a rolling reserve, not a download of the whole film.
-  // Explicit waitForComplete is enforced separately by CleanAudioController.
-  double limit=Math.min(remaining,30*s);
-  if(rate==0)return limit;
+  // Before speed is measured, collect a bounded startup sample. Once measured,
+  // cover the predicted production deficit: a 30 s cap guaranteed repeated
+  // starvation whenever decode + upload + separation was slower than playback.
+  double limit=remaining;
+  if(rate==0)return Math.min(limit,30*s);
   double safety=Math.max(Math.max(20*s,Math.min(120,gap*1.5)*s),plannedGap*1.25*s);
   return Math.min(limit,Math.max(safety,remaining*(1-rate/s)+safety));
  }

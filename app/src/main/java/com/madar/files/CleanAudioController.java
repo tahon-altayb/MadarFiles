@@ -13,17 +13,20 @@ final class CleanAudioController implements AutoCloseable {
  interface Status {void show(String text,boolean waiting);}
  private final Context context;private final AudioManager manager;private final AudioFocusRequest focus;private boolean focused,hasFocusRequest;private final ExoPlayer video;private final LiveSeparation.Session session;private final Status status;
  private final Handler main=new Handler(Looper.getMainLooper());private final HandlerThread feederThread=new HandlerThread("madar-clean-audio",android.os.Process.THREAD_PRIORITY_AUDIO);private final Handler feeder;
- private final AudioTrack audio;private final AudioContentClock outputClock=new AudioContentClock();private long observedHead=-1,headChangedAt,guardAt=-1;private int guardWritten;private final Object audioLock=new Object();private RandomAccessFile input;private long cursor,baseFrame,pausedLimit;private volatile boolean closed;private boolean wanted,adjusting,rebuffered,reserveApproved;private volatile boolean playing,feedAllowed;private float volume=1,speed=1,pitch=1;private volatile String failure="";private long lastUi,lastSync,driftSince,refillAfter;
+ private final TrackSelectionParameters originalTracks;private final AudioTrack audio;private final AudioContentClock outputClock=new AudioContentClock();private long observedHead=-1,headChangedAt,guardAt=-1;private int guardWritten;private final Object audioLock=new Object();private RandomAccessFile input;private long cursor,baseFrame,pausedLimit;private volatile boolean closed;private boolean wanted,adjusting,rebuffered,reserveApproved;private volatile boolean playing,feedAllowed;private float volume=1,speed=1,pitch=1;private volatile String failure="";private long lastUi,lastSync,driftSince,refillAfter;
  private boolean seeking;private final java.util.ArrayDeque<Boolean> ownPlayChanges=new java.util.ArrayDeque<>();private final java.util.ArrayDeque<Long> ownSeeks=new java.util.ArrayDeque<>();
  // Diagnostics used by the native continuity regression tests (no source audio is recorded).
- int resetCount,syncSeekCount;private long lastPlayed;
+ int resetCount,syncSeekCount,bufferPauseCount;private long lastPlayed;
  private java.util.function.BooleanSupplier playbackGate=()->true;
  void setPlaybackGate(java.util.function.BooleanSupplier gate){playbackGate=gate==null?()->true:gate;}
  CleanAudioController(Context context,ExoPlayer video,LiveSeparation.Session session,long positionMs,boolean wanted,Status status){
   this.context=context.getApplicationContext();this.video=video;this.session=session;this.status=status;this.wanted=wanted;session.watching=true;manager=this.context.getSystemService(AudioManager.class);
   focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()).setWillPauseWhenDucked(true).setOnAudioFocusChangeListener(change->{if(closed)return;if(change==AudioManager.AUDIOFOCUS_GAIN)focused=true;else{focused=false;if(change==AudioManager.AUDIOFOCUS_LOSS){this.wanted=false;hasFocusRequest=false;}pause();}},main).build();
   audio=new AudioTrack.Builder().setAudioAttributes(new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build()).setAudioFormat(new AudioFormat.Builder().setSampleRate(44100).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(176400,3*AudioTrack.getMinBufferSize(44100,AudioFormat.CHANNEL_OUT_STEREO,AudioFormat.ENCODING_PCM_16BIT))).build();
-  video.setVolume(0);video.setAudioAttributes(video.getAudioAttributes(),false);video.addListener(listener);androidx.core.content.ContextCompat.registerReceiver(this.context,noisy,new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+  originalTracks=video.getTrackSelectionParameters();video.setVolume(0);video.setAudioAttributes(video.getAudioAttributes(),false);
+  // The separated AudioTrack is the only audio renderer/clock. Muting the
+  // original track still decodes it and lets its clock drive repeated resyncs.
+  video.setTrackSelectionParameters(originalTracks.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO,true).build());video.addListener(listener);androidx.core.content.ContextCompat.registerReceiver(this.context,noisy,new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
   move(positionMs);seeking=false;feederThread.start();feeder=new Handler(feederThread.getLooper());feeder.post(feed);if(wanted)requestFocus();main.post(tick);
  }
  private final Player.Listener listener=new Player.Listener(){
@@ -47,7 +50,7 @@ final class CleanAudioController implements AutoCloseable {
  boolean wanted(){return wanted;}
  long positionMs(){return Math.round(session.offsetUs/1000.0+playedFrames()*1000.0/44100);}
  int audioSession(){return audio.getAudioSessionId();}
- void settings(float speed,float pitch,float volume){this.speed=speed;this.pitch=pitch;this.volume=volume;synchronized(audioLock){audio.setVolume(volume);if(playing)audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));}video.setVolume(0);}
+ void settings(float speed,float pitch,float volume){this.speed=speed;this.pitch=pitch;this.volume=volume;synchronized(audioLock){audio.setVolume(volume);if(playing)audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));}video.setPlaybackParameters(new PlaybackParameters(speed,pitch));video.setVolume(0);}
  long playedFrames(){synchronized(audioLock){return playedLocked();}}
  int underruns(){synchronized(audioLock){return audio.getUnderrunCount();}}
  // A paused/starved hardware counter can still report its last output quantum.
@@ -72,7 +75,7 @@ final class CleanAudioController implements AutoCloseable {
  private final Runnable tick=new Runnable(){@Override public void run(){if(closed)return;try{
   video.setVolume(0);long frames=playedFrames();session.playedFrames=frames;double played=session.offsetUs/1e6+frames/44100.0,ready=session.offsetUs/1e6+session.availableEnd(frames)/44100.0;long now=SystemClock.elapsedRealtime();
   if(!failure.isEmpty()){wanted=false;pause();}
-  boolean gate=playbackGate.getAsBoolean();if(playing&&(!gate||video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE))pause();
+  boolean gate=playbackGate.getAsBoolean();if(playing&&(!gate||video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE)){bufferPauseCount++;pause();}
   long queued;synchronized(audioLock){queued=cursor-frames;}
   double reserve=session.waitForComplete?Double.POSITIVE_INFINITY:session.buffer==null?(rebuffered?8:3)*Math.max(1,speed):session.buffer.required(frames/44100.0,speed,now);
   // A transport seek needs only a short prefix at the requested position. It
@@ -88,12 +91,19 @@ final class CleanAudioController implements AutoCloseable {
   }
   if(playing){
    if(frames>=session.availableEnd(frames)){reserveApproved=false;pause();rebuffered=true;session.requestedFrame=frames;if(session.done&&frames>=session.frames)wanted=false;}
-   else if(video.getPlaybackState()==Player.STATE_READY&&now-lastSync>1500&&Math.abs(video.getCurrentPosition()/1000.0-played)>.25){if(driftSince==0)driftSince=now;else if(now-driftSince>=350){syncSeekCount++;seekVideo(Math.round(played*1000));lastSync=now;driftSince=0;}}
-   else driftSince=0;
+   else if(video.getPlaybackState()==Player.STATE_READY){
+    double drift=video.getCurrentPosition()/1000.0-played;
+    // Chase the PCM clock gradually. Seeking for a 250 ms drift rebuffered the
+    // picture and paused already available audio on every correction cycle.
+    float corrected=CleanVideoSync.speed(speed,drift);
+    if(Math.abs(video.getPlaybackParameters().speed-corrected)>.001f)video.setPlaybackParameters(new PlaybackParameters(corrected,pitch));
+    if(Math.abs(drift)>1.5&&now-lastSync>5000){if(driftSince==0)driftSince=now;else if(now-driftSince>=1000){syncSeekCount++;seekVideo(Math.round(played*1000));lastSync=now;driftSince=0;}}
+    else driftSince=0;
+   }
   }
   String text=!failure.isEmpty()?failure:session.failed?session.error:session.done?"الصوت المنظّف · اكتمل الفصل":"الصوت المنظّف · جاهز إلى "+stamp(Math.round(ready*1000))+(session.waitForComplete?" · انتظار اكتمال الفصل قبل المشاهدة":session.buffer!=null?" · "+session.buffer.describe(frames/44100.0,session.availableEnd(frames)/44100.0,speed,now):wanted&&!playing?" · تجهيز مخزون للمشاهدة المستقرة":"");
   if(now-lastUi>=250){lastUi=now;status.show(text,wanted&&!playing||session.failed||!failure.isEmpty());}
  }catch(Exception error){wanted=false;pause();failure="تعذرت متابعة الصوت المنظّف: "+error.getMessage();status.show(failure,true);}main.postDelayed(this,30);}};
  private static String stamp(long ms){return String.format(java.util.Locale.US,"%d:%02d",ms/60000,ms/1000%60);}
- @Override public void close(){if(closed)return;closed=true;main.removeCallbacksAndMessages(null);feeder.removeCallbacksAndMessages(null);pause();video.removeListener(listener);if(hasFocusRequest)manager.abandonAudioFocusRequest(focus);try{context.unregisterReceiver(noisy);}catch(IllegalArgumentException ignored){}video.setAudioAttributes(video.getAudioAttributes(),true);synchronized(audioLock){audio.release();try{if(input!=null)input.close();}catch(IOException ignored){}}feederThread.quitSafely();session.watching=false;}
+ @Override public void close(){if(closed)return;closed=true;main.removeCallbacksAndMessages(null);feeder.removeCallbacksAndMessages(null);pause();video.removeListener(listener);if(hasFocusRequest)manager.abandonAudioFocusRequest(focus);try{context.unregisterReceiver(noisy);}catch(IllegalArgumentException ignored){}video.setPlaybackParameters(new PlaybackParameters(speed,pitch));video.setTrackSelectionParameters(originalTracks);video.setAudioAttributes(video.getAudioAttributes(),true);synchronized(audioLock){audio.release();try{if(input!=null)input.close();}catch(IOException ignored){}}feederThread.quitSafely();session.watching=false;}
 }
