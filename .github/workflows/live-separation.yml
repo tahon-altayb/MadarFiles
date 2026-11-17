@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: live-separation-${{ github.ref }}
   cancel-in-progress: true
@@ -133,6 +134,17 @@ jobs:
           key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
           restore-keys: |
             madar-engines-v1-
+      - name: Recover identical offline model bytes from the verified installed-version package
+        uses: actions/download-artifact@v4
+        with:
+          name: MadarFiles-1.9.73-APK
+          run-id: 43558472817
+          github-token: ${{ github.token }}
+          path: original-model-baseline
+      - name: Verify original update package and recover model assets
+        run: |
+          python3 scripts/verify_release.py original-model-baseline/MadarFiles-1.9.73.apk --version-code 108 --version-name 1.9.73
+          python3 scripts/recover_release_models.py original-model-baseline/MadarFiles-1.9.73.apk
       - name: Prepare offline model and native assets
         run: |
           python3 scripts/prepare_models.py
