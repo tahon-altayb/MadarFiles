@@ -119,10 +119,12 @@ class BundleCache:
                     digest=hashlib.file_digest(handle,'sha256').hexdigest()
                 timings.add(f'FX_{component}_PACK',started,size)
                 started=time.monotonic()
+                saved = False
                 try:
-                    return drive.store(archive,SimpleNamespace(sha256=digest,size=size),self.auth,status,
+                    saved = drive.store(archive,SimpleNamespace(sha256=digest,size=size),self.auth,status,
                         dict(name=name,appProperties={'signature':self.signature(name,digest,size)}))
+                    return saved
                 finally:
-                    timings.add(f'FX_DRIVE_{component}_PUT',started,size)
+                    timings.add(f'FX_DRIVE_{component}_PUT',started,size if saved else 0)
             except (OSError, ValueError, TypeError, tarfile.TarError, drive.requests.RequestException):
                 return False

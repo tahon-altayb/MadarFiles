@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   playback:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
       - name: Prepare playback fixture
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg pulseaudio
           mkdir -p app/src/androidTest/assets
           ffmpeg -v error -y -f lavfi -i testsrc2=size=160x90:rate=15 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 24 -c:v libx264 -preset ultrafast -crf 35 -c:a aac -movflags +faststart app/src/androidTest/assets/watch-long.mp4
           ffmpeg -v error -y -f lavfi -i sine=frequency=440:sample_rate=44100 -t 24 -c:a libmp3lame -b:a 128k app/src/androidTest/assets/watch-source.mp3
@@ -50,6 +50,11 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Provide a timed audio sink for headless playback
+        run: |
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=madar_playback
+          pactl set-default-sink madar_playback
       - name: Actual Android audio continuity tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -59,7 +64,7 @@ jobs:
           profile: pixel_6
           ram-size: 4096M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -no-boot-anim
           script: gradle --no-daemon -PvalidationBuild=true :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.PlayerWatchTest#moderateClockDriftDoesNotSeekOrPauseAvailableCleanAudio,com.madar.files.PlayerWatchTest#feederSurvivesBusyUiAndClockCorrectionWithoutDroppingPcm,com.madar.files.PlayerWatchTest#rollingAudioWaitsForReserveAndResumesWithoutSkippingTheTail,com.madar.files.ColabAccountTest,com.madar.files.MusicMpegSourceTest'
       - uses: actions/upload-artifact@v4
         if: always()
