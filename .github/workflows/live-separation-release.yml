@@ -1,4 +1,5 @@
 name: Signed live separation update with verified original assets
+# Release only: native playback already passed for the identical app tree.
 on:
   push:
     branches: [fixes/live-separation-20261118]
