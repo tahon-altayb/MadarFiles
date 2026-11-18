@@ -171,6 +171,79 @@ class FxRuntimeCacheTest(unittest.TestCase):
             self.assertIsNone(bundle.find(name))
 
 
+class VoiceWorkerTest(unittest.TestCase):
+    def test_vocals_only_with_small_pcm_uploads_and_continuous_boundary(self):
+        import base64
+        import json
+        import os
+        import zlib
+
+        core = music_worker.CORE
+        frames = core + 2000
+        segments = [bytes(core * 4), bytes(2000 * 4)]
+        inputs = [dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for data in segments]
+        levels = iter([0.25, -0.25])
+
+        def process(sample_rate, samples):
+            vocals = np.full_like(samples, next(levels))
+            return SimpleNamespace(sample_rate=sample_rate, stems=[
+                SimpleNamespace(data=vocals), SimpleNamespace(data=np.ones_like(samples))])
+
+        with tempfile.TemporaryDirectory() as work:
+            previous = Path.cwd()
+            try:
+                os.chdir(work)
+                for index, data in enumerate(segments):
+                    Path(f'input_{index}.pcm').write_bytes(data)
+                engine = SimpleNamespace(process=process)
+                with patch.object(music_worker, 'ENGINE', engine), patch.object(music_worker, 'prepare'), patch.object(music_worker, 'status'):
+                    music_worker.run_v2(dict(frames=frames, inputs=inputs, pipeline='voc_ft', input_frames=core))
+                result = json.loads(Path('result.json').read_text())
+                self.assertEqual((result['frames'], result['pack_count'], result['provider']), (frames, 1, 'cuda'))
+                pcm = Path('pack_0.pcm').read_bytes()
+                samples = np.frombuffer(pcm, '<i2').reshape(frames, 2)
+                self.assertEqual(samples[core - 1, 0], samples[core, 0])
+                self.assertLess(np.max(np.abs(np.diff(samples[:, 0]))), 20)
+                self.assertEqual(samples[-1, 0], -8192)
+                np.testing.assert_array_equal(samples[:, 0], samples[:, 1])
+                pack = result['recent_packs'][0]
+                self.assertEqual(hashlib.sha256(pcm).hexdigest(), pack['sha256'])
+                self.assertEqual(zlib.decompress(base64.b64decode(Path('pack_0.b64.txt').read_bytes())), pcm)
+            finally:
+                os.chdir(previous)
+
+    def test_more_than_128_source_parts_are_reassembled_for_voice(self):
+        import os
+        from unittest.mock import Mock
+
+        payload = bytes(range(150))
+        parts = [dict(bytes=1, sha256=hashlib.sha256(bytes([n])).hexdigest()) for n in payload]
+        source = dict(parts=parts, bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+
+        def ffmpeg(command, **kwargs):
+            self.assertEqual(Path('source.audio').read_bytes(), payload)
+            if command[0] == 'ffprobe':
+                return SimpleNamespace(stdout='{"streams":[{"channels":2}]}')
+            Path('input.pcm').write_bytes(bytes(40))
+            return SimpleNamespace(returncode=0)
+
+        with tempfile.TemporaryDirectory() as work:
+            previous = Path.cwd()
+            try:
+                os.chdir(work)
+                for index, value in enumerate(payload):
+                    Path(f'source_{index}.bin').write_bytes(bytes([value]))
+                runner = Mock(side_effect=ffmpeg)
+                with patch.object(music_worker.subprocess, 'run', runner):
+                    with self.assertRaisesRegex(ValueError, 'MUSIC_SOURCE_MANIFEST'):
+                        music_worker.decode_source(source)
+                    self.assertEqual(music_worker.decode_source(source, max_parts=384), 10)
+                self.assertEqual(runner.call_count, 2)
+                self.assertFalse(list(Path('.').glob('source_*.bin')))
+            finally:
+                os.chdir(previous)
+
+
 class AudioTest(unittest.TestCase):
     def separator(self):
         separator = Separator.__new__(Separator)

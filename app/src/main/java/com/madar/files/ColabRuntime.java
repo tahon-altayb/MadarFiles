@@ -215,6 +215,9 @@ final class ColabRuntime implements AutoCloseable {
   }
  }
  void put(String path,String content,String format)throws Exception{jupyter("PUT",contentPath(path,null),new JSONObject().put("type","file").put("format",format).put("content",content),2*1024*1024);}
+ void putAudioPart(String path,String content)throws Exception{
+  jupyter("PUT",contentPath(path,null),new JSONObject().put("type","file").put("format","base64").put("content",content),2*1024*1024,30000);
+ }
  String getText(String path,int max)throws Exception{return getText(path,max,100000);}
  String getText(String path,int max,long timeoutMs)throws Exception{
   try{return jupyter("GET",contentPath(path,"text"),null,max,timeoutMs).getString("content");}

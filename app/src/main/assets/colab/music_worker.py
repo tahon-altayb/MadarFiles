@@ -365,12 +365,12 @@ def read_wire(part, name, expected):
     return data
 
 
-def decode_source(source, seconds=None):
+def decode_source(source, seconds=None, max_parts=128):
     """Decodes the clip's own compressed audio (sent in parts, a tenth of the decoded size) into input.pcm at
     44.1 kHz stereo 16-bit, exactly what the decoded packs carried, and returns its length in frames."""
     import subprocess
     parts = source.get('parts') if isinstance(source, dict) else None
-    if not isinstance(parts, list) or not 0 < len(parts) <= 128:
+    if not isinstance(parts, list) or not 0 < len(parts) <= max_parts:
         raise ValueError('MUSIC_SOURCE_MANIFEST')
     digest, total = hashlib.sha256(), 0
     with open('source.audio', 'wb') as out:
@@ -510,7 +510,13 @@ def run_v2(req):
     # inference contexts are resident; status and result manifests stay bounded.
     import numpy as np
     frames = req.get('frames')
-    stride = 32 * RATE
+    pipeline = req.get('pipeline', 'voc_ft')
+    if pipeline not in ('voc_ft', FX_PIPELINE, BANDIT_PIPELINE):
+        raise ValueError('MUSIC_PIPELINE')
+    voice = pipeline == 'voc_ft'
+    stride = req.get('input_frames', 32 * RATE)
+    if type(stride) is not int or (stride != 32 * RATE and not (voice and stride == CORE)):
+        raise ValueError('MUSIC_MANIFEST')
     output_stride = 16 * RATE
     inputs = req.get('inputs')
     compressed = req.get('source')
@@ -519,9 +525,6 @@ def run_v2(req):
             raise ValueError('MUSIC_DURATION')
         if not isinstance(inputs, list) or len(inputs) != (frames + stride - 1) // stride:
             raise ValueError('MUSIC_MANIFEST')
-    pipeline = req.get('pipeline', 'voc_ft')
-    if pipeline not in ('voc_ft', FX_PIPELINE, BANDIT_PIPELINE):
-        raise ValueError('MUSIC_PIPELINE')
     if pipeline == BANDIT_PIPELINE:
         if _BANDIT is None:
             raise ValueError('MUSIC_BANDIT_NOT_READY')
@@ -531,7 +534,7 @@ def run_v2(req):
         # The phone sent the clip's own compressed audio. When it cannot be read here the job ends without a result
         # and says so, and the phone sends the decoded audio the long way in its next job; the service stays up.
         try:
-            frames = decode_source(compressed, req.get('seconds'))
+            frames = decode_source(compressed, req.get('seconds'), max_parts=384 if voice else 128)
         except Exception as error:
             code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', str(error)) else type(error).__name__
             Path('input.pcm').unlink(missing_ok=True)
@@ -552,6 +555,8 @@ def run_v2(req):
         return publish_fx(frames)
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
     recent, packed, count = [], bytearray(), 0
+    previous_tail = None
+    transition = RATE // 25  # 40 ms from the existing 1 s overlap.
     began = time.monotonic()
     gpu_ms = 0
     for start in range(0, frames, CORE):
@@ -564,16 +569,24 @@ def run_v2(req):
             raise ValueError('MUSIC_OUTPUT_FORMAT')
         vocals = output.stems[0].data
         keep, offset = min(CORE, frames - start), start - left
-        if vocals.ndim != 2 or vocals.shape[0] != 2 or vocals.shape[1] < offset + keep:
+        if vocals.ndim != 2 or vocals.shape[0] != 2 or vocals.shape[1] < right - left:
             raise ValueError('MUSIC_OUTPUT_LENGTH')
         values = vocals[:, offset:offset + keep].T
-        if not np.isfinite(values).all():
+        tail = vocals[:, offset + keep:offset + keep + transition].T
+        if not np.isfinite(values).all() or not np.isfinite(tail).all():
             raise ValueError('MUSIC_OUTPUT_FINITE')
+        if previous_tail is not None:
+            overlap = min(len(previous_tail), len(values))
+            if overlap:
+                mix = np.linspace(0, 1, transition, dtype=np.float32)[:overlap, None]
+                values = values.copy()
+                values[:overlap] = previous_tail[:overlap] * (1 - mix) + values[:overlap] * mix
+        previous_tail = tail.copy()
         packed.extend(np.floor(np.clip(values, -1, 1) * 32767 + .5).astype('<i2').tobytes())
         if len(packed) == output_stride * 4 or start + CORE >= frames:
             if shutil.disk_usage('.').free < len(packed) * 3 + 16 * 1024 * 1024:
                 raise ValueError('MUSIC_DISK')
-            meta = write_pack(f'pack_{count}.pcm', bytes(packed))
+            meta = write_pack(f'pack_{count}.pcm', bytes(packed), text_backup=True)
             meta['index'] = count
             write_json(f'pack_{count}.json', meta)
             recent.append(meta)

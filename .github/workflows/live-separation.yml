@@ -181,9 +181,9 @@ jobs:
         run: gradle --no-daemon :app:assembleRelease :app:lintRelease
       - name: Verify original update certificate and version
         run: |
-          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 114 --version-name 1.9.79 --firebase-config app/google-services.json
-          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.79.apk
+          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 115 --version-name 1.9.80 --firebase-config app/google-services.json
+          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.80.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.79-APK
-          path: MadarFiles-1.9.79.apk
+          name: MadarFiles-1.9.80-APK
+          path: MadarFiles-1.9.80.apk
