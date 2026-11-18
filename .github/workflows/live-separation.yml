@@ -52,9 +52,13 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Provide a timed audio sink for headless playback
         run: |
+          audio_socket="$RUNNER_TEMP/madar-pulse"
           pulseaudio --start --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=madar_playback
-          pactl set-default-sink madar_playback
+          pactl load-module module-native-protocol-unix socket="$audio_socket" auth-anonymous=1
+          audio_server="unix:$audio_socket"
+          pactl -s "$audio_server" load-module module-null-sink sink_name=madar_playback
+          pactl -s "$audio_server" set-default-sink madar_playback
+          printf 'PULSE_SERVER=%s\nQEMU_AUDIO_DRV=pa\n' "$audio_server" >> "$GITHUB_ENV"
       - name: Actual Android audio continuity tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
