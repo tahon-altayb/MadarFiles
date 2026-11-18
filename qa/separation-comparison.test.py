@@ -37,7 +37,8 @@ class cuda:
  @staticmethod
  def get_device_name(i): return 'test-contract-only'
 ''')
-  (folder/'bandit_infer.py').write_text('''import numpy as np
+  package=folder/'bandit_infer';package.mkdir()
+  (package/'__init__.py').write_text('''import numpy as np
 class BanditSession:
  def __init__(self,*args,**kwargs): assert kwargs['device']=='cuda'
  def __enter__(self): return self
@@ -47,8 +48,35 @@ class BanditSession:
   return dict(speech=audio*.25,effects=audio*.125,music=audio*.625)
  def cache_info(self): return {'test_only':True}
 ''')
+  fixture=folder/'test-weights.bin';fixture.write_bytes(b'test-only-checkpoint')
+  import hashlib
+  (package/'checkpoints.py').write_text("from types import SimpleNamespace\ndef get_spec(key): return SimpleNamespace(filename='checkpoint.ckpt',size=20,sha256="+repr(hashlib.sha256(fixture.read_bytes()).hexdigest())+",url="+repr(fixture.as_uri())+")\n")
   script=folder/'runner.py';script.write_text(RUNNER)
   return subprocess.run([sys.executable,str(script),str(folder),'1'],text=True,capture_output=True)
+
+ def test_weight_download_resumes_at_the_verified_byte_boundary(self):
+  import importlib.util,hashlib,io
+  from types import SimpleNamespace
+  from unittest.mock import patch
+  spec=importlib.util.spec_from_file_location('runner_helpers',ROOT/'scripts/colab_bandit_runner.py')
+  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  data=b'checkpoint bytes'*100
+  metadata=SimpleNamespace(filename='model.ckpt',size=len(data),sha256=hashlib.sha256(data).hexdigest(),url='https://weights.invalid/model')
+  class Response(io.BytesIO):
+   headers={'Content-Range':f'bytes 100-{len(data)-1}/{len(data)}'}
+   def getcode(self):return 206
+  def open_response(request,timeout):
+   self.assertEqual(request.get_header('Range'),'bytes=100-');self.assertEqual(timeout,20)
+   return Response(data[100:])
+  with tempfile.TemporaryDirectory() as t:
+   folder=Path(t);(folder/'model.ckpt.part').write_bytes(data[:100])
+   with patch.object(module.urllib.request,'urlopen',side_effect=open_response):
+    target=module.ensure_weights(folder,metadata)
+   self.assertEqual(target.read_bytes(),data)
+   with patch.object(module.urllib.request,'urlopen',side_effect=AssertionError('verified cache should not download')):
+    self.assertEqual(module.ensure_weights(folder,metadata),target)
+   target.write_bytes(b'bad')
+   with self.assertRaises(ValueError):module.ensure_weights(folder,metadata)
 
  def test_setup_installs_into_child_environment_without_ensurepip(self):
   import venv

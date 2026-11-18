@@ -21,3 +21,9 @@ No new model is installed in the Android application. Comparative quality, CUDA 
 Sources: https://github.com/kwatcharasupat/bandit-v2 ; https://zenodo.org/records/12701995 ; https://github.com/openmirlab/bandit-infer . Bandit code is Apache-2.0; v2 weights are CC-BY-SA-4.0.
 
 Local checks: 13 JUnit tests passed; four notebook/media-contract tests passed (the runner-contract tests use an explicitly synthetic model, not evidence of model inference or separation quality). Android compilation, unit suite, lint, native emulator playback and original-certificate APK build are gated by `.github/workflows/live-separation.yml`.
+
+## Completed delivery and Colab repair
+
+The original-certificate signed 1.9.74 (109) package was built and verified in run 44204598860. Its artifact is `MadarFiles-1.9.74-APK`. The native playback checks passed in run 44202347875; the release gate confirmed identical Android sources.
+
+The notebook now creates its optional environment without ensurepip and uses the existing pip with `--python` to install only into that child. Six notebook/media/download contract tests pass, including an actual no-ensurepip child installation and byte-exact checkpoint range resume. The candidate runner emits phase/download/chunk progress; checkpoint network operations have bounded timeouts and verified resumable partial files. The monitor owns and terminates its child on interruption. `Madar_Colab_Bandit_Progress_Repair.py` resumes the existing kernel and preserves the already processed baseline and input. GPU quality comparison is still a user-run experiment, not a locally demonstrated quality result.

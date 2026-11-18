@@ -66,56 +66,9 @@ subprocess.run([sys.executable,'-m','pip','--python',BPY,'install','--disable-pi
     'soundfile==0.13.1'],check=True)
 subprocess.run([BPY,'-c',"import torch, soundfile, numpy; assert torch.cuda.is_available(), 'اختر GPU للجلسة'; print('Torch:',torch.__version__,'GPU:',torch.cuda.get_device_name(0))"],check=True)
 '''))
-    runner='''import json, time, sys
-from pathlib import Path
-import numpy as np
-import soundfile as sf
-import torch
-from bandit_infer import BanditSession
-root=Path(sys.argv[1]); second=sys.argv[2]=='1'
-if not torch.cuda.is_available(): raise RuntimeError('CUDA is required; CPU separation is disabled')
-audio, rate=sf.read(root/'bandit_input.wav',dtype='float32',always_2d=True)
-if rate!=48000 or audio.shape[1]!=2 or len(audio)==0: raise ValueError('Invalid test audio')
-started=time.monotonic()
-with BanditSession('v2-multi',family='v2',device='cuda',weights_dir=root/'bandit_weights') as model:
-    loading=time.monotonic()-started
-    torch.cuda.synchronize(); began=time.monotonic()
-    stems=model.infer(audio.T,sample_rate=48000)
-    torch.cuda.synchronize(); elapsed=time.monotonic()-began
-    def mix(values, name):
-        if set(values)!={'speech','music','effects'}: raise ValueError('Unexpected stems')
-        for value in values.values():
-            if value.shape!=audio.T.shape or not np.isfinite(value).all(): raise ValueError('Invalid stem shape/values')
-        clean=values['speech']+values['effects']
-        peak=float(np.max(np.abs(clean)))
-        # One common gain prevents clipping, without boosting a quiet stem.
-        gain=min(1.0,.999/max(peak,1e-9))
-        sf.write(root/name,(clean*gain).T,48000,subtype='PCM_24')
-        return clean, gain
-    clean,gain=mix(stems,'bandit_dialogue_fx.wav')
-    sf.write(root/'bandit_dialogue_only_reference.wav',stems['speech'].T,48000,subtype='FLOAT')
-    second_seconds=None
-    if second:
-        torch.cuda.synchronize(); began=time.monotonic()
-        again=model.infer(clean,sample_rate=48000)
-        torch.cuda.synchronize(); second_seconds=time.monotonic()-began
-        mix(again,'bandit_second_pass.wav')
-    info=model.cache_info()
-report=dict(model='Bandit v2 Multi',sample_rate=rate,frames=len(audio),duration=len(audio)/rate,
-    loading_seconds=loading,inference_seconds=elapsed,second_pass_seconds=second_seconds,
-    realtime_factor=(len(audio)/rate)/max(elapsed,1e-9),output_gain=gain,
-    torch=torch.__version__,gpu=torch.cuda.get_device_name(0),checkpoint=info)
-(root/'bandit_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2,default=str))
-print(json.dumps(report,ensure_ascii=False,indent=2,default=str))
-'''
-    cells.append(cell('code','''#@title 6. فصل الحوار والموسيقى والمؤثرات على GPU
-BANDIT_INPUT=RESULTS/'bandit_input.wav'
-subprocess.run(['ffmpeg','-v','error','-y','-i',str(SEGMENT),'-vn','-ar','48000','-ac','2','-c:a','pcm_s16le',str(BANDIT_INPUT)],check=True)
-RUNNER=ROOT/'bandit_runner.py'
-RUNNER.write_text('''+repr(runner)+''',encoding='utf-8')
-# A child process avoids stale imports and releases GPU memory after finishing.
-subprocess.run([BPY,str(RUNNER),str(RESULTS),'1' if SECOND_PASS else '0'],check=True)
-'''))
+    runner=(ROOT/'scripts/colab_bandit_runner.py').read_text()
+    monitor=(ROOT/'scripts/colab_bandit_monitor.py').read_text()
+    cells.append(cell('code', '#@title 6. الفصل مع تقدم التنزيل والأجزاء\nRUNNER=ROOT/"bandit_runner.py"\nRUNNER.write_text('+repr(runner)+',encoding="utf-8")\n'+monitor))
     cells.append(cell('code','''#@title 7. الاستماع والمقارنة وتنزيل الفيديو أو الصوت
 from IPython.display import display, Audio, Video, Markdown
 import zipfile
