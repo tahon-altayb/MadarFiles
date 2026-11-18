@@ -12,6 +12,8 @@ import re
 import zlib
 import threading
 
+BANDIT_PIPELINE = "bandit_v2_multi"
+
 _STATUS_LOCK = threading.RLock()
 _STATUS_PATH = None
 _STATUS = {}
@@ -23,6 +25,7 @@ _ACTIVE_JOB = ""
 _NEXT_BATCH = 0
 _FX_CLIENT = None
 _FX_VERIFIED = False
+_BANDIT = None
 FX_PIPELINE = 'inst_hq_4_3'
 FX_SHA = 'e165729735b0493b2711b73de37f17cd57dc0a550bd2dff1d4c627586ed32a55'
 
@@ -75,7 +78,7 @@ def status(stage, progress, parts=None, frames=None, packs=None, extra=None):
 def service_state():
     if _SERVICE_ROOT is not None:
         value = dict(protocol=2, heartbeat=_HEARTBEAT, next_batch=_NEXT_BATCH,
-                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED or _FX_VERIFIED else 'bootstrap',
+                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED or _FX_VERIFIED or _BANDIT is not None else 'bootstrap',
                      active_job=_ACTIVE_JOB)
         if _SERVICE_ERROR:
             value['error'] = _SERVICE_ERROR
@@ -194,6 +197,52 @@ def prepare():
         ENGINE = sherpa_onnx.OfflineSourceSeparation(config)
         verify_gpu_inference()
         status('ready', 38)
+
+
+def prepare_bandit(root):
+    global _BANDIT
+    from music_bandit import Separator
+
+    # The isolated Drive appData grant is passed once through the worker's stdin pipe.
+    token = sys.stdin.readline(8193).strip()
+    sys.stdin.close()
+    if len(token) > 8192 or (token and not re.fullmatch(r'[A-Za-z0-9._~-]+', token)):
+        raise ValueError('MUSIC_DRIVE_AUTH')
+    _BANDIT = Separator(root.parent / 'madar_model_cache', token, status)
+    status('ready', 38, extra=_BANDIT.cache_details())
+
+
+def publish_bandit(frames, stride):
+    import numpy as np
+    from music_bandit import FINGERPRINT as BANDIT_SHA
+
+    recent = []
+    with open('input.pcm', 'rb') as stream:
+        source = np.memmap(stream, dtype='<i2', mode='r', shape=(frames, 2))
+        try:
+            manifest = dict(protocol=2, job=Path.cwd().name, frames=frames,
+                            sample_rate=RATE, channels=2, model_sha256=BANDIT_SHA,
+                            pipeline=BANDIT_PIPELINE, provider='cuda', output_frames=stride)
+            for index, (pcm, gpu_ms) in enumerate(_BANDIT.packs(source, stride)):
+                if len(pcm) != min(stride, frames-index*stride)*4:
+                    raise ValueError('MUSIC_OUTPUT_LENGTH')
+                if shutil.disk_usage('.').free < len(pcm)*3 + 16*1024*1024:
+                    raise ValueError('MUSIC_DISK')
+                meta = write_pack(f'pack_{index}.pcm', pcm)
+                meta['index'] = index
+                write_json(f'pack_{index}.json', meta)
+                recent = (recent + [meta])[-8:]
+                complete = min(frames, (index+1)*stride)
+                manifest.update(completed_frames=complete, pack_count=index+1,
+                                recent_packs=recent, gpu_ms=gpu_ms)
+                status('separate', 40 + int(54*complete/frames), extra=manifest)
+            if manifest.get('completed_frames') != frames:
+                raise ValueError('MUSIC_OUTPUT_LENGTH')
+            write_json('result.json', manifest)
+            status('done', 97, extra=manifest)
+        finally:
+            source._mmap.close()
+    Path('input.pcm').unlink(missing_ok=True)
 
 
 def prepare_fx():
@@ -431,9 +480,12 @@ def run_v2(req):
         if not isinstance(inputs, list) or len(inputs) != (frames + stride - 1) // stride:
             raise ValueError('MUSIC_MANIFEST')
     pipeline = req.get('pipeline', 'voc_ft')
-    if pipeline not in ('voc_ft', FX_PIPELINE):
+    if pipeline not in ('voc_ft', FX_PIPELINE, BANDIT_PIPELINE):
         raise ValueError('MUSIC_PIPELINE')
-    if pipeline == FX_PIPELINE: prepare_fx()
+    if pipeline == BANDIT_PIPELINE:
+        if _BANDIT is None:
+            raise ValueError('MUSIC_BANDIT_NOT_READY')
+    elif pipeline == FX_PIPELINE: prepare_fx()
     else: prepare()
     if compressed is not None:
         # The phone sent the clip's own compressed audio. When it cannot be read here the job ends without a result
@@ -454,6 +506,8 @@ def run_v2(req):
                 if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
                     raise ValueError('MUSIC_DISK')
                 out.write(read_wire(part, f'input_{i}.pcm', expected))
+    if pipeline == BANDIT_PIPELINE:
+        return publish_bandit(frames, output_stride)
     if pipeline == FX_PIPELINE:
         return publish_fx(frames)
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
@@ -508,7 +562,8 @@ def serve(root):
     os.chdir(root)
     config_path = root / 'engine.json'
     profile = json.loads(config_path.read_text()).get('pipeline', 'voc_ft') if config_path.is_file() else 'voc_ft'
-    if profile == FX_PIPELINE: prepare_fx()
+    if profile == BANDIT_PIPELINE: prepare_bandit(root)
+    elif profile == FX_PIPELINE: prepare_fx()
     elif profile == 'voc_ft': prepare()
     else: raise ValueError('MUSIC_PIPELINE')
     with _STATUS_LOCK:

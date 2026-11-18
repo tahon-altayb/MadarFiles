@@ -49,3 +49,9 @@ ZXing Core 3.5.4, Apache License 2.0, Copyright ZXing authors. QR codes are enco
 Qwen3.5-9B by Qwen (Apache 2.0), redistributed as GGUF by Unsloth (Apache 2.0), is downloaded from `unsloth/Qwen3.5-9B-GGUF` at revision `3885219b6810b007914f3a7950a8d1b469d598a5` for user-requested Colab motion jobs. SILMA TTS 1.0.5 code is MIT; official model weights are Apache 2.0, pinned to `226dd7a65cadf51f9a6dbe3953fc89003b3844d5`. The bundled short male narration reference is the synthetic preset selected during the prior voice trial, not a recording of the user. Vocos mel-24khz is pinned to `0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21`. Models and their licenses remain with their respective authors; this app does not claim ownership or autonomous model training.
 
 Motion direction uses llama.cpp (MIT), official release b12089. See https://github.com/ggml-org/llama.cpp/blob/master/LICENSE and docs/MOTION_RUNTIME_LICENSES.md for pinned artifact details.
+
+
+## Bandit v2 Multi · Cloud music separation
+
+- [Bandit v2 source](https://github.com/kwatcharasupat/bandit-v2) and [Bandit inference runtime](https://github.com/openmirlab/bandit-infer/tree/96ea0ec12aeb444f379c2f5145fb8ee58b58cf19), Apache-2.0. Copyright the upstream authors.
+- [Official Bandit v2 Multi checkpoint](https://zenodo.org/records/12701995), CC BY-SA 4.0. Credit to Karn Watcharasupat and the upstream Bandit v2 authors. The app fetches the original, unmodified checkpoint. A user-authorized, private Drive appData cache can hold the same bytes between Colab sessions.

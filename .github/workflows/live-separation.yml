@@ -32,6 +32,10 @@ jobs:
         run: |
           mkdir -p "$HOME/.android"
           keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -validity 10000
+      - name: Check Bandit audio and Drive cache contracts
+        run: |
+          python3 -m pip install requests==2.32.5 numpy==2.2.6 scipy==1.15.3
+          python3 qa/bandit-drive.test.py
       - name: Compile and unit tests
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug
       - name: Prepare playback fixture
@@ -167,9 +171,9 @@ jobs:
         run: gradle --no-daemon :app:assembleRelease :app:lintRelease
       - name: Verify original update certificate and version
         run: |
-          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 109 --version-name 1.9.74 --firebase-config app/google-services.json
-          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.74.apk
+          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 110 --version-name 1.9.75 --firebase-config app/google-services.json
+          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.75.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.74-APK
-          path: MadarFiles-1.9.74.apk
+          name: MadarFiles-1.9.75-APK
+          path: MadarFiles-1.9.75.apk

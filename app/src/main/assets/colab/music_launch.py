@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import venv
 
 PIN = '9.13.0.50'
 
@@ -44,6 +45,20 @@ def launch(root):
     thread.start()
     try:
         worker.status('gpu_check', 27)
+        config = root / 'engine.json'
+        if config.is_file() and json.loads(config.read_text()).get('pipeline') == 'bandit_v2_multi':
+            from music_bandit import REVISION
+            worker.status('install', 28)
+            environment = root / 'bandit_env'
+            venv.EnvBuilder(with_pip=False, system_site_packages=True).create(environment)
+            python = str(environment / 'bin/python')
+            subprocess.run([sys.executable, '-m', 'pip', '--python', python, 'install',
+                            '--disable-pip-version-check', '--no-deps', '--timeout', '20', '--retries', '2',
+                            'bandit-infer @ git+https://github.com/openmirlab/bandit-infer.git@' + REVISION],
+                           stdin=subprocess.DEVNULL, check=True, timeout=360)
+            stop.set()
+            thread.join(timeout=3)
+            os.execv(python, [python, str(root/'music_worker.py'), str(root), '--serve'])
         major = cuda_major()
         env = os.environ.copy()
         env['CUDNN_LIB_CONFIG'] = 'FULL'

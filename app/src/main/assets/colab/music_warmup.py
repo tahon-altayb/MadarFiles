@@ -15,4 +15,15 @@ if '_madar_music_service' not in globals() or _madar_music_service.poll() is not
     _madar_music_log = (root / 'worker.log').open('ab')
     launcher = root / 'music_launch.py'
     command = [sys.executable, str(launcher), str(root)] if launcher.is_file() else [sys.executable, str(root / 'music_worker.py'), str(root), '--serve']
-    _madar_music_service = subprocess.Popen(command, stdout=_madar_music_log, stderr=_madar_music_log)
+    _madar_drive_grant = globals().pop('MADAR_MODEL_STORAGE_GRANT', None)
+    try:
+        if _madar_drive_grant is None:
+            _madar_music_service = subprocess.Popen(command, stdout=_madar_music_log, stderr=_madar_music_log)
+        else:
+            _madar_music_service = subprocess.Popen(command, stdin=subprocess.PIPE,
+                                                    stdout=_madar_music_log, stderr=_madar_music_log)
+            with _madar_music_service.stdin as _madar_pipe:
+                _madar_pipe.write((_madar_drive_grant + '\n').encode('ascii'))
+    finally:
+        del _madar_drive_grant
+        _madar_music_log.close()

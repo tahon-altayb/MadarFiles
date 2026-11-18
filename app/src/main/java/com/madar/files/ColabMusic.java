@@ -52,9 +52,9 @@ final class ColabMusic {
  /** One owned runtime, kernel and GPU model for all windows in this viewing session. */
  static final class Session implements AutoCloseable {
   final Context context;final AtomicBoolean cancel=new AtomicBoolean();volatile AtomicBoolean callerCancel;volatile MusicSeparator.Progress status;final long createdAt=android.os.SystemClock.elapsedRealtime();boolean healthy,leased=true;private Thread cancelWatcher;private long cancelGeneration;final ColabRuntime runtime;ColabDiagnostics diagnostic;
-  final String root="madar_"+UUID.randomUUID().toString().replace("-","");String pipeline=MusicPipeline.LEGACY;String kernel;ColabKernel.Session channel;boolean initialized,closed;int batch;long lastColdStartMs,lastUploadMs,lastProcessMs;final java.util.concurrent.CountDownLatch storageReady=new java.util.concurrent.CountDownLatch(1);String warning="";private java.util.concurrent.FutureTask<Void> initializer;
+  final String root="madar_"+UUID.randomUUID().toString().replace("-","");String pipeline=MusicPipeline.LEGACY;String kernel;ColabKernel.Session channel;boolean initialized,closed;int batch;long lastColdStartMs,lastUploadMs,lastProcessMs;final java.util.concurrent.CountDownLatch storageReady=new java.util.concurrent.CountDownLatch(1);volatile String warning="";private String modelStorageToken;private java.util.concurrent.FutureTask<Void> initializer;
   boolean visionOnly,visionReady,musicReady=true;String visionRoot;int visionBatch;
-  Session(Context c,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws IOException{if(grant==null)throw new IOException("أعد الاتصال بحساب Colab للفصل السحابي");context=c.getApplicationContext();status=progress;runtime=new ColabRuntime(context,grant,this.cancel);bind(cancel,progress);}
+  Session(Context c,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws IOException{if(grant==null)throw new IOException("أعد الاتصال بحساب Colab للفصل السحابي");context=c.getApplicationContext();status=progress;modelStorageToken=grant.takeModelStorage();runtime=new ColabRuntime(context,grant,this.cancel);bind(cancel,progress);}
   synchronized void bind(AtomicBoolean caller,MusicSeparator.Progress progress){final long ticket=++cancelGeneration;diagnostic=new ColabDiagnostics(context);if(initialized)diagnostic.record("GPU_REUSED");callerCancel=caller;status=progress;cancel.set(false);leased=true;healthy=false;cancelWatcher=new Thread(()->{try{while(!Thread.currentThread().isInterrupted()){if(caller.get()){synchronized(Session.this){if(ticket==cancelGeneration)cancel.set(true);}return;}Thread.sleep(50);}}catch(InterruptedException ignored){}},"madar-gpu-job-cancel");cancelWatcher.setDaemon(true);cancelWatcher.start();}
   synchronized void bind(AtomicBoolean caller,MusicSeparator.Progress progress,String profile){pipeline=MusicPipeline.checked(profile);bind(caller,progress);}
   synchronized void stopWatcher(){cancelGeneration++;if(cancelWatcher!=null)cancelWatcher.interrupt();}
@@ -64,13 +64,16 @@ final class ColabMusic {
    try{initializeEngine();}catch(Exception error){diagnostic.failed(error);throw error;}finally{storageReady.countDown();}
   }
   private void initializeEngine()throws Exception{
-   if(initialized)return;runtime.allocationEvents=diagnostic::allocation;runtime.authEvents=code->diagnostic.record(code);runtime.transferEvents=code->diagnostic.record(code);diagnostic.record(MusicPipeline.FX.equals(pipeline)?"MUSIC_PROFILE_FX":"MUSIC_PROFILE_LEGACY");diagnostic.record("RUNTIME_CREATE");runtime.create((p,m)->status.update(p,m),true);
+   if(initialized)return;runtime.allocationEvents=diagnostic::allocation;runtime.authEvents=code->diagnostic.record(code);runtime.transferEvents=code->diagnostic.record(code);diagnostic.record(MusicPipeline.BANDIT.equals(pipeline)?"MUSIC_PROFILE_BANDIT":MusicPipeline.FX.equals(pipeline)?"MUSIC_PROFILE_FX":"MUSIC_PROFILE_LEGACY");diagnostic.record("RUNTIME_CREATE");runtime.create((p,m)->status.update(p,m),true);
    long ready=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(3);
    status.update(13,"GPU مخصص · انتظار استجابة محرك التنفيذ");diagnostic.record("JUPYTER_CONNECT");
    while(true){ColabProbe.check(cancel);try{runtime.jupyter("GET","api/kernelspecs",null,1024*1024);break;}catch(IOException e){if(!(e instanceof ColabRuntime.NetworkFailure)&&(!(e instanceof ColabRuntime.HttpFailure)||(((ColabRuntime.HttpFailure)e).status<500&&((ColabRuntime.HttpFailure)e).status!=404&&((ColabRuntime.HttpFailure)e).status!=429)))throw e;if(System.nanoTime()>ready)throw new IOException("Colab · JUPYTER_START_TIMEOUT");Thread.sleep(1000);}}
    status.update(14,"تجهيز ملفات محرك الفصل على جلسة GPU");
    runtime.jupyter("PUT","api/contents/"+root,new JSONObject().put("type","directory"),1024*1024);runtime.put(root+"/music_worker.py",asset(context,"music_worker.py"),"text");runtime.put(root+"/music_launch.py",asset(context,"music_launch.py"),"text");
    for(String script:new String[]{"music_profiles.py","music_fx_bridge.py","music_fx_engine.py"})runtime.put(root+"/"+script,asset(context,script),"text");
+   if(MusicPipeline.BANDIT.equals(pipeline)){
+    for(String script:new String[]{"music_bandit.py","drive_model_cache.py"})runtime.put(root+"/"+script,asset(context,script),"text");
+   }
    runtime.put(root+"/engine.json",new JSONObject().put("pipeline",pipeline).toString(),"text");
    storageReady.countDown();diagnostic.record("JUPYTER_READY");status.update(15,"بدء نواة Python للفصل");diagnostic.record("KERNEL_CREATE");
    String id=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",root),1024*1024).getString("id");if(!id.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرف نواة Colab غير صالح");kernel=id;
@@ -78,8 +81,15 @@ final class ColabMusic {
    if(visionOnly){initialized=true;musicReady=false;channel.close();channel=null;diagnostic.record("CENSOR_RUNTIME");return;}
    status.update(27,"بدء محرك فصل الموسيقى على GPU");diagnostic.record("MUSIC_PREPARE");
    MusicStartup startup=new MusicStartup(runtime,root,cancel,(p,m)->status.update(p,m),diagnostic);
-   channel.execute("SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py"),startup::poll);
-   startup.awaitReady();initialized=true;channel.close();channel=null;
+   String warmup="SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py");
+   if(MusicPipeline.BANDIT.equals(pipeline)){
+    warmup="MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n"+warmup;
+    modelStorageToken=null;
+   }
+   channel.execute(warmup,startup::poll);
+   startup.awaitReady();
+   if(startup.cacheMissing())warning="تعذر حفظ أوزان Bandit في Drive لهذه الجلسة؛ راجع صلاحية التخزين ومساحته.";
+   initialized=true;channel.close();channel=null;
   }
 
   void awaitStorage()throws Exception{
@@ -109,6 +119,6 @@ final class ColabMusic {
    finally{channel.close();channel=null;}
   }
   @Override public void close(){MusicGpuSession.release(this);}
-  void dispose(){synchronized(this){if(closed)return;closed=true;}cancel.set(true);stopWatcher();if(channel!=null)channel.close();status.update(98,"إغلاق جلسة المعالجة السحابية…");boolean interrupted=false;if(initializer!=null)for(;;)try{initializer.get();break;}catch(InterruptedException stop){interrupted=true;}catch(java.util.concurrent.ExecutionException failure){break;}if(visionRoot!=null)runtime.stopMusicWorker(visionRoot);runtime.stopMusicWorker(root);boolean cleaned=runtime.cleanup();diagnostic.record(cleaned?"CLEANUP_OK":"CLEANUP_PENDING");if(!cleaned)warning="تعذر تأكيد إيقاف جلسة Colab؛ افتح اتصال Colab لإيقاف جلسة مدار السابقة.";runtime.close();if(interrupted)Thread.currentThread().interrupt();}
+  void dispose(){synchronized(this){if(closed)return;closed=true;modelStorageToken=null;}cancel.set(true);stopWatcher();if(channel!=null)channel.close();status.update(98,"إغلاق جلسة المعالجة السحابية…");boolean interrupted=false;if(initializer!=null)for(;;)try{initializer.get();break;}catch(InterruptedException stop){interrupted=true;}catch(java.util.concurrent.ExecutionException failure){break;}if(visionRoot!=null)runtime.stopMusicWorker(visionRoot);runtime.stopMusicWorker(root);boolean cleaned=runtime.cleanup();diagnostic.record(cleaned?"CLEANUP_OK":"CLEANUP_PENDING");if(!cleaned)warning=(warning.isEmpty()?"":warning+" ")+ "تعذر تأكيد إيقاف جلسة Colab؛ افتح اتصال Colab لإيقاف جلسة مدار السابقة.";runtime.close();if(interrupted)Thread.currentThread().interrupt();}
  }
 }
