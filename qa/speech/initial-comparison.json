@@ -1,0 +1,153 @@
+{
+  "dataset": "google/fleurs",
+  "split": "test",
+  "rows_per_language": 1,
+  "runtime": "host CPU, 4 threads; not a Galaxy measurement",
+  "results": [
+    {
+      "language": "ar",
+      "model": "tiny",
+      "audio_seconds": 8.16,
+      "runtime_seconds": 1.22,
+      "metric": "WER",
+      "error_rate": 0.7333,
+      "reference": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+      "hypothesis": "دشكلات في المهدل أطلس اليوم عشر عاصفة مسميل مصميل عاصر الأطلسية على عاصفة شميل ي"
+    },
+    {
+      "language": "ar",
+      "model": "small",
+      "audio_seconds": 8.16,
+      "runtime_seconds": 5.72,
+      "metric": "WER",
+      "error_rate": 0.4667,
+      "reference": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+      "hypothesis": "تشكلت في المحيط الأطلسي اليوم عايش رعاصفة مسمى لموسى من الأعاصير الأطلسية العاصفة شبه"
+    },
+    {
+      "language": "ja",
+      "model": "tiny",
+      "audio_seconds": 10.44,
+      "runtime_seconds": 1.36,
+      "metric": "CER",
+      "error_rate": 1.0889,
+      "reference": "インターネットで 敵対的環境コース について検索すると おそらく現地企業の住所が出てくるでしょう",
+      "hypothesis": "デッキャン・デッキャン・デッキャン・デッキャン・デッキャン・デッキャン・デッキャン・デッキャン・デッキャン・デッキャン・デ"
+    },
+    {
+      "language": "ja",
+      "model": "small",
+      "audio_seconds": 10.44,
+      "runtime_seconds": 5.77,
+      "metric": "CER",
+      "error_rate": 0.1556,
+      "reference": "インターネットで 敵対的環境コース について検索すると おそらく現地企業の住所が出てくるでしょう",
+      "hypothesis": "インターットで対的境コースについてすると、おそらく現地業の重所が出てくるでしょう。"
+    },
+    {
+      "language": "en",
+      "model": "tiny",
+      "audio_seconds": 10.56,
+      "runtime_seconds": 0.97,
+      "metric": "WER",
+      "error_rate": 0.1053,
+      "reference": "however due to the slow communication channels styles in the west could lag behind by 25 to 30 year",
+      "hypothesis": "However, due to the slow communication channels, the styles in the west could lag behind by 25 to 30 years."
+    },
+    {
+      "language": "en",
+      "model": "small",
+      "audio_seconds": 10.56,
+      "runtime_seconds": 4.04,
+      "metric": "WER",
+      "error_rate": 0.0526,
+      "reference": "however due to the slow communication channels styles in the west could lag behind by 25 to 30 year",
+      "hypothesis": "However, due to the slow communication channels, styles in the West could lag behind by 25 to 30 years."
+    },
+    {
+      "language": "ar",
+      "model": "medium",
+      "audio_seconds": 8.16,
+      "runtime_seconds": 21.33,
+      "metric": "WER",
+      "error_rate": 0.2667,
+      "reference": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+      "hypothesis": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مسمى لموسم الأعصير الأطلسية العاصفة شبه الاست"
+    },
+    {
+      "language": "ja",
+      "model": "medium",
+      "audio_seconds": 10.44,
+      "runtime_seconds": 22.57,
+      "metric": "CER",
+      "error_rate": 0.1333,
+      "reference": "インターネットで 敵対的環境コース について検索すると おそらく現地企業の住所が出てくるでしょう",
+      "hypothesis": "インターットで、対的境コースについてすると、おそらく現地業の住所が出てくるでしょう。"
+    },
+    {
+      "language": "en",
+      "model": "medium",
+      "audio_seconds": 10.56,
+      "runtime_seconds": 13.95,
+      "metric": "WER",
+      "error_rate": 0.0526,
+      "reference": "however due to the slow communication channels styles in the west could lag behind by 25 to 30 year",
+      "hypothesis": "However, due to the slow communication channels, styles in the West could lag behind by 25 to 30 years."
+    },
+    {
+      "language": "ar",
+      "model": "turbo",
+      "audio_seconds": 8.16,
+      "runtime_seconds": 6.22,
+      "metric": "WER",
+      "error_rate": 0.3333,
+      "reference": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+      "hypothesis": "تشكلت في المحيط الأطلسي اليوم عشر عاصفة مسماية لموسم الأعصير الأطلسية العاصفة شبه الاستو"
+    },
+    {
+      "language": "ja",
+      "model": "turbo",
+      "audio_seconds": 10.44,
+      "runtime_seconds": 6.92,
+      "metric": "CER",
+      "error_rate": 0.1333,
+      "reference": "インターネットで 敵対的環境コース について検索すると おそらく現地企業の住所が出てくるでしょう",
+      "hypothesis": "インターットで対的境コースについてすると、おそらく現地業の住所が出てくるでしょう。"
+    },
+    {
+      "language": "en",
+      "model": "turbo",
+      "audio_seconds": 10.56,
+      "runtime_seconds": 5.7,
+      "metric": "WER",
+      "error_rate": 0.2105,
+      "reference": "however due to the slow communication channels styles in the west could lag behind by 25 to 30 year",
+      "hypothesis": "However, due to the slow communication channels, styles in the West could lag behind by 25-30 years."
+    }
+  ],
+  "limitations": [
+    "One recording per language only; not representative of dialects or music.",
+    "Model-only benchmark on host CPU, not Android end-to-end or translation accuracy.",
+    "The reference transcripts may contain dataset spelling errors.",
+    "No Galaxy S26 Ultra runtime or thermal measurement.",
+    "English numeric range 25-30 versus 25 to 30 is counted as token errors by this strict WER normalizer; WER is not a meaning score."
+  ],
+  "model_revisions": {
+    "tiny": "65176e2deb88badc814a94058666cadccc29b61c",
+    "small": "8f3c18b358db4d1f2fc1eae49d75cd20989e4309",
+    "medium": "8c31d28503847560985df21f90e14f0c736e075e",
+    "turbo": "2ca6ff69fc878651b770880507669577ac41c2ff"
+  },
+  "revised_pipeline_arabic": [
+    {
+      "language": "ar",
+      "model": "turbo",
+      "audio_seconds": 8.16,
+      "runtime_seconds": 7.22,
+      "metric": "WER",
+      "error_rate": 0.1333,
+      "reference": "تشكلت في المحيط الأطلسي اليوم عاشر عاصفة مُسماة لموسم الأعاصير الأطلسية العاصفة شبه الاستوائية جيري",
+      "hypothesis": "تشكلت في المحيط الأطلسي اليوم عشر عاصفة مسماة لموسم الأعصير الأطلسية العاصفة شبه الاستوائية جيري"
+    }
+  ]
+}

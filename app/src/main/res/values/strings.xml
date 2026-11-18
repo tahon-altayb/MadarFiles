@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+ <string name="widget_download_title">حمّل من رابط</string>
+ <string name="widget_download_hint">انسخ الرابط ثم اضغط لصق</string>
+ <string name="widget_download_platforms">YouTube · TikTok · Snapchat · Instagram · X</string>
+ <string name="widget_download_go">لصق وتحميل ↓</string>
+ <string name="widget_pick">اختر ملف</string>
+ <string name="widget_hub_title">مدار</string>
+ <string name="widget_hub_hint">كل أدواتك، حول ملفك</string>
+ <string name="widget_name_download">مدار · التحميل</string>
+ <string name="widget_name_video">مدار · الفيديو</string>
+ <string name="widget_name_image">مدار · الصور</string>
+ <string name="widget_name_pdf">مدار · PDF</string>
+ <string name="widget_name_audio">مدار · الصوت</string>
+ <string name="widget_name_qr">مدار · QR</string>
+ <string name="widget_name_hub">مدار · كل الأدوات</string>
+ <string name="widget_about_download">الصق رابط المقطع وحمّله بالجودة التي تختارها</string>
+ <string name="widget_about_tool">اختصارات لأهم أدوات هذا القسم</string>
+ <string name="widget_about_hub">كل أقسام مدار بضغطة</string>
+</resources>

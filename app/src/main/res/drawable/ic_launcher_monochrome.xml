@@ -1,0 +1,7 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- One-colour mark for themed icons (Android 13+): the phone tints it with its wallpaper colours. -->
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.68" android:scaleY="0.68">
+        <path android:fillColor="#FF000000" android:pathData="M54,12a42,42 0,1 0,0 84a42,42 0,1 0,0 -84M54,26a28,28 0,1 1,0 56a28,28 0,1 1,0 -56" android:fillType="evenOdd"/>
+        <path android:fillColor="#FF000000" android:pathData="M44,35h14l10,10v28h-24zM49,52v3h14v-3zM49,60v3h14v-3z" android:fillType="evenOdd"/>
+    </group>
+</vector>

@@ -1,0 +1,228 @@
+name: Verify and build Gemini executive agent with brief contract
+'on':
+  push:
+    branches:
+    - delivery/chat-context-20261105
+    - delivery/motion-recovery-gpu-20261105
+    - delivery/motion-native-t4-20261106
+    - delivery/agent-executive-20261106
+    - delivery/agent-recovery-20261106
+    - agent/brief-contract-1931
+    - agent/kinetic-lists-1963
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: chat-context-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Test chat revisions, references and standalone tools
+      run: 'npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
+
+        export NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules"
+
+        node qa/interface.test.cjs
+
+        node qa/agent-conversation.test.cjs
+
+        node qa/agent-motion.test.cjs
+
+        node qa/motion-brief.test.cjs
+
+        node qa/motion-image-revision.test.cjs
+
+        node qa/motion-parity.test.cjs
+
+        python3 qa/motion-runtime-cuda.test.py
+
+        node qa/agent-motion-brief.test.cjs
+
+        node qa/motion-questions-flow.test.cjs
+
+        node qa/chat-threads.test.cjs
+        node qa/colab-generate-chat.test.cjs
+
+        node qa/upgrade.test.cjs
+
+        node qa/workspace-plus.test.cjs
+
+        node qa/widgets.test.cjs
+
+        '
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Test real Jupyter result recovery and strict GPU admission
+      run: 'python3 qa/container-source.test.py
+
+        python3 -m pip install --disable-pip-version-check jupyter-server==2.17.0 ipykernel==6.30.1 websocket-client==1.8.0
+
+        command -v ffmpeg || (sudo apt-get -qq update && sudo apt-get install -y -qq ffmpeg)
+
+        python3 qa/agent-briefing.test.py
+
+        python3 qa/motion-copy.test.py
+
+        python3 qa/motion-contract-director.test.py
+
+        node qa/motion-clock.test.cjs
+
+        node qa/product-motion.test.cjs
+
+        python3 qa/motion-runtime.test.py
+
+        python3 qa/motion-gpu-probe.test.py
+
+        python3 qa/motion-native-runtime.test.py
+
+        python3 qa/motion-cloud.test.py
+
+        python3 qa/motion-startup.test.py
+
+        python3 qa/motion-transfer.test.py
+
+        '
+    - name: Prepare preinstalled Android SDK
+      timeout-minutes: 10
+      run: python3 scripts/ensure_android.py
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.9'
+    - name: Restore processing build assets
+      uses: actions/cache/restore@v4
+      with:
+        path: 'app/vendor
+
+          app/src/main/jniLibs
+
+          app/src/main/assets/models
+
+          '
+        key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
+        restore-keys: 'madar-engines-v1-
+
+          '
+    - name: Prepare offline model and native assets
+      run: 'python3 scripts/prepare_models.py
+
+        python3 scripts/prepare_vision.py
+
+        python3 scripts/prepare_lame.py
+
+        python3 scripts/prepare_containers.py
+
+        '
+    - name: Cache verified processing build assets
+      uses: actions/cache/save@v4
+      with:
+        path: 'app/vendor
+
+          app/src/main/jniLibs
+
+          app/src/main/assets/models'
+        key: madar-engines-v1-${{ hashFiles('scripts/prepare_*.py') }}
+    - name: Load signing key from GitHub Secrets
+      env:
+        MADAR_KEYSTORE_BASE64: ${{ secrets.MADAR_KEYSTORE_BASE64 }}
+        MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+        MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+        MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+      run: "python3 - <<'PYKEY'\nimport os,base64,pathlib,hashlib,subprocess\nvalue=os.environ.get('MADAR_KEYSTORE_BASE64','')\nrequired=['MADAR_KEYSTORE_BASE64','MADAR_STORE_PASSWORD','MADAR_KEY_PASSWORD','MADAR_KEY_ALIAS']\n\
+        missing=[name for name in required if not os.environ.get(name)]\nif missing:\n    raise SystemExit('Configure signing Secrets\
+        \ first: '+', '.join(missing)+'. Never generate a replacement release key.')\ndest=pathlib.Path('.signing/madar-development.keystore')\n\
+        dest.parent.mkdir(mode=0o700,exist_ok=True)\ndest.write_bytes(base64.b64decode(value,validate=True))\ndest.chmod(0o600)\ncert=subprocess.check_output(['keytool','-exportcert','-keystore',str(dest),'-alias',os.environ['MADAR_KEY_ALIAS'],'-storepass:env','MADAR_STORE_PASSWORD'])\n\
+        expected='753b13a984815b725b41a8f2ae2ef07d9d9e8cc64811cbff004d5da8ccedfb5e'\nif hashlib.sha256(cert).hexdigest()!=expected:\n\
+        \    raise SystemExit('Signing key is not the original update key; build stopped')\nPYKEY\n"
+    - name: Load required Firebase project configuration
+      env:
+        MADAR_FIREBASE_CONFIG: ${{ secrets.MADAR_FIREBASE_CONFIG }}
+      run: "python3 - <<'PYFIREBASE'\nimport os,json,pathlib\nvalue=os.environ.get('MADAR_FIREBASE_CONFIG','').strip()\nif not value:\n\
+        \    raise SystemExit('MADAR_FIREBASE_CONFIG is required for this managed Gemini release')\nconfig=json.loads(value)\nassert\
+        \ config.get('project_info',{}).get('project_id')=='madar-2ab2e', 'Firebase project mismatch'\nclients=[c for c in config.get('client',[])\
+        \ if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.madar.files']\nassert len(clients)==1,\
+        \ 'Firebase Android package mismatch'\nassert clients[0].get('api_key',[{}])[0].get('current_key'), 'Firebase client key missing'\n\
+        assert clients[0].get('client_info',{}).get('mobilesdk_app_id'), 'Firebase app ID missing'\ndest=pathlib.Path('app/google-services.json')\n\
+        dest.write_text(value)\ndest.chmod(0o600)\nprint('Verified Firebase project and Android client configuration; values withheld.')\n\
+        PYFIREBASE\n"
+    - name: Compile, lint, test and sign update
+      env:
+        MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+        MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+        MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+      run: 'gradle --no-daemon -PvalidationBuild=true :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest
+
+        gradle --no-daemon :app:lintRelease :app:assembleRelease
+
+        '
+    - name: Prepare disposable Android validation key
+      run: 'echo "MADAR_VALIDATION_KEYSTORE=$RUNNER_TEMP/motion-transfer-validation.keystore" >> "$GITHUB_ENV"
+
+        keytool -genkeypair -keystore "$RUNNER_TEMP/motion-transfer-validation.keystore" -storepass android -keypass android -alias
+        androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=Madar Transfer Validation"
+
+        '
+    - name: Enable emulator acceleration
+      run: 'echo ''KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+
+        sudo udevadm control --reload-rules
+
+        sudo udevadm trigger --name-match=kvm
+
+        '
+    - name: Exercise Android result transfer, corruption, resume and existing audio downloads
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 35
+        arch: x86_64
+        target: default
+        profile: pixel_6
+        ram-size: 4096M
+        disable-animations: true
+        emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
+        script: gradle --no-daemon -Dorg.gradle.jvmargs="-Xmx1536m -Dfile.encoding=UTF-8" --max-workers=2 -PvalidationBuild=true :app:connectedDebugAndroidTest
+          -Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.MotionTransferTest,com.madar.files.ColabAuthorizationTest,com.madar.files.ColabMusicTest,com.madar.files.MotionCheckpointTest,com.madar.files.MotionStartupTest,com.madar.files.ColabAllocationTest,com.madar.files.AgentExecutiveTest,com.madar.files.WidgetsTest,com.madar.files.AudioDecodeTest
+    - name: Verify update package and signing certificate
+      run: python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 108 --version-name 1.9.73 --firebase-config
+        app/google-services.json
+    - name: Prepare APK
+      run: cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.73.apk
+    - name: Upload verified update APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: MadarFiles-1.9.73-APK
+        path: MadarFiles-1.9.73.apk
+        if-no-files-found: error
+        retention-days: 30
+    - name: Show the emulator's pictures in the log
+      if: always()
+      run: python3 scripts/show_pictures.py app/build/outputs/connected_android_test_additional_output
+    - name: Save validation reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: chat-context-verification
+        path: 'app/build/reports/
+
+          app/build/outputs/connected_android_test_additional_output/
+
+          app/build/test-results/
+
+          qa/evidence/
+
+          app/build/outputs/androidTest-results/'
+        if-no-files-found: ignore
+    - name: Remove temporary signing material
+      if: always()
+      run: rm -f .signing/madar-development.keystore app/google-services.json "$RUNNER_TEMP/motion-transfer-validation.keystore"

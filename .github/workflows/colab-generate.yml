@@ -1,0 +1,31 @@
+name: Colab generation smoke test
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'app/src/main/assets/colab/generate*.py'
+      - 'qa/colab-generate.test.py'
+      - '.github/workflows/colab-generate.yml'
+permissions:
+  contents: read
+concurrency:
+  group: colab-generate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU torch and the same diffusers stack the Colab worker installs
+        run: |
+          sudo apt-get -qq update && sudo apt-get install -y -qq ffmpeg
+          python -m pip install -q --upgrade pip
+          python -m pip install -q torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -q "diffusers>=0.35" "transformers>=4.46" accelerate safetensors ftfy imageio imageio-ffmpeg sentencepiece protobuf
+          python -c "import diffusers, transformers, torch; print('diffusers', diffusers.__version__, 'transformers', transformers.__version__, 'torch', torch.__version__)"
+      - name: Image (SDXL path) and video (Wan path) with tiny random models
+        run: python qa/colab-generate.test.py

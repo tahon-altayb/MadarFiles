@@ -1,0 +1,76 @@
+name: Verify final motion copy and original signed update
+on:
+  push:
+    branches: [qa/motion-final-20261105]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  generation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [idea, images, page]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Copy, claim and symbol regression checks
+        run: |
+          python3 qa/motion-copy.test.py
+          python3 qa/motion-runtime.test.py
+          python3 qa/motion-cloud.test.py
+      - name: Actual licensed model to decoded motion video
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get install -y -qq ffmpeg
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          python3 qa/motion-generation.test.py --case ${{ matrix.case }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-generated-${{ matrix.case }}
+          path: qa/evidence/generation/${{ matrix.case }}/
+  package:
+    needs: generation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: MadarFiles-1.9.22-APK
+          run-id: 41935874600
+          github-token: ${{ github.token }}
+          path: base-release
+      - name: Verify identical application payload and sign final motion asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MADAR_KEYSTORE_BASE64: ${{ secrets.MADAR_KEYSTORE_BASE64 }}
+          MADAR_STORE_PASSWORD: ${{ secrets.MADAR_STORE_PASSWORD }}
+          MADAR_KEY_PASSWORD: ${{ secrets.MADAR_KEY_PASSWORD }}
+          MADAR_KEY_ALIAS: ${{ secrets.MADAR_KEY_ALIAS }}
+        run: python3 qa/final-motion-update.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-final-MadarFiles-1.9.22-APK
+          path: |
+            MadarFiles-1.9.22-update.apk
+            release-proof.json
+          if-no-files-found: error
+      - name: Remove signing material
+        if: always()
+        run: rm -f .signing/original.keystore
+

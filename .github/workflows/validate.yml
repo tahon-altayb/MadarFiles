@@ -1,0 +1,129 @@
+name: Validate development source
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Check shared interface
+        run: |
+          node qa/interface.test.cjs
+          node qa/montage-core.test.cjs
+          node qa/translation-mode.test.cjs
+          node qa/colab-connection.test.cjs
+          python3 qa/colab-worker.test.py
+          python3 qa/native-runner.test.py
+          python3 qa/processing-runner.test.py
+          node qa/motion-brief.test.cjs
+          node qa/motion-image-revision.test.cjs
+          node qa/motion-parity.test.cjs
+          python3 qa/motion-contract-director.test.py
+      - name: Compile Gemini integration before expensive model checks
+        run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac
+      - name: Check mobile layouts and tool search
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
+          MADAR_UI_FAILED=0
+          for MADAR_UI_TEST in qa/layout.test.cjs qa/navigation.test.cjs qa/subtitle-session.test.cjs qa/agent.test.cjs qa/agent-motion.test.cjs qa/agent-motion-brief.test.cjs qa/motion-questions-flow.test.cjs qa/chat-threads.test.cjs qa/colab-generate-chat.test.cjs qa/editor-workspace.test.cjs qa/workspace-plus.test.cjs qa/upgrade.test.cjs qa/release.test.cjs qa/montage.test.cjs qa/personal-studio.test.cjs; do
+            NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node "$MADAR_UI_TEST" || MADAR_UI_FAILED=1
+          done
+          exit "$MADAR_UI_FAILED"
+      - name: Test actual Jupyter kernel execution
+        run: |
+          python3 -m pip install --disable-pip-version-check numpy==2.2.6 jupyter_server==2.17.0 ipykernel==6.29.5 websocket-client==1.8.0
+          python3 qa/colab-jupyter.test.py
+      - name: Test real Whisper inference and production options
+        timeout-minutes: 8
+        run: |
+          python3 -m pip install --disable-pip-version-check faster-whisper==1.2.1 ctranslate2==4.6.0 av==18.0.0 huggingface-hub==1.33.0
+          python3 qa/colab-whisper.test.py
+      - name: Test pinned Hy-MT2 runtime with current PyTorch
+        timeout-minutes: 10
+        run: |
+          python3 -m venv "$RUNNER_TEMP/madar-qwen"
+          "$RUNNER_TEMP/madar-qwen/bin/pip" install --disable-pip-version-check torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          "$RUNNER_TEMP/madar-qwen/bin/pip" install --disable-pip-version-check transformers==5.6.0 accelerate==1.6.0 bitsandbytes==0.48.2 huggingface-hub==1.33.0
+          "$RUNNER_TEMP/madar-qwen/bin/python" qa/colab-qwen.test.py
+      - name: Prepare Android tools
+        run: python3 scripts/ensure_android.py
+      - name: Compile Java, lint and unit tests (no APK signing)
+        run: gradle :app:compileDebugJavaWithJavac :app:lintDebug :app:testDebugUnitTest --stacktrace
+      - name: Save validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-validation-reports
+          path: |
+            app/build/reports
+            app/build/test-results
+          if-no-files-found: ignore
+
+  documents-runtime:
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Create disposable key for the separate validation package
+        run: |
+          MADAR_VALIDATION_KEYSTORE="$RUNNER_TEMP/madar-validation.keystore"
+          echo "MADAR_VALIDATION_KEYSTORE=$MADAR_VALIDATION_KEYSTORE" >> "$GITHUB_ENV"
+          keytool -genkeypair -keystore "$MADAR_VALIDATION_KEYSTORE" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=Madar Validation"
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test document tools and resumable image queue on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader -skin 480x800 -no-snapshot -noaudio -no-boot-anim
+          script: bash qa/run-native-documents.sh
+      - name: Remove disposable validation key
+        if: always()
+        run: rm -f "$MADAR_VALIDATION_KEYSTORE"
+      - name: Save emulator test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: document-runtime-reports
+          path: |
+            app/build/reports/androidTests
+            app/build/outputs/androidTest-results
+            phone-screenshots/
+          if-no-files-found: ignore

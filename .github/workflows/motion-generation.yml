@@ -1,0 +1,36 @@
+name: Verify actual motion generation
+on:
+  push:
+    branches: [features/product-motion-20261103]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: generation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [idea, images, page]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          sudo apt-get -qq update
+          sudo apt-get install -y -qq ffmpeg
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          python3 qa/motion-generation.test.py --case ${{ matrix.case }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motion-generated-${{ matrix.case }}
+          path: qa/evidence/generation/${{ matrix.case }}/

@@ -1,0 +1,12 @@
+Media3 FFmpeg audio extension source: Android Open Source Project / Google.
+https://github.com/androidx/media/tree/1.5.1/libraries/decoder_ffmpeg
+Version 1.5.1, Apache License 2.0 (copyright/license headers retained in sources).
+
+Adaptations: load libmadar_audio instead of a second duplicate FFmpeg library;
+mark the package-private decoder as UnstableApi for application lint.
+
+FFmpeg 7.1.1 source and LGPL build/relink instructions are provided by
+scripts/prepare_containers.py and app/src/main/cpp/CMakeLists.txt in MadarFiles.
+Only LGPL components are enabled; GPL/nonfree and network protocols are disabled.
+https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz
+FFmpeg license: FFMPEG-COPYING.txt (bundled with the APK).

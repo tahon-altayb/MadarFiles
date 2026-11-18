@@ -1,0 +1,30 @@
+name: Validate conversational review source
+on:
+  push:
+    branches: [qa/chat-review-20261105]
+permissions:
+  contents: read
+concurrency:
+  group: chat-review-source-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check conversational choices and existing upgrade flows
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/madar-ui" playwright@1.56.1
+          NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/workspace-plus.test.cjs
+          NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/upgrade.test.cjs
+          NODE_PATH="$RUNNER_TEMP/madar-ui/node_modules" node qa/agent-conversation.test.cjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - run: python3 scripts/ensure_android.py
+      - run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugJavaWithJavac :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug

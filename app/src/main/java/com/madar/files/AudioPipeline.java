@@ -1,0 +1,140 @@
+package com.madar.files;
+
+import android.content.Context;
+import android.media.*;
+import java.io.*;
+import java.nio.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+@androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
+final class AudioPipeline {
+ static final class Decoded {File pcm;int sampleRate;long offsetUs;Decoded(File f,int r,long o){pcm=f;sampleRate=r;offsetUs=o;}}
+ /** The clip's own compressed audio in a small file: where its first sample sits in the clip and how long it runs. */
+ /** leadUs: the encoder's priming at the start of the copy (before the clip's time 0), which the decoder on Colab must drop. */
+ static final class Compressed {final File file;final long offsetUs,durationUs,leadUs;Compressed(File f,long o,long d,long lead){file=f;offsetUs=o;durationUs=d;leadUs=lead;}}
+ /**
+  * Copies the clip's AAC audio, without decoding it, into a small .m4a (up to endUs): music removal on a slow tablet
+  * spent a minute decoding and four minutes uploading 100 MB of decoded sound that Colab can decode itself from a
+  * tenth of that. Returns null when this audio cannot be carried this way (another codec, an unreadable track); the
+  * caller then decodes and uploads as before.
+  */
+ static Compressed audioOnly(Context c,File input,long endUs,AtomicBoolean cancel)throws Exception{return audioOnly(c,input,endUs,cancel,why->{});}
+ /** The short name of a codec for the report (OPUS, VORBIS, MPEG...), never anything from the file itself. */
+ static String codecName(String mime){
+  if(mime==null)return "NONE";switch(mime){case "audio/mp4a-latm":return "AAC";case "audio/opus":return "OPUS";case "audio/vorbis":return "VORBIS";case "audio/mpeg":return "MPEG";case "audio/ac3":return "AC3";case "audio/eac3":return "EAC3";case "audio/flac":return "FLAC";case "audio/raw":return "RAW";case "audio/3gpp":case "audio/amr-wb":return "AMR";default:return "OTHER";}
+ }
+ /**
+  * The clip's audio, copied without decoding: AAC into an .m4a, Opus into a .webm (yt-dlp's downloads often
+  * carry Opus; 1.9.68 took the long way for one with «SOURCE_UNSUPPORTED» and nothing more). `why` hears the reason
+  * whenever the answer is null: SOURCE_NO_AUDIO, SOURCE_CODEC_<name>, SOURCE_EMPTY, SOURCE_TOO_LARGE or SOURCE_ERROR_<what failed>.
+  */
+ static Compressed audioOnly(Context c,File input,long endUs,AtomicBoolean cancel,java.util.function.Consumer<String> why)throws Exception{
+  MediaExtractor ex=new MediaExtractor();android.media.MediaMuxer muxer=null;File out=null;boolean complete=false;String step="READ";
+  try{
+   ex.setDataSource(input.getAbsolutePath());int track=-1;for(int i=0;i<ex.getTrackCount();i++){String mime=ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME);if(mime!=null&&mime.startsWith("audio/")){track=i;break;}}
+   if(track<0){why.accept("SOURCE_NO_AUDIO");return null;}
+   MediaFormat format=ex.getTrackFormat(track);String mime=format.getString(MediaFormat.KEY_MIME);// Vorbis is not carried: Android's extractor hands each Vorbis packet with four extra bytes for its own decoder, and
+   // a copy would hand them on (the emulator caught it). Such clips take the decoded way.
+   boolean aac="audio/mp4a-latm".equals(mime),webm="audio/opus".equals(mime);
+   if(!aac&&!webm){why.accept("SOURCE_CODEC_"+codecName(mime));return null;}
+   out=File.createTempFile("madar_source_",aac?".m4a":".webm",c.getCacheDir());
+   ex.selectTrack(track);step="MUXER";muxer=new android.media.MediaMuxer(out.getAbsolutePath(),aac?android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4:android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM);
+   step="TRACK";int target=muxer.addTrack(format);step="START";muxer.start();
+   int room=Math.max(262144,format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)?format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE):0);ByteBuffer buffer=ByteBuffer.allocateDirect(room);MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
+   // Times stay as the clip has them: AAC's first packet sits before time 0 (the encoder's priming, about 21 ms), and
+   // the phone's decoder drops it by that time. The copy starts at 0, so the priming is announced as leadUs instead.
+   long first=Long.MIN_VALUE,last=0,bytes=0,previous=Long.MIN_VALUE;step="WRITE";
+   for(;;){ColabProbe.check(cancel);buffer.clear();int n=ex.readSampleData(buffer,0);if(n<0)break;long time=ex.getSampleTime();if(endUs>0&&time>=endUs)break;
+    if(first==Long.MIN_VALUE)first=time;time=Math.max(previous,time);previous=time;last=time;
+    buffer.position(0);buffer.limit(n);info.set(0,n,time-first,(ex.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0);muxer.writeSampleData(target,buffer,info);bytes+=n;ex.advance();}
+   step="STOP";muxer.stop();muxer.release();muxer=null;
+   if(bytes<=0||first==Long.MIN_VALUE||first<-2000000||out.length()<=0){why.accept("SOURCE_EMPTY");return null;}
+   if(out.length()>200L*1024*1024){why.accept("SOURCE_TOO_LARGE");return null;}
+   long lead=Math.max(0,-first);complete=true;return new Compressed(out,Math.max(0,first),Math.max(0,last-first-lead),lead);
+  }catch(java.util.concurrent.CancellationException stopped){throw stopped;}
+  catch(Exception unsupported){why.accept("SOURCE_ERROR_"+step);return null;}
+  finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(!complete&&out!=null)out.delete();}
+ }
+ /**
+  * "" when the clip's picture can be kept as it is in the .mp4 that carries the clean sound; otherwise the name of its
+  * codec (AV1, VP9...). A YouTube download in AV1 inside .mkv failed on a tablet with «Failed to add the track to the
+  * muxer» after four minutes of separation: this is known in a moment, before any of that.
+  */
+ static String videoNotKeepable(Context c,File source){
+  MediaExtractor ex=new MediaExtractor();MediaMuxer muxer=null;File probe=null;
+  try{ex.setDataSource(source.getAbsolutePath());int index=-1;for(int i=0;i<ex.getTrackCount();i++){String mime=ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME);if(mime!=null&&mime.startsWith("video/")){index=i;break;}}
+   if(index<0)return "";MediaFormat format=ex.getTrackFormat(index);String mime=format.getString(MediaFormat.KEY_MIME);
+   probe=File.createTempFile("madar_probe_",".mp4",c.getCacheDir());muxer=new MediaMuxer(probe.getAbsolutePath(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+   try{muxer.addTrack(format);return "";}
+   catch(RuntimeException refused){switch(mime==null?"":mime){case "video/av01":return "AV1";case "video/x-vnd.on2.vp9":return "VP9";case "video/x-vnd.on2.vp8":return "VP8";default:return mime==null?"?":mime.replace("video/","").toUpperCase(java.util.Locale.ROOT);}}
+  }catch(Exception unreadable){return "";}
+  finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(probe!=null)probe.delete();}
+ }
+ static int track(MediaExtractor ex,String prefix){for(int i=0;i<ex.getTrackCount();i++)if(ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME).startsWith(prefix))return i;return -1;}
+ static Decoded decode(Context c,File source,long limitUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{return decodeInternal(c,source,0,limitUs,false,cancel,progress);}
+ static Decoded decodeRange(Context c,File source,long startUs,long endUs,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  if(startUs<0||endUs<=startUs)throw new IOException("حدود فك الصوت غير صالحة");return decodeInternal(c,source,startUs,endUs,true,cancel,progress);
+ }
+ static Decoded decodeRemoteRange(Context c,android.net.Uri uri,java.util.Map<String,String> headers,long startUs,long endUs,AtomicBoolean cancel)throws Exception{
+  if(startUs<0||endUs<=startUs)throw new IOException("حدود فك الصوت غير صالحة");try{return decodeInput(c,ex->ex.setDataSource(uri.toString(),headers),startUs,endUs,true,cancel,(p,m)->{});}catch(java.util.concurrent.CancellationException stopped){throw stopped;}catch(Exception platform){ColabProbe.check(cancel);File pcm=File.createTempFile("madar_remote_soft_",".pcm",c.getCacheDir());try{androidx.media3.decoder.ffmpeg.FfmpegPcm.Result result=androidx.media3.decoder.ffmpeg.FfmpegPcm.decodeRemote(uri,headers,pcm,startUs,endUs,cancel);return new Decoded(pcm,result.rate,result.offsetUs);}catch(Exception fallback){pcm.delete();fallback.addSuppressed(platform);throw fallback;}}
+ }
+ interface Input {void open(MediaExtractor extractor)throws IOException;}
+ private static Decoded decodeInternal(Context c,File source,long startUs,long endUs,boolean exact,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  try{return decodeInput(c,ex->ex.setDataSource(source.getAbsolutePath()),startUs,endUs,exact,cancel,progress);}catch(java.util.concurrent.CancellationException stopped){throw stopped;}catch(Exception platform){ColabProbe.check(cancel);progress.update(3,"فك الصوت بالبديل البرمجي");File pcm=File.createTempFile("madar_decode_soft_",".pcm",c.getCacheDir());try{androidx.media3.decoder.ffmpeg.FfmpegPcm.Result result=androidx.media3.decoder.ffmpeg.FfmpegPcm.decode(source,pcm,startUs,endUs,exact,cancel);return new Decoded(pcm,result.rate,result.offsetUs);}catch(Exception fallback){pcm.delete();fallback.addSuppressed(platform);throw fallback;}}
+ }
+ private static Decoded decodeInput(Context c,Input source,long startUs,long endUs,boolean exact,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  MediaExtractor ex=new MediaExtractor();MediaCodec codec=null;File raw=File.createTempFile("madar_decode_",".pcm",c.getCacheDir());
+  try(OutputStream out=new BufferedOutputStream(new FileOutputStream(raw))){
+   source.open(ex);int t=track(ex,"audio/");if(t<0)throw new IOException("الفيديو لا يحتوي على مسار صوت");ex.selectTrack(t);if(startUs>0)ex.seekTo(Math.max(0,startUs-1000000L),MediaExtractor.SEEK_TO_PREVIOUS_SYNC);MediaFormat format=ex.getTrackFormat(t);int rate=format.getInteger(MediaFormat.KEY_SAMPLE_RATE),channels=format.getInteger(MediaFormat.KEY_CHANNEL_COUNT),encoding=android.media.AudioFormat.ENCODING_PCM_16BIT;
+   codec=MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME));codec.configure(format,null,null,0);codec.start();boolean inputDone=false,outputDone=false;long offset=-1;MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();long began=System.currentTimeMillis(),writtenBytes=0,nextSpaceCheck=0;
+   while(!outputDone){ColabProbe.check(cancel);if(System.currentTimeMillis()-began>30L*60*1000)throw new IOException("استغرق فك الصوت وقتًا طويلًا");boolean worked=false;
+    // Feed every free input buffer, then take every ready output: waiting 10 ms on each side for each audio packet
+    // (the old loop) is what a slow tablet spent most of its decoding time on.
+    for(int fed=0;!inputDone&&fed<16;fed++){int index=codec.dequeueInputBuffer(0);if(index<0)break;worked=true;ByteBuffer buffer=codec.getInputBuffer(index);buffer.clear();int n=ex.readSampleData(buffer,0);long time=ex.getSampleTime();if(n<0||(endUs>0&&time>=endUs)){codec.queueInputBuffer(index,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputDone=true;}else{codec.queueInputBuffer(index,0,n,time,0);ex.advance();}}
+    for(int drained=0;!outputDone&&drained<32;drained++){int index=codec.dequeueOutputBuffer(info,0);if(index==MediaCodec.INFO_TRY_AGAIN_LATER)break;worked=true;
+     if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){MediaFormat f=codec.getOutputFormat();rate=f.getInteger(MediaFormat.KEY_SAMPLE_RATE);channels=f.getInteger(MediaFormat.KEY_CHANNEL_COUNT);encoding=f.containsKey(MediaFormat.KEY_PCM_ENCODING)?f.getInteger(MediaFormat.KEY_PCM_ENCODING):android.media.AudioFormat.ENCODING_PCM_16BIT;if(encoding!=android.media.AudioFormat.ENCODING_PCM_16BIT&&encoding!=android.media.AudioFormat.ENCODING_PCM_FLOAT)throw new IOException("ترميز PCM غير مدعوم");}
+     else if(index>=0){if(info.size>0){ByteBuffer b=codec.getOutputBuffer(index).duplicate().order(ByteOrder.LITTLE_ENDIAN);b.position(info.offset);b.limit(info.offset+info.size);int stride=encoding==android.media.AudioFormat.ENCODING_PCM_FLOAT?4:2;int frames=b.remaining()/(stride*channels);if(exact){int skip=(int)Math.max(0,Math.min(frames,Math.ceil((startUs-info.presentationTimeUs)*rate/1000000.0))),end=(int)Math.max(skip,Math.min(frames,Math.ceil((endUs-info.presentationTimeUs)*rate/1000000.0)));b.position(b.position()+skip*stride*channels);frames=end-skip;if(frames>0&&offset<0)offset=Math.max(0,info.presentationTimeUs+Math.round(skip*1000000.0/rate));}else if(offset<0)offset=Math.max(0,info.presentationTimeUs);byte[] converted=new byte[Math.max(0,frames)*4];
+       // Stereo and mono 16-bit (nearly every clip) are copied in bulk: reading each sample through the buffer and mixing it in
+       // floats made an 11-minute track take 82 s to decode on a Lenovo tablet. The result is the same bytes (-32768 still becomes -32767).
+       if(frames>0&&encoding==android.media.AudioFormat.ENCODING_PCM_16BIT&&channels==2){b.get(converted);for(int i=1;i<converted.length;i+=2)if(converted[i]==(byte)0x80&&converted[i-1]==0)converted[i-1]=1;}
+       else if(frames>0&&encoding==android.media.AudioFormat.ENCODING_PCM_16BIT&&channels==1){byte[] mono=new byte[frames*2];b.get(mono);for(int i=0;i<frames;i++){byte low=mono[2*i],high=mono[2*i+1];if(high==(byte)0x80&&low==0)low=1;converted[4*i]=low;converted[4*i+1]=high;converted[4*i+2]=low;converted[4*i+3]=high;}}
+       else for(int i=0;i<frames;i++){float left=0,right=0;for(int ch=0;ch<channels;ch++){float v=encoding==android.media.AudioFormat.ENCODING_PCM_FLOAT?Math.max(-1,Math.min(1,b.getFloat()))*32767:b.getShort();if(ch==0)left+=v;else if(ch==1)right+=v;else if(ch==2){left+=.7071f*v;right+=.7071f*v;}else if(ch==3){left+=.25f*v;right+=.25f*v;}else if(ch%2==0)left+=.5f*v;else right+=.5f*v;}if(channels==1)right=left;float scale=channels>2?1f/(1f+.7071f+(channels>3?.25f:0)+(channels>4?.5f:0)+(channels>6?.5f*(channels-6):0)):1;short l=(short)Math.round(Math.max(-32767,Math.min(32767,left*scale))),r=(short)Math.round(Math.max(-32767,Math.min(32767,right*scale)));converted[4*i]=(byte)l;converted[4*i+1]=(byte)(l>>8);converted[4*i+2]=(byte)r;converted[4*i+3]=(byte)(r>>8);}
+       if(writtenBytes>=nextSpaceCheck){if(raw.getUsableSpace()<16L*1024*1024+converted.length)throw new IOException("المساحة لا تكفي لفك الصوت");nextSpaceCheck=writtenBytes+8L*1024*1024;}out.write(converted);writtenBytes+=converted.length;}outputDone=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;codec.releaseOutputBuffer(index,false);}
+    }
+    if(!worked)Thread.sleep(2);
+   }
+   out.flush();if(raw.length()==0)throw new IOException("لم ينتج ملف صوت صالح");progress.update(8,"اكتمل فك الصوت");return new Decoded(raw,rate,Math.max(0,offset));
+  }catch(Exception|OutOfMemoryError e){raw.delete();throw e;}finally{if(codec!=null){try{codec.stop();}catch(Exception ignored){}codec.release();}ex.release();}
+ }
+ static void mux(File source,File clean,File output,long audioOffsetUs,long limitUs,boolean audioOnly,AtomicBoolean cancel,MusicSeparator.Progress progress)throws Exception{
+  MediaExtractor video=new MediaExtractor();MediaCodec encoder=null;MediaMuxer muxer=null;boolean muxStarted=false,complete=false;
+  long totalFrames=clean.length()/4;if(totalFrames<=0||clean.length()%4!=0)throw new IOException("ملف الصوت المفصول غير مكتمل");
+  try(InputStream pcm=new BufferedInputStream(new FileInputStream(clean))){
+   video.setDataSource(source.getAbsolutePath());int videoIndex=audioOnly?-1:track(video,"video/");
+   muxer=new MediaMuxer(output.getAbsolutePath(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);int videoTrack=-1;if(videoIndex>=0){video.selectTrack(videoIndex);MediaFormat f=video.getTrackFormat(videoIndex);videoTrack=muxer.addTrack(f);if(f.containsKey(MediaFormat.KEY_ROTATION))muxer.setOrientationHint(f.getInteger(MediaFormat.KEY_ROTATION));}
+   MediaFormat format=MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC,44100,2);format.setInteger(MediaFormat.KEY_AAC_PROFILE,MediaCodecInfo.CodecProfileLevel.AACObjectLC);format.setInteger(MediaFormat.KEY_BIT_RATE,192000);format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE,16384);
+   encoder=MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);encoder.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);encoder.start();boolean inputDone=false,outputDone=false;long frames=0,encodedFrames=0,lastWork=android.os.SystemClock.elapsedRealtime(),lastUi=0;int audioTrack=-1;MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();byte[] bytes=new byte[16384];ByteBuffer videoBytes=videoTrack>=0?ByteBuffer.allocateDirect(16*1024*1024):null;
+   progress.update(85,"اكتمل الفصل · ترميز الصوت وحفظ الفيديو على الجهاز");
+   while(!outputDone){ColabProbe.check(cancel);boolean worked=false;
+    // Pump input and drain ALL ready output. Waiting 10 ms per AAC packet used
+    // to add minutes after Colab had already completed the actual separation.
+    if(!inputDone){int index=encoder.dequeueInputBuffer(0);if(index>=0){ByteBuffer buffer=encoder.getInputBuffer(index);buffer.clear();int capacity=Math.min(bytes.length,buffer.remaining()/4*4);if(capacity<=0)throw new IOException("حجم مخزن ترميز الصوت غير صالح");int n=pcm.read(bytes,0,capacity);long pts=audioOffsetUs+frames*1000000L/44100;if(n<0){encoder.queueInputBuffer(index,0,0,pts,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputDone=true;}else{if(n%4!=0)throw new IOException("إطار صوت غير مكتمل");buffer.put(bytes,0,n);encoder.queueInputBuffer(index,0,n,pts,0);frames+=n/4;}worked=true;}}
+    for(int drained=0;drained<64;drained++){ColabProbe.check(cancel);int index=encoder.dequeueOutputBuffer(info,0);
+     if(index==MediaCodec.INFO_TRY_AGAIN_LATER)break;
+     if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){if(muxStarted)throw new IOException("تغير ترميز الصوت أثناء الحفظ");audioTrack=muxer.addTrack(encoder.getOutputFormat());muxer.start();muxStarted=true;worked=true;}
+     else if(index>=0){boolean eos=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;
+      if((info.flags&MediaCodec.BUFFER_FLAG_CODEC_CONFIG)==0&&info.size>0){if(!muxStarted)throw new IOException("لم يبدأ حفظ مسار الصوت");ByteBuffer buffer=encoder.getOutputBuffer(index);buffer.position(info.offset);buffer.limit(info.offset+info.size);muxer.writeSampleData(audioTrack,buffer,info);encodedFrames=Math.max(encodedFrames,Math.min(totalFrames,Math.max(0,info.presentationTimeUs-audioOffsetUs)*44100L/1000000));if(videoTrack>=0)copyVideo(video,muxer,videoTrack,videoBytes,Math.min(limitUs>0?limitUs:Long.MAX_VALUE,Math.max(0,info.presentationTimeUs)+24000),cancel);}
+      encoder.releaseOutputBuffer(index,false);worked=true;if(eos){outputDone=true;break;}
+     }
+    }
+    long now=android.os.SystemClock.elapsedRealtime();if(worked)lastWork=now;else{if(now-lastWork>30000)throw new IOException("توقف مرمز الصوت عن الاستجابة أثناء الحفظ");Thread.sleep(2);}
+    if(now-lastUi>=250){lastUi=now;progress.update(85+(int)Math.min(13,13*encodedFrames/totalFrames),"حفظ الصوت المعالج · "+(encodedFrames/44100)+" / "+(totalFrames/44100)+" ثانية");}
+   }
+   if(videoTrack>=0){progress.update(98,"اكتمل الصوت · إتمام نسخ الفيديو دون إعادة ترميزه");copyVideo(video,muxer,videoTrack,videoBytes,limitUs>0?limitUs:Long.MAX_VALUE,cancel);}
+   progress.update(99,"إغلاق الملف والتحقق من حفظه");muxer.stop();muxStarted=false;complete=true;
+  }finally{if(encoder!=null){try{encoder.stop();}catch(Exception ignored){}encoder.release();}video.release();if(muxer!=null){try{if(muxStarted)muxer.stop();}finally{muxer.release();}}if(!complete)output.delete();}
+ }
+ private static void copyVideo(MediaExtractor video,MediaMuxer muxer,int track,ByteBuffer buffer,long endUs,AtomicBoolean cancel)throws Exception{
+  MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();while(true){ColabProbe.check(cancel);long pts=video.getSampleTime();if(pts<0||pts>=endUs)return;buffer.clear();int n=video.readSampleData(buffer,0);if(n<0)return;if(n>buffer.capacity())throw new IOException("إطار الفيديو أكبر من المخزن المتاح");if((video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_ENCRYPTED)!=0)throw new IOException("لا يمكن معالجة الفيديو المحمي");int flags=(video.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_SYNC)!=0?MediaCodec.BUFFER_FLAG_KEY_FRAME:0;info.set(0,n,pts,flags);buffer.position(0);buffer.limit(n);muxer.writeSampleData(track,buffer,info);video.advance();}
+ }
+}
