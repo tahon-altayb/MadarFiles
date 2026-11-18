@@ -56,6 +56,8 @@ class Engine:
         self.cache = Path(cache).resolve()
         self.cache.mkdir(parents=True, exist_ok=True)
         self.separators, self.sessions = [], []
+        self.setup_timings = {}
+        load_at = time.monotonic()
         original = ort.InferenceSession
         def session(*args, **kwargs):
             options = kwargs.get('sess_options') or ort.SessionOptions()
@@ -92,6 +94,8 @@ class Engine:
             ort.InferenceSession = original
         if len(self.sessions) != 2:
             raise ValueError('MUSIC_FX_STEM')
+        self.setup_timings['FX_MODELS_LOAD']=[round((time.monotonic()-load_at)*1000),0]
+        probe_at=time.monotonic()
         status('gpu_inference_check', '')
         # Profile actual operations in BOTH models. Provider presence alone is insufficient.
         with tempfile.TemporaryDirectory(prefix='fx_probe_', dir=self.cache) as temporary:
@@ -108,9 +112,9 @@ class Engine:
             profile.unlink(missing_ok=True)
             if require_gpu and not any(e.get('args', {}).get('provider') == 'CUDAExecutionProvider' and any(op in e.get('args', {}).get('op_name', '').lower() for op in ('conv', 'gemm', 'matmul')) for e in events):
                 raise ValueError('MUSIC_GPU_PROVIDER')
-        status('ready', '')
+        self.setup_timings['FX_GPU_PROBE']=[round((time.monotonic()-probe_at)*1000),0]
 
-    def separate(self, source, folder, status):
+    def separate(self, source, folder, status, timings=None):
         result = Path(source)
         for index, separator in enumerate(self.separators):
             directory = Path(folder) / ('pass' + str(index + 1))
@@ -118,8 +122,10 @@ class Engine:
             separator.output_dir = str(directory)
             separator.model_instance.output_dir = str(directory)
             status('separate', 'pass' + str(index + 1))
+            pass_at=time.monotonic()
             paths = separator.separate(str(result), custom_output_names={'Vocals': 'dialogue_fx'})
             result = check_output(paths, directory)
+            if timings is not None:timings[f"FX_PASS_{index+1}"]=[round((time.monotonic()-pass_at)*1000),0]
         return result
 
     def process_pcm(self, job, frames, status):
@@ -127,6 +133,8 @@ class Engine:
         source, output = Path(job) / 'input.pcm', Path(job) / 'fx_final.pcm'
         if type(frames) is not int or frames <= 0 or source.stat().st_size != frames * 4:
             raise ValueError('MUSIC_OUTPUT_LENGTH')
+        self.job_timings = {}
+        pcm_at=time.monotonic()
         with tempfile.TemporaryDirectory(prefix='two_pass_', dir=job) as temporary:
             folder = Path(temporary)
             wav = folder / 'input.wav'
@@ -138,8 +146,10 @@ class Engine:
                     if not block: break
                     out.writeframesraw(block)
             infer_at = time.monotonic()
-            result = self.separate(wav, folder, status)
+            self.job_timings["FX_PCM_PREPARE"]=[round((infer_at-pcm_at)*1000),source.stat().st_size]
+            result = self.separate(wav, folder, status, self.job_timings)
             self.last_inference_ms = round((time.monotonic()-infer_at)*1000)
+            output_at=time.monotonic()
             info = sf.info(result)
             if info.samplerate != RATE or info.channels != 2 or info.frames != frames:
                 raise ValueError('MUSIC_OUTPUT_LENGTH')
@@ -157,6 +167,7 @@ class Engine:
                 temporary_pcm.replace(output)
             finally:
                 temporary_pcm.unlink(missing_ok=True)
+        self.job_timings["FX_PCM_OUTPUT"]=[round((time.monotonic()-output_at)*1000),output.stat().st_size]
         return output
 
 def serve(root, owner_pid):
@@ -183,7 +194,7 @@ def serve(root, owner_pid):
     thread = threading.Thread(target=heartbeat, daemon=True); thread.start()
     try:
         engine = Engine(root / 'fx_models', publish)
-        publish('ready')
+        publish('ready', fx_engine_timings=engine.setup_timings)
         previous = -1
         while True:
             try: command = json.loads((folder / 'command.json').read_text())
@@ -197,7 +208,7 @@ def serve(root, owner_pid):
             previous = sequence
             began = time.monotonic()
             engine.process_pcm(job, command.get('frames'), publish)
-            publish('done', sequence=sequence, gpu_ms=engine.last_inference_ms,
+            publish('done', sequence=sequence, gpu_ms=engine.last_inference_ms, fx_job_timings=engine.job_timings,
                     pipeline=FX, model_sha256=FX_SHA)
     except Exception as error:
         code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', str(error)) else 'MUSIC_FX_INFERENCE'

@@ -31,6 +31,12 @@ final class MusicStartup {
      diagnostic.record("MUSIC_CACHE_"+source.toUpperCase(java.util.Locale.ROOT));
      diagnostic.measure("MODEL_CACHE",state.optLong("cache_ms"),0,0);
     }
+    JSONObject timings=state.optJSONObject("fx_timings");
+    if(timings!=null){
+     String bundle=state.optString("fx_bundle_source");
+     diagnostic.record("FX_BUNDLE_"+bundle.toUpperCase(java.util.Locale.ROOT));
+     diagnostic.fxTimings(timings);
+    }
     diagnostic.record("MUSIC_READY");
    }
   }

@@ -99,6 +99,7 @@ final class MusicCloudJob {
    final long frames=total[0];if(frames<=0)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
    diagnostic.record("FETCH_RESULT");JSONObject manifest=MusicMailbox.read(runtime,session.cancel,diagnostic::record,"RESULT",()->ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536)));schema(manifest,folder,frames,session.pipeline);
    if(!"cuda".equals(manifest.optString("provider"))||manifest.optLong("completed_frames",-1)!=frames||manifest.optLong("pack_count",-1)!=fetched[0]||fetched[0]!=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES||output.length()!=frames*4)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
+   if(MusicPipeline.FX.equals(session.pipeline))diagnostic.fxTimings(manifest.optJSONObject("fx_job_timings"));
    session.lastProcessMs=now()-processAt;diagnostic.measure("PROCESS_FETCH",session.lastProcessMs,output.length(),frames);diagnostic.measure("FETCH",fetchMs[0],output.length(),frames);diagnostic.measure("GPU",gpuMs[0],0,frames);diagnostic.record("RESULT_VERIFIED");complete=true;return result;
   }finally{if(!complete)output.delete();}
  }

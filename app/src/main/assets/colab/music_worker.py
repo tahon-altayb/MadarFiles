@@ -43,6 +43,8 @@ GPU_FREE_BEFORE = None
 GPU_VERIFIED = False
 CACHE = None
 DRIVE_TOKEN = ""
+FX_KEY = ""
+FX_PRELAUNCH = {}
 
 RATE = 44100
 CORE = 4 * RATE
@@ -255,7 +257,13 @@ def prepare_fx():
         return
     from music_fx_bridge import Client
     cache_root = CACHE or Path.cwd()
-    _FX_CLIENT = Client(cache_root, status)
+    try:
+        from fx_drive_runtime import Timings
+        timings = Timings(FX_PRELAUNCH)
+    except ModuleNotFoundError:
+        from types import SimpleNamespace
+        timings = SimpleNamespace(add=lambda *args: None, values={})
+    _FX_CLIENT = Client(cache_root, status, DRIVE_TOKEN, FX_KEY, timings)
     sources = []
     cache_started = time.monotonic()
     if CACHE is not None:
@@ -263,22 +271,25 @@ def prepare_fx():
         from music_profiles import MODELS
         for name, sha in MODELS:
             model = cache_root / 'fx_models' / name
-            origin = restore_pinned(model, sha, 100*1024*1024, DRIVE_TOKEN, status)
+            origin = restore_pinned(model, sha, 100*1024*1024, DRIVE_TOKEN, status, timings)
             if not origin:
                 model.unlink(missing_ok=True)
             sources.append(origin)
     _FX_CLIENT.prepare()
     if CACHE is not None:
-        sources = [origin or save_pinned(cache_root/'fx_models'/name, sha, 100*1024*1024, DRIVE_TOKEN, status)
-                   for origin, (name, sha) in zip(sources, MODELS)]
+        for i, ((name, sha), origin) in enumerate(zip(MODELS, sources)):
+            if not origin:
+                model = cache_root/'fx_models'/name
+                sources[i] = save_pinned(model, sha, 100*1024*1024, DRIVE_TOKEN, status, timings)
     _FX_VERIFIED = True
     source = ('download_unsaved' if 'download_unsaved' in sources else
               'download_saved' if 'download_saved' in sources else 'drive' if 'drive' in sources else 'local')
-    status('ready', 38, extra=dict(cache_source=source, cache_ms=round((time.monotonic()-cache_started)*1000)))
+    status('ready', 38, extra=dict(cache_source=source, fx_bundle_source=_FX_CLIENT.bundle_source, fx_timings=timings.values, cache_ms=round((time.monotonic()-cache_started)*1000)))
 
 
 def publish_fx(frames):
     output, gpu_ms = _FX_CLIENT.run(Path.cwd(), frames)
+    pack_at=time.monotonic()
     stride, recent, count = 16 * RATE, [], 0
     try:
         with output.open('rb') as stream:
@@ -298,6 +309,9 @@ def publish_fx(frames):
             sample_rate=RATE, channels=2, model_sha256=FX_SHA, pipeline=FX_PIPELINE,
             provider='cuda', pack_count=count, output_frames=stride,
             recent_packs=recent, gpu_ms=gpu_ms)
+        details=dict(_FX_CLIENT.job_timings)
+        details['FX_OUTPUT_PACK']=[round((time.monotonic()-pack_at)*1000),frames*4]
+        manifest['fx_job_timings']=details
         write_json('result.json', manifest)
         status('done', 97, extra=manifest)
     finally:
@@ -582,7 +596,7 @@ def run_v2(req):
 
 
 def serve(root):
-    global CACHE, _SERVICE_ROOT, _ACTIVE_JOB, _NEXT_BATCH, DRIVE_TOKEN
+    global CACHE, _SERVICE_ROOT, _ACTIVE_JOB, _NEXT_BATCH, DRIVE_TOKEN, FX_KEY, FX_PRELAUNCH
     root = Path(root).resolve()
     CACHE = _SERVICE_ROOT = root
     os.chdir(root)
@@ -590,7 +604,13 @@ def serve(root):
     config = json.loads(config_path.read_text()) if config_path.is_file() else {}
     profile = config.get('pipeline', 'voc_ft')
     if config.get('drive_input') is True:
-        DRIVE_TOKEN = sys.stdin.readline(8193).strip()
+        provided = os.environ.pop('MADAR_FX_DRIVE_BOOTSTRAP', '') or sys.stdin.readline(8512).strip()
+        if profile == FX_PIPELINE and provided.startswith('{'):
+            payload = json.loads(provided)
+            DRIVE_TOKEN, FX_KEY = payload.get('drive',''), payload.get('key','')
+            FX_PRELAUNCH = payload.get('timings', {})
+        else:
+            DRIVE_TOKEN = provided
         sys.stdin.close()
         if DRIVE_TOKEN and not re.fullmatch(r'[A-Za-z0-9._~+/\-]{10,8190}={0,2}', DRIVE_TOKEN):
             raise ValueError('MUSIC_DRIVE_AUTH')

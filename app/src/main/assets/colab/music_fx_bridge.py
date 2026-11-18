@@ -42,11 +42,18 @@ def install(command, log, **options):
         raise ValueError('MUSIC_FX_INSTALL') from error
 
 class Client:
-    def __init__(self, root, status):
+    def __init__(self, root, status, token='', key='', timings=None):
         self.root, self.status = Path(root).resolve(), status
         self.folder = self.root / 'fx_rpc'
         self.folder.mkdir(exist_ok=True)
         self.sequence, self.process, self.last = 0, None, None
+        if timings is None:
+            from types import SimpleNamespace
+            timings = SimpleNamespace(add=lambda *args: None, values={})
+        self.timings, self.bundle, self.bundle_source = timings, None, 'no_drive'
+        if token and key:
+            from fx_drive_runtime import cache_context
+            self.bundle = cache_context(token,key)
 
     def prepare(self):
         if self.process is not None:
@@ -66,23 +73,70 @@ class Client:
         marker = envroot / 'madar-ready.json'
         try: installed = json.loads(marker.read_text()) == identity
         except (OSError, ValueError): installed = False
+        library = envroot/'lib'/f'python{sys.version_info.major}.{sys.version_info.minor}'/'site-packages'
+        bundle_name = self.bundle.name('python', identity) if self.bundle else None
+        if installed:
+            self.bundle_source = 'session'
         if not installed:
+            started = time.monotonic()
             if envroot.exists(): shutil.rmtree(envroot)
             create_environment(envroot)
-            constraints = envroot / 'constraints.txt'
-            constraints.write_text('torch=='+torch_version+'\nnumpy==2.2.6\nonnxruntime-gpu=='+ort+'\n')
-            install_env = os.environ.copy()
-            if shutil.which('gcc'): install_env['CC'] = 'gcc'
-            if shutil.which('g++'): install_env['CXX'] = 'g++'
-            install(pip_command(envroot) + ['install', '--disable-pip-version-check',
-                    '--timeout', '30', '--retries', '2', '-c', str(constraints),
-                    'audio-separator[gpu]=='+CONFIG['audio_separator'], 'onnxruntime-gpu=='+ort, 'numpy==2.2.6', 'librosa=='+CONFIG['librosa'], 'audioread==3.0.1'],
-                    self.root / 'fx-install.log', timeout=600, env=install_env)
+            self.timings.add('FX_VENV',started)
+            restored = self.bundle and self.bundle.restore(bundle_name,library,self.status,self.timings)
+            if restored:
+                self.bundle_source = 'drive'
+            else:
+                if self.bundle:
+                    self.bundle_source = 'origin'
+                    shutil.rmtree(envroot)
+                    create_environment(envroot)
+                self.install_environment(envroot, torch_version, ort)
             marker.write_text(json.dumps(identity))
         if shutil.which('ffmpeg') is None:
+            started=time.monotonic()
             with (self.root / 'fx-ffmpeg.log').open('wb') as log:
                 subprocess.run(['apt-get', 'update', '-qq'], stdout=log, stderr=log, check=True, timeout=180)
                 subprocess.run(['apt-get', 'install', '-y', '-qq', 'ffmpeg'], stdout=log, stderr=log, check=True, timeout=180)
+            self.timings.add('FX_FFMPEG_INSTALL',started)
+        try:
+            self.start_engine(envroot, major)
+        except (OSError, ValueError):
+            if self.bundle_source != 'drive':
+                raise
+            if self.process is not None and self.process.poll() is None:
+                self.process.kill()
+                self.process.wait(timeout=10)
+            if getattr(self,'log',None):
+                self.log.close()
+            self.process = None
+            self.status('install',28)
+            shutil.rmtree(envroot)
+            create_environment(envroot)
+            self.install_environment(envroot,torch_version,ort)
+            marker.write_text(json.dumps(identity))
+            self.bundle_source = 'repair'
+            self.start_engine(envroot,major)
+        if self.bundle_source in ('origin','repair'):
+            if self.bundle.save(bundle_name,library,self.status,self.timings,omit=('madar-parent-site.pth',)):
+                self.bundle_source = 'saved'
+            else:
+                self.bundle_source = 'unsaved'
+
+    def install_environment(self, envroot, torch_version, ort):
+        self.status('install',28)
+        started = time.monotonic()
+        constraints = envroot / 'constraints.txt'
+        constraints.write_text('torch=='+torch_version+'\nnumpy==2.2.6\nonnxruntime-gpu=='+ort+'\n')
+        install_env = os.environ.copy()
+        if shutil.which('gcc'): install_env['CC'] = 'gcc'
+        if shutil.which('g++'): install_env['CXX'] = 'g++'
+        install(pip_command(envroot) + ['install', '--disable-pip-version-check',
+                '--timeout', '30', '--retries', '2', '-c', str(constraints),
+                'audio-separator[gpu]=='+CONFIG['audio_separator'], 'onnxruntime-gpu=='+ort, 'numpy==2.2.6', 'librosa=='+CONFIG['librosa'], 'audioread==3.0.1'],
+                self.root / 'fx-install.log', timeout=600, env=install_env)
+        self.timings.add('FX_PIP_INSTALL',started)
+
+    def start_engine(self, envroot, major):
         # The launcher already pins CUDA 13 cuDNN. Pin the CUDA 12 variant too,
         # privately, without changing torch or the old model's site-packages.
         env = os.environ.copy()
@@ -92,9 +146,18 @@ class Client:
             cudnn = self.root.parent/'madar_fx_cudnn_cu12_9130050'
             libs = cudnn/'nvidia/cudnn/lib'
             if not (libs/'libcudnn.so.9').is_file():
-                install(pip_command(envroot) + ['install', '--no-deps',
-                        '--only-binary=:all:', '--target', str(cudnn), 'nvidia-cudnn-cu12==9.13.0.50'],
-                        self.root/'fx-cudnn.log', timeout=600)
+                name = self.bundle.name('cudnn', {'cuda':major,'version':'9.13.0.50'}) if self.bundle else None
+                restored = self.bundle and self.bundle.restore(name,cudnn,self.status,self.timings,component="CUDNN")
+                if not restored or not (libs/'libcudnn.so.9').is_file():
+                    if cudnn.exists():
+                        shutil.rmtree(cudnn)
+                    started=time.monotonic()
+                    install(pip_command(envroot) + ['install', '--no-deps',
+                            '--only-binary=:all:', '--target', str(cudnn), 'nvidia-cudnn-cu12==9.13.0.50'],
+                            self.root/'fx-cudnn.log', timeout=600)
+                    self.timings.add('FX_GPU_LIB_INSTALL',started)
+                    if self.bundle:
+                        self.bundle.save(name,cudnn,self.status,self.timings,component="CUDNN")
             env['MADAR_CUDNN_LIB'] = str(libs/'libcudnn.so.9')
             env['LD_LIBRARY_PATH'] = str(libs)+os.pathsep+env.get('LD_LIBRARY_PATH', '')
         # An old status cannot satisfy a newly started child.
@@ -102,7 +165,10 @@ class Client:
         self.log = (self.root/'fx-worker.log').open('ab')
         self.process = subprocess.Popen([str(envroot/'bin/python'), str(self.root/'music_fx_engine.py'),
             str(self.root), str(os.getpid())], stdout=self.log, stderr=self.log, env=env)
-        self.wait(lambda state: state.get('stage') == 'ready', 600)
+        started = time.monotonic()
+        result = self.wait(lambda state: state.get('stage') == 'ready', 600)
+        self.timings.add('FX_ENGINE_START',started)
+        self.timings.values.update(result.get('fx_engine_timings',{}))
 
     def wait(self, completed, timeout):
         began, heartbeat_at, previous_beat = time.monotonic(), time.monotonic(), None
@@ -140,4 +206,5 @@ class Client:
         output = Path(job)/'fx_final.pcm'
         if not output.is_file() or output.stat().st_size != frames*4:
             raise ValueError('MUSIC_OUTPUT_LENGTH')
+        self.job_timings = result.get('fx_job_timings', {})
         return output, result['gpu_ms']

@@ -125,6 +125,52 @@ class CacheTest(unittest.TestCase):
             self.assertNotIn('Authorization', put.call_args.kwargs['headers'])
 
 
+class FxRuntimeCacheTest(unittest.TestCase):
+    def test_archive_roundtrip_preserves_fresh_parent_paths_and_reports_size(self):
+        from fx_drive_runtime import BundleCache, Timings
+        with tempfile.TemporaryDirectory() as work:
+            folder = Path(work)
+            root = folder/'installed'
+            root.mkdir()
+            (root/'package.py').write_text('VALUE = 42')
+            (root/'madar-parent-site.pth').write_text('/old/runtime')
+            restore = folder/'new'
+            restore.mkdir()
+            (restore/'madar-parent-site.pth').write_text('/new/runtime')
+            bundle = BundleCache('drive-token', 'ab'*32)
+            name = bundle.name('python', {'torch':'example','cuda':13})
+            self.assertNotEqual(name,bundle.name('python', {'torch':'example','cuda':12}))
+            self.assertNotEqual(name,BundleCache('drive-token','ac'*32).name('python',{'torch':'example','cuda':13}))
+            stored = {}
+            def mock_upload(path, spec, auth, status, metadata):
+                stored['content'] = path.read_bytes()
+                stored['spec'] = spec
+                self.assertEqual(metadata['appProperties']['signature'], bundle.signature(name,spec.sha256,spec.size))
+                return True
+            timings = Timings()
+            with patch.object(cache, 'store', side_effect=mock_upload):
+                self.assertTrue(bundle.save(name,root,None,timings,omit=('madar-parent-site.pth',)))
+            def mock_download(url,stage,path,spec,status,auth):
+                path.write_bytes(stored['content'])
+                return True
+            with patch.object(bundle,'find',return_value=('file_000',stored['spec'])), patch.object(cache,'transfer',side_effect=mock_download):
+                self.assertTrue(bundle.restore(name,restore,None,timings))
+            self.assertEqual((restore/'package.py').read_text(),'VALUE = 42')
+            self.assertEqual((restore/'madar-parent-site.pth').read_text(),'/new/runtime')
+            self.assertEqual(timings.values['FX_DRIVE_RUNTIME_GET'][1],len(stored['content']))
+            self.assertEqual(timings.values['FX_DRIVE_RUNTIME_PUT'][1],len(stored['content']))
+
+    def test_forged_drive_signature_cannot_select_package(self):
+        from fx_drive_runtime import BundleCache
+        bundle=BundleCache('drive-token','10'*32)
+        name=bundle.name('python',{})
+        response=SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'files':[{
+            'id':'file_000','size':'80','sha256Checksum':'aa'*32,
+            'appProperties':{'signature':'0'*64}}]})
+        with patch.object(cache.requests,'get',return_value=nullcontext(response)):
+            self.assertIsNone(bundle.find(name))
+
+
 class AudioTest(unittest.TestCase):
     def separator(self):
         separator = Separator.__new__(Separator)

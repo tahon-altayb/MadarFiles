@@ -46,7 +46,9 @@ def launch(root):
     try:
         worker.status('gpu_check', 27)
         config = root / 'engine.json'
-        if config.is_file() and json.loads(config.read_text()).get('pipeline') == 'bandit_v2_multi':
+        engine = json.loads(config.read_text()) if config.is_file() else {}
+        profile = engine.get('pipeline')
+        if profile == 'bandit_v2_multi':
             from music_bandit import REVISION
             worker.status('install', 28)
             environment = root / 'bandit_env'
@@ -63,23 +65,42 @@ def launch(root):
         env = os.environ.copy()
         env['CUDNN_LIB_CONFIG'] = 'FULL'
         env.pop('MADAR_CUDNN_LIB', None)
+        fx_cache, fx_payload = None, {}
+        if profile == 'inst_hq_4_3' and engine.get('drive_input'):
+            from fx_drive_runtime import cache_context, Timings
+            line = sys.stdin.readline(8512).strip()
+            fx_payload = json.loads(line) if line.startswith('{') else {'drive':line}
+            fx_cache = cache_context(fx_payload.get('drive'),fx_payload.get('key'))
+            fx_timings = Timings()
+            sys.stdin.close()
         if major == 13:
             worker.status('gpu_dependencies', 28)
             cache = root.parent/'madar_cudnn_9130050'
             libs = cache/'nvidia/cudnn/lib'
             required = ['libcudnn.so.9', 'libcudnn_engines_precompiled.so.9']
+            key = fx_cache.name('cudnn',{'cuda':major,'version':PIN}) if fx_cache else None
+            if fx_cache and not all((libs/name).is_file() for name in required):
+                fx_cache.restore(key,cache,worker.status,fx_timings,component="CUDNN")
             if not all((libs/name).is_file() for name in required):
                 staging = root.parent/('madar_cudnn_stage_'+uuid.uuid4().hex)
                 try:
+                    import time
+                    started=time.monotonic()
                     subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', '--no-deps', '--only-binary=:all:', '--timeout', '20', '--retries', '2', '--target', str(staging), 'nvidia-cudnn-cu13=='+PIN], check=True, timeout=600)
                     if not all((staging/'nvidia/cudnn/lib'/name).is_file() for name in required):
                         raise ValueError('MUSIC_CUDNN_INSTALL')
                     if cache.exists():shutil.rmtree(cache)
                     staging.replace(cache)
+                    if fx_cache:
+                        fx_timings.add('FX_GPU_LIB_INSTALL',started)
+                        fx_cache.save(key,cache,worker.status,fx_timings,component="CUDNN")
                 finally:
                     if staging.exists():shutil.rmtree(staging)
             env['MADAR_CUDNN_LIB'] = str(libs/'libcudnn.so.9')
             env['LD_LIBRARY_PATH'] = str(libs)+os.pathsep+env.get('LD_LIBRARY_PATH', '')
+        if fx_payload:
+            fx_payload['timings']=fx_timings.values
+            env['MADAR_FX_DRIVE_BOOTSTRAP']=json.dumps(fx_payload)
         # No torch import in the launcher. The clean worker imports only
         # after the pinned native library has been preloaded by music_worker.py.
         stop.set();thread.join(timeout=3)

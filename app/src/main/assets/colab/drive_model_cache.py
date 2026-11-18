@@ -89,12 +89,12 @@ def entries(spec, auth, maximum=None):
             yield file_id, int(size)
 
 
-def store(path, spec, auth, status):
+def store(path, spec, auth, status, metadata=None):
     status('model_save', 36, extra=dict(total_bytes=spec.size))
     response = requests.post(UPLOAD, params={'uploadType': 'resumable', 'fields': 'id,size,sha256Checksum'},
                              headers=dict(auth, **{'X-Upload-Content-Type': 'application/octet-stream',
                                                    'X-Upload-Content-Length': str(spec.size)}),
-                             json=dict(name=f'model-{spec.sha256}', parents=['appDataFolder']),
+                             json=dict(metadata or {'name': f'model-{spec.sha256}'}, parents=['appDataFolder']),
                              timeout=(10, 20), allow_redirects=False)
     location = response.headers.get('Location', '')
     endpoint = urlsplit(location)
@@ -144,7 +144,7 @@ def materialize(folder, spec, token, status):
     return target, 'download_unsaved'
 
 
-def restore_pinned(target, sha256, maximum, token, status):
+def restore_pinned(target, sha256, maximum, token, status, timings=None):
     """Restore a model whose official size can vary by packaging but whose bytes are pinned."""
     from types import SimpleNamespace
     if target.is_file() and target.stat().st_size <= maximum:
@@ -158,9 +158,15 @@ def restore_pinned(target, sha256, maximum, token, status):
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         spec = SimpleNamespace(sha256=sha256, size=None)
-        for file_id, size in entries(spec, auth, maximum=maximum):
+        marked = time.monotonic()
+        candidates = list(entries(spec, auth, maximum=maximum))
+        if timings:timings.add('FX_DRIVE_WEIGHTS_LOOKUP',marked)
+        for file_id, size in candidates:
             spec.size = size
-            if transfer(f'{FILES}/{file_id}?alt=media', 'model_restore', partial, spec, status, auth):
+            marked = time.monotonic()
+            restored = transfer(f'{FILES}/{file_id}?alt=media', 'model_restore', partial, spec, status, auth)
+            if timings:timings.add('FX_DRIVE_WEIGHTS_GET',marked,partial.stat().st_size if partial.is_file() else 0)
+            if restored:
                 os.replace(partial, target)
                 return 'drive'
             partial.unlink(missing_ok=True)
@@ -171,7 +177,7 @@ def restore_pinned(target, sha256, maximum, token, status):
     return None
 
 
-def save_pinned(path, sha256, maximum, token, status):
+def save_pinned(path, sha256, maximum, token, status, timings=None):
     from types import SimpleNamespace
     if not token:
         return 'download_unsaved'
@@ -180,8 +186,19 @@ def save_pinned(path, sha256, maximum, token, status):
         if not 0 < spec.size <= maximum:
             return 'download_unsaved'
         auth = {'Authorization': 'Bearer ' + token}
-        if next(entries(spec, auth), None) or (verified(path, spec) and store(path, spec, auth, status)):
+        marked = time.monotonic()
+        found = next(entries(spec, auth), None)
+        if timings:timings.add('FX_DRIVE_WEIGHTS_LOOKUP',marked)
+        if found:
             return 'download_saved'
+        marked = time.monotonic()
+        valid = verified(path, spec)
+        if timings:timings.add('FX_WEIGHTS_VERIFY',marked)
+        if valid:
+            marked = time.monotonic()
+            saved = store(path, spec, auth, status)
+            if timings:timings.add('FX_DRIVE_WEIGHTS_PUT',marked,spec.size if saved else 0)
+            if saved:return 'download_saved'
     except (OSError, ValueError, TypeError, KeyError, requests.RequestException):
         pass
     return 'download_unsaved'
