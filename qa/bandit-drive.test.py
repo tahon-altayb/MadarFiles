@@ -97,8 +97,8 @@ class CacheTest(unittest.TestCase):
 class AudioTest(unittest.TestCase):
     def separator(self):
         separator = Separator.__new__(Separator)
-        separator.model = SimpleNamespace(infer=lambda signal, sample_rate: {
-            'speech': signal * .3, 'music': signal * .25, 'effects': signal * .45})
+        separator.infer = lambda signal: {
+            'speech': signal * .3, 'music': signal * .25, 'effects': signal * .45}
         return separator
 
     def test_precise_stereo_pcm_length_across_three_packs(self):
@@ -116,15 +116,51 @@ class AudioTest(unittest.TestCase):
         np.testing.assert_array_equal(result[:, 0], -result[:, 1])
         self.assertLess(abs(int(result[stride, 0]) - int(result[stride-1, 0])), 350)
 
+    def test_shared_context_amortizes_inference_across_four_output_packs(self):
+        stride = 4 * WIRE_RATE
+        separator = self.separator()
+        fake_torch = SimpleNamespace(Tensor=type('Tensor', (), {}),
+                                     cuda=SimpleNamespace(synchronize=lambda: None))
+        with patch.dict(sys.modules, {'torch': fake_torch}), patch.object(
+                separator, 'mix', wraps=separator.mix) as run:
+            packs = list(separator.packs(np.zeros((stride*5+29, 2), dtype='<i2'), stride))
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual([len(data) for data, _ in packs], [stride*4]*5+[116])
+
+    def test_gpu_batch_retries_the_same_window_on_out_of_memory(self):
+        class OutOfMemory(Exception):
+            pass
+        separator = Separator.__new__(Separator)
+        separator.handler = SimpleNamespace(inference_batch_size=4)
+        attempts = []
+        samples = np.zeros((2, 20), dtype=np.float32)
+
+        def infer(signal, sample_rate):
+            self.assertIs(signal, samples)
+            batch = separator.handler.inference_batch_size
+            attempts.append(batch)
+            if batch > 1:
+                raise OutOfMemory()
+            return 'clean'
+
+        separator.model = SimpleNamespace(infer=infer)
+        fake_torch = SimpleNamespace(cuda=SimpleNamespace(OutOfMemoryError=OutOfMemory,
+                                                         empty_cache=lambda: None))
+        with patch.dict(sys.modules, {'torch': fake_torch}):
+            self.assertEqual(separator.infer(samples), 'clean')
+        self.assertEqual(attempts, [4, 2, 1])
+
     def test_mix_rejects_malformed_stems(self):
         separator = self.separator()
-        separator.model.infer = lambda signal, sample_rate: {'speech': signal}
+        separator.infer = lambda signal: {'speech': signal}
         with self.assertRaisesRegex(ValueError, 'MUSIC_BANDIT_STEMS'):
             separator.mix(np.zeros((2, WIRE_RATE), dtype=np.float32))
 
     def test_worker_publishes_packs_with_same_wire_contract_as_android(self):
+        import base64
         import json
         import os
+        import zlib
         stride = 16 * WIRE_RATE
         frames = stride + 107
         pcm = bytes(frames * 4)
@@ -147,6 +183,8 @@ class AudioTest(unittest.TestCase):
                 self.assertEqual(report['pipeline'], 'bandit_v2_multi')
                 self.assertEqual(report['recent_packs'][1]['bytes'], 107*4)
                 self.assertEqual(report['recent_packs'][1]['sha256'], hashlib.sha256(bytes(107*4)).hexdigest())
+                wire = base64.b64decode(Path('pack_0.b64.txt').read_bytes(), validate=True)
+                self.assertEqual(zlib.decompress(wire), bytes(stride*4))
                 self.assertFalse(Path('input.pcm').exists())
                 java = (ROOT/'app/src/main/java/com/madar/files/MusicPipeline.java').read_text()
                 self.assertIn(report['model_sha256'], java)

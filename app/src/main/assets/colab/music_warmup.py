@@ -27,3 +27,9 @@ if '_madar_music_service' not in globals() or _madar_music_service.poll() is not
     finally:
         del _madar_drive_grant
         _madar_music_log.close()
+
+
+# Keep this owned job tied to its executing Colab cell until the worker exits.
+# Android reads progress independently and explicitly stops this worker at the end.
+if globals().get('MADAR_FOREGROUND_MUSIC', False):
+    _madar_music_service.wait()

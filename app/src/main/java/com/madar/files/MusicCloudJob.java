@@ -71,6 +71,7 @@ final class MusicCloudJob {
    long readyAt=now();session.awaitReady();session.lastColdStartMs=cold?Math.max(0,now()-began):0;diagnostic.measure("PREPARE",now()-readyAt,0,0);
    MusicMailbox.submit(runtime,session.root,folder);diagnostic.record("MUSIC_SUBMITTED");
    final long[] fetched={0},fetchMs={0},gpuMs={0};long processAt=now();
+   progress.update(39,"فصل الصوت على GPU · بانتظار أول جزء");
    try(OutputStream out=new BufferedOutputStream(new FileOutputStream(output))){
     MusicMailbox.await(runtime,session.root,folder,session.cancel,diagnostic::record,state->{
      String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));
@@ -81,10 +82,12 @@ final class MusicCloudJob {
       if(count<0||count>expected)throw new IOException("Colab · MUSIC_PACK_SCHEMA");JSONArray recent=state.optJSONArray("recent_packs");
       while(fetched[0]<count){ColabProbe.check(session.cancel);long at=now(),index=fetched[0];JSONObject meta=null;
        if(recent!=null)for(int i=0;i<recent.length();i++){JSONObject item=recent.getJSONObject(i);if(item.optLong("index",-1)==index){meta=item;break;}}
-       if(meta==null)meta=ColabRuntime.parseJson(runtime.getText(folder+"/pack_"+index+".json",65536));
+       if(meta==null)meta=MusicMailbox.read(runtime,session.cancel,diagnostic::record,"PACK_META",()->ColabRuntime.parseJson(runtime.getText(folder+"/pack_"+index+".json",65536)));
        int bytes=(int)(Math.min(OUTPUT_FRAMES,frames-index*OUTPUT_FRAMES)*4);
        if(meta.optLong("index",-1)!=index||meta.optLong("bytes",-1)!=bytes||!meta.optString("sha256").matches("[a-f0-9]{64}"))throw new IOException("Colab · MUSIC_PACK_SCHEMA");
-       byte[] pcm=MusicWire.fetch(runtime,folder+"/pack_"+index+".pcm",meta,bytes);fetchMs[0]+=now()-at;
+       JSONObject pack=meta;String name=folder+"/pack_"+index+".pcm";
+       byte[] pcm=MusicMailbox.read(runtime,session.cancel,diagnostic::record,"PACK",()->MusicWire.fetch(runtime,name,pack,bytes,MusicPipeline.BANDIT.equals(session.pipeline)));
+       fetchMs[0]+=now()-at;if(fetched[0]==0)diagnostic.record("MUSIC_FIRST_PACK");
        if(output.getUsableSpace()<pcm.length+16L*1024*1024)throw new IOException("Colab · MUSIC_DISK");out.write(pcm);out.flush();fetched[0]++;
        if(live!=null)LiveSeparation.publish(live,output.length()/4);
        progress.update(Math.max(27,Math.min(97,state.optInt("progress",27))),"استرجاع الصوت المنظّف · "+(output.length()/4/44100)+" / "+(frames/44100)+" ثانية");
@@ -94,7 +97,7 @@ final class MusicCloudJob {
     });
    }
    final long frames=total[0];if(frames<=0)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
-   diagnostic.record("FETCH_RESULT");JSONObject manifest=ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536));schema(manifest,folder,frames,session.pipeline);
+   diagnostic.record("FETCH_RESULT");JSONObject manifest=MusicMailbox.read(runtime,session.cancel,diagnostic::record,"RESULT",()->ColabRuntime.parseJson(runtime.getText(folder+"/result.json",65536)));schema(manifest,folder,frames,session.pipeline);
    if(!"cuda".equals(manifest.optString("provider"))||manifest.optLong("completed_frames",-1)!=frames||manifest.optLong("pack_count",-1)!=fetched[0]||fetched[0]!=(frames+OUTPUT_FRAMES-1)/OUTPUT_FRAMES||output.length()!=frames*4)throw new IOException("Colab · MUSIC_OUTPUT_LENGTH");
    session.lastProcessMs=now()-processAt;diagnostic.measure("PROCESS_FETCH",session.lastProcessMs,output.length(),frames);diagnostic.measure("FETCH",fetchMs[0],output.length(),frames);diagnostic.measure("GPU",gpuMs[0],0,frames);diagnostic.record("RESULT_VERIFIED");complete=true;return result;
   }finally{if(!complete)output.delete();}

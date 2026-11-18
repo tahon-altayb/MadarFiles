@@ -16,8 +16,18 @@ final class MusicWire {
   part.put("wire_encoding","zlib").put("wire_bytes",encoded.length).put("wire_sha256",ColabMusic.sha(encoded));return new Packed(encoded,part,true);
  }
  static byte[] fetch(ColabRuntime runtime,String name,JSONObject part,int expected)throws Exception{
+  return fetch(runtime,name,part,expected,false);
+ }
+ static byte[] fetch(ColabRuntime runtime,String name,JSONObject part,int expected,boolean textBackup)throws Exception{
   String encoding=part.optString("wire_encoding","pcm");if(!encoding.equals("pcm")&&!encoding.equals("zlib"))throw new IOException("Colab · MUSIC_WIRE_ENCODING");
-  return decode(runtime.getBinary(name+(encoding.equals("zlib")?".zlib":""),8*1024*1024),part,expected);
+  byte[] data;
+  try{data=runtime.getBinary(name+(encoding.equals("zlib")?".zlib":""),8*1024*1024);}
+  catch(ColabRuntime.HttpFailure error){
+   if(!textBackup||error.status!=404)throw error;
+   runtime.transferEvents.accept("MUSIC_PACK_TEXT");
+   data=ColabRuntime.decodeTransferText(runtime.getText(name.substring(0,name.length()-4)+".b64.txt",8*1024*1024),8*1024*1024);
+  }
+  return decode(data,part,expected);
  }
  static byte[] decode(byte[] wire,JSONObject part,int expected)throws Exception{
   if(expected<=0||expected>MAX_BYTES||part.optLong("bytes",-1)!=expected)throw new IOException("Colab · MUSIC_WIRE_LENGTH");String encoding=part.optString("wire_encoding","pcm");byte[] pcm;

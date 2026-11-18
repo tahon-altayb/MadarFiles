@@ -3,7 +3,7 @@ import time
 
 REVISION = '96ea0ec12aeb444f379c2f5145fb8ee58b58cf19'
 PROFILE = 'bandit_v2_multi'
-FINGERPRINT = '881ef0d5e3c274e4ccfc11ace7ed9b632d19a8d7c0b347d41c41147c3fc04cd6'
+FINGERPRINT = '65d9dae8baf15a817ad28dc3551a13f316fec61d269307098769aeff3f3ee11a'
 CHECKPOINT_SHA = 'abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc'
 CHECKPOINT_SIZE = 446680129
 WIRE_RATE = 44100
@@ -14,7 +14,6 @@ FADE = WIRE_RATE // 10
 
 class Separator:
     def __init__(self, directory, token, status):
-        import numpy as np
         import torch
         from bandit_infer import BanditSession
         from bandit_infer.checkpoints import get_spec
@@ -31,11 +30,23 @@ class Separator:
         status('model_load', 37, extra=self.cache_details())
         self.model = BanditSession('v2-multi', family='v2', device='cuda',
                                    checkpoint_path=weights, checkpoint_sha256=spec.sha256).load()
-        status('gpu_inference_check', 38, extra=self.cache_details())
-        probe = np.zeros((2, 4 * MODEL_RATE), dtype=np.float32)
-        probe[:, MODEL_RATE:MODEL_RATE + 4096] = .05 * np.sin(np.arange(4096) * .06)
-        self.mix(probe)
-        torch.cuda.synchronize()
+        self.handler = self.model._runtime.handler
+        available = torch.cuda.mem_get_info()[0] / 1024**3
+        self.handler.inference_batch_size = 4 if available >= 20 else 2 if available >= 8 else 1
+
+    def infer(self, samples):
+        import torch
+
+        while True:
+            try:
+                return self.model.infer(samples, sample_rate=MODEL_RATE)
+            except torch.cuda.OutOfMemoryError:
+                batch = self.handler.inference_batch_size
+                if batch == 1:
+                    raise
+            # Release the failed call's tensors before retrying the same samples on GPU.
+            self.handler.inference_batch_size = batch // 2
+            torch.cuda.empty_cache()
 
     def cache_details(self):
         return dict(cache_source=self.cache_source, cache_ms=self.cache_ms)
@@ -43,7 +54,7 @@ class Separator:
     def mix(self, samples):
         import numpy as np
 
-        stems = self.model.infer(samples, sample_rate=MODEL_RATE)
+        stems = self.infer(samples)
         if set(stems) != {'speech', 'music', 'effects'}:
             raise ValueError('MUSIC_BANDIT_STEMS')
         if any(stem.shape != samples.shape or not np.isfinite(stem).all() for stem in stems.values()):
@@ -60,8 +71,10 @@ class Separator:
         frames = len(source)
         previous = None
         gpu_ms = 0
-        for start in range(0, frames, pack_frames):
-            end = min(start + pack_frames, frames)
+        start = 0
+        while start < frames:
+            # Publish the first pack early, then amortize Bandit's internal padding over four packs.
+            end = min(start + pack_frames * (1 if start == 0 else 4), frames)
             # Align the resampling origin to the same 44.1/48 kHz phase in all windows.
             left = max(0, start - CONTEXT)
             right = min(frames, end + CONTEXT)
@@ -81,5 +94,8 @@ class Separator:
                 fade = np.linspace(0, 1, count + 1, dtype=np.float32)[:-1]
                 current[:, :count] = previous[:, :count] * (1-fade) + current[:, :count] * fade
             previous = native[:, end-left:end-left+FADE]
-            pcm = np.clip(np.rint(current.T * 32768), -32768, 32767).astype('<i2')
-            yield pcm.tobytes(), round(gpu_ms)
+            for offset in range(0, end-start, pack_frames):
+                block = current[:, offset:offset+pack_frames].T
+                pcm = np.clip(np.rint(block * 32768), -32768, 32767).astype('<i2')
+                yield pcm.tobytes(), round(gpu_ms)
+            start = end

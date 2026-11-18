@@ -83,7 +83,7 @@ final class ColabMusic {
    MusicStartup startup=new MusicStartup(runtime,root,cancel,(p,m)->status.update(p,m),diagnostic);
    String warmup="SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py");
    if(MusicPipeline.BANDIT.equals(pipeline)){
-    warmup="MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n"+warmup;
+    warmup="MADAR_FOREGROUND_MUSIC = True\nMADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n"+warmup;
     modelStorageToken=null;
    }
    channel.execute(warmup,startup::poll);

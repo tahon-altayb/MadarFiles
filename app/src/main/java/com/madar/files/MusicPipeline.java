@@ -4,7 +4,7 @@ package com.madar.files;
 final class MusicPipeline {
  static final String LEGACY="voc_ft",FX="inst_hq_4_3",BANDIT="bandit_v2_multi";
  static final String FX_SHA="e165729735b0493b2711b73de37f17cd57dc0a550bd2dff1d4c627586ed32a55";
- static final String BANDIT_SHA="881ef0d5e3c274e4ccfc11ace7ed9b632d19a8d7c0b347d41c41147c3fc04cd6";
+ static final String BANDIT_SHA="65d9dae8baf15a817ad28dc3551a13f316fec61d269307098769aeff3f3ee11a";
  static String checked(String value){if(value==null||value.isEmpty()||LEGACY.equals(value))return LEGACY;if(FX.equals(value)||BANDIT.equals(value))return value;throw new IllegalArgumentException("طريقة فصل الموسيقى غير معروفة");}
  static String fingerprint(String value){switch(checked(value)){case FX:return FX_SHA;case BANDIT:return BANDIT_SHA;default:return ColabMusic.MODEL_SHA;}}
  private MusicPipeline(){}

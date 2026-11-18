@@ -35,8 +35,9 @@ final class AudioPipeline {
    if(track<0){why.accept("SOURCE_NO_AUDIO");return null;}
    MediaFormat format=ex.getTrackFormat(track);String mime=format.getString(MediaFormat.KEY_MIME);// Vorbis is not carried: Android's extractor hands each Vorbis packet with four extra bytes for its own decoder, and
    // a copy would hand them on (the emulator caught it). Such clips take the decoded way.
-   boolean aac="audio/mp4a-latm".equals(mime),webm="audio/opus".equals(mime);
-   if(!aac&&!webm){why.accept("SOURCE_CODEC_"+codecName(mime));return null;}
+   boolean aac="audio/mp4a-latm".equals(mime),webm="audio/opus".equals(mime),mp3="audio/mpeg".equals(mime);
+   if(!aac&&!webm&&!mp3){why.accept("SOURCE_CODEC_"+codecName(mime));return null;}
+   if(mp3){ex.selectTrack(track);Compressed copied=copyMpeg(c,ex,endUs,cancel,why);return copied;}
    out=File.createTempFile("madar_source_",aac?".m4a":".webm",c.getCacheDir());
    ex.selectTrack(track);step="MUXER";muxer=new android.media.MediaMuxer(out.getAbsolutePath(),aac?android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4:android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM);
    step="TRACK";int target=muxer.addTrack(format);step="START";muxer.start();
@@ -54,6 +55,30 @@ final class AudioPipeline {
   }catch(java.util.concurrent.CancellationException stopped){throw stopped;}
   catch(Exception unsupported){why.accept("SOURCE_ERROR_"+step);return null;}
   finally{if(muxer!=null)try{muxer.release();}catch(Exception ignored){}ex.release();if(!complete&&out!=null)out.delete();}
+ }
+ /** Write complete MPEG audio frames in their original order; FFmpeg demuxes the elementary stream on Colab. */
+ private static Compressed copyMpeg(Context c,MediaExtractor ex,long endUs,AtomicBoolean cancel,java.util.function.Consumer<String> why)throws Exception{
+  File out=File.createTempFile("madar_source_",".mp3",c.getCacheDir());boolean complete=false;
+  try{
+   byte[] bytes=new byte[16384];ByteBuffer buffer=ByteBuffer.allocateDirect(bytes.length);
+   long first=Long.MIN_VALUE,last=0,total=0;int frames=0;
+   try(OutputStream stream=new BufferedOutputStream(new FileOutputStream(out))){
+    for(long time=ex.getSampleTime();time!=-1&&(endUs<=0||time<endUs);time=ex.getSampleTime()){
+     ColabProbe.check(cancel);
+     long size=ex.getSampleSize();
+     if(size<1||size>bytes.length||(ex.getSampleFlags()&MediaExtractor.SAMPLE_FLAG_ENCRYPTED)!=0){why.accept("SOURCE_ERROR_WRITE");return null;}
+     buffer.clear();int count=ex.readSampleData(buffer,0);
+     if(count!=size){why.accept("SOURCE_ERROR_READ");return null;}
+     if(first==Long.MIN_VALUE)first=time;last=Math.max(first,time);
+     if((total+=count)>200L*1024*1024){why.accept("SOURCE_TOO_LARGE");return null;}
+     buffer.position(0);buffer.get(bytes,0,count);stream.write(bytes,0,count);frames++;ex.advance();
+    }
+   }
+   // FFmpeg's MPEG demuxer needs consecutive frames to identify the source reliably.
+   if(frames<3||first<-2000000){why.accept("SOURCE_EMPTY");return null;}
+   long lead=Math.max(0,-first);
+   complete=true;return new Compressed(out,Math.max(0,first),Math.max(0,last-first-lead),lead);
+  }finally{if(!complete)out.delete();}
  }
  /**
   * "" when the clip's picture can be kept as it is in the .mp4 that carries the clean sound; otherwise the name of its

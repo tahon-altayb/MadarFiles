@@ -6,6 +6,23 @@ import org.json.JSONObject;
 
 /** A unique, replay-safe REST submission to the already running GPU worker. */
 final class MusicMailbox {
+ interface Read<T> {T get()throws Exception;}
+ static <T> T read(ColabRuntime runtime,AtomicBoolean cancel,ColabKernel.Events events,String stage,Read<T> request)throws Exception{
+  for(int attempt=0;;attempt++){
+   ColabProbe.check(cancel);
+   try{return request.get();}
+   catch(ColabRuntime.HttpFailure missing){
+    if(missing.status!=404&&missing.status!=410)throw missing;
+    if(attempt==2)throw new IOException("Colab · MUSIC_"+stage+"_MISSING",missing);
+    events.record("MUSIC_"+stage+"_RETRY");
+    if(attempt==0)try{runtime.refresh();}catch(ColabRuntime.HttpFailure expired){
+     if(expired.status==404||expired.status==410)throw new IOException("Colab · MUSIC_RUNTIME_LOST · انتهت جلسة Colab أثناء المعالجة",expired);
+     throw expired;
+    }
+    for(int i=0;i<(attempt==0?10:30);i++){ColabProbe.check(cancel);Thread.sleep(100);}
+   }
+  }
+ }
  interface Receiver {void accept(JSONObject state)throws Exception;}
  static void submit(ColabRuntime runtime,String root,String folder)throws Exception{
   if(!root.matches("madar_[a-f0-9]{32}")||!folder.matches(java.util.regex.Pattern.quote(root)+"_b[0-9]+"))throw new IOException("Colab · MUSIC_JOB_PATH");
@@ -13,22 +30,27 @@ final class MusicMailbox {
   runtime.put(folder+"/submit.json",new JSONObject().put("protocol",2).put("service",root).put("job",folder).toString(),"text");
  }
  static void await(ColabRuntime runtime,String root,String folder,AtomicBoolean cancel,ColabKernel.Events events,Receiver receiver)throws Exception{
-  long began=android.os.SystemClock.elapsedRealtime(),lastRest=began,lastBeatAt=began,lastBeat=-1;ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(began);
+  long began=android.os.SystemClock.elapsedRealtime(),lastRest=began,lastBeatAt=began,lastBeat=-1;boolean receivedProgress=false;ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(began);
   for(;;){ColabProbe.check(cancel);long now=android.os.SystemClock.elapsedRealtime();
    try{
     JSONObject state;
     try{state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536,10000));}
     catch(ColabRuntime.HttpFailure pending){
      if(pending.status!=404)throw pending;
-     JSONObject service=ColabRuntime.parseJson(runtime.getText(root+"/service.json",65536,10000));
+     if(receivedProgress){
+      state=read(runtime,cancel,events,"PROGRESS",()->ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536,10000)));
+     }else{
+     JSONObject service=read(runtime,cancel,events,"SERVICE",()->ColabRuntime.parseJson(runtime.getText(root+"/service.json",65536,10000)));
      if(service.optString("stage").equals("failed"))throw new IOException("Colab · "+MusicStartup.workerError(service.optString("error")));
      long beat=service.optLong("heartbeat",-1);if(beat!=lastBeat){lastBeat=beat;lastBeatAt=now;}
      if(now-lastBeatAt>30000)throw new IOException("Colab · WORKER_HEARTBEAT_TIMEOUT");
      if(now-began>30000)throw new IOException("Colab · WORKER_NOT_STARTED");
      state=null;
+     }
     }
     lastRest=android.os.SystemClock.elapsedRealtime();
     if(state!=null){
+     receivedProgress=true;
      if(!folder.equals(state.optString("job")))throw new IOException("Colab · MUSIC_JOB_PATH");String stage=state.optString("stage");
      if(stage.equals("failed"))throw new IOException("Colab · "+MusicStartup.workerError(state.optString("error")));
      watch.update(state,lastRest);receiver.accept(state);if(stage.equals("done"))return;

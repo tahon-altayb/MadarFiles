@@ -36,18 +36,13 @@ final class MusicExport {
    // decoding and four minutes uploading 100 MB sends about a tenth of that and decodes nothing. Whatever this way
    // cannot carry (another codec, a refusal by the job) takes the decoded way below, in the same session.
    // (Listening while it separates was on for every music job, and kept 1.9.67 on the long way: it is carried here too.)
-   if(fastUpload(c)){
+   if(fastUpload(c)||MusicPipeline.BANDIT.equals(profile)){
     AudioPipeline.Compressed compact=null;
     try{progress.update(15,"تجهيز الصوت المضغوط للرفع");compact=AudioPipeline.audioOnly(c,input,endUs,cancel,gpu.diagnostic::record);
      if(compact==null)gpu.diagnostic.record("SOURCE_UNSUPPORTED");
      else{gpu.diagnostic.measure("SOURCE",0,compact.file.length(),0);ColabMusic.Result clean=gpu.runSource(compact,endUs,progress,live);result.pcm=clean.pcm;result.diagnostic=gpu.diagnostic;result.offsetUs=compact.offsetUs;complete=true;return result;}
     }catch(MusicCloudJob.SourceRejected rejected){gpu.diagnostic.record("SOURCE_FALLBACK");fastUploadFailed(c);}
     catch(java.util.concurrent.CancellationException stopped){throw stopped;}
-    catch(Exception failed){
-     // Any other failure on the short way ends this attempt; unless he cancelled or the session itself could not start,
-     // the next attempts take the decoded way, so a fault here is met once and not every time.
-     if(!cancel.get()&&!gpu.warmupFailed())fastUploadFailed(c);throw failed;
-    }
     finally{if(compact!=null)compact.file.delete();}
    }
    long began=android.os.SystemClock.elapsedRealtime();decoded=decodeWhileStarting(c,input,endUs,cancel,progress,gpu);gpu.diagnostic.measure("DECODE",android.os.SystemClock.elapsedRealtime()-began,decoded.pcm.length(),decoded.pcm.length()/4);

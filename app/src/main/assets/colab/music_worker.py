@@ -228,7 +228,7 @@ def publish_bandit(frames, stride):
                     raise ValueError('MUSIC_OUTPUT_LENGTH')
                 if shutil.disk_usage('.').free < len(pcm)*3 + 16*1024*1024:
                     raise ValueError('MUSIC_DISK')
-                meta = write_pack(f'pack_{index}.pcm', pcm)
+                meta = write_pack(f'pack_{index}.pcm', pcm, text_backup=True)
                 meta['index'] = index
                 write_json(f'pack_{index}.json', meta)
                 recent = (recent + [meta])[-8:]
@@ -337,7 +337,7 @@ def decode_source(source, seconds=None):
     if not isinstance(parts, list) or not 0 < len(parts) <= 128:
         raise ValueError('MUSIC_SOURCE_MANIFEST')
     digest, total = hashlib.sha256(), 0
-    with open('source.m4a', 'wb') as out:
+    with open('source.audio', 'wb') as out:
         for i, part in enumerate(parts):
             size = part.get('bytes') if isinstance(part, dict) else None
             if type(size) is not int or not 0 < size <= 4 * 1024 * 1024:
@@ -353,7 +353,7 @@ def decode_source(source, seconds=None):
     if total != source.get('bytes') or digest.hexdigest() != source.get('sha256'):
         raise ValueError('MUSIC_SOURCE_HASH')
     probe = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=channels,codec_name',
-                            '-of', 'json', 'source.m4a'], capture_output=True, text=True, timeout=60)
+                            '-of', 'json', 'source.audio'], capture_output=True, text=True, timeout=60)
     try:
         stream = json.loads(probe.stdout)['streams'][0]
         channels = int(stream['channels'])
@@ -361,7 +361,7 @@ def decode_source(source, seconds=None):
         raise ValueError('MUSIC_SOURCE_UNREADABLE') from error
     if not 1 <= channels <= 8:
         raise ValueError('MUSIC_SOURCE_UNREADABLE')
-    command = ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', 'source.m4a', '-map', '0:a:0', '-vn']
+    command = ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', 'source.audio', '-map', '0:a:0', '-vn']
     if type(seconds) in (int, float) and 0 < seconds <= 24 * 3600:
         command += ['-t', f'{seconds:.6f}']
     # The encoder's priming before the clip's time 0 is dropped to the sample, as the phone's decoder drops it
@@ -374,14 +374,14 @@ def decode_source(source, seconds=None):
     command += ['-af', ','.join(trim + (['pan=stereo|c0=c0|c1=c0'] if channels == 1 else ['aformat=channel_layouts=stereo']))]
     command += ['-ar', str(RATE), '-f', 's16le', '-acodec', 'pcm_s16le', 'input.pcm']
     done = subprocess.run(command, capture_output=True, timeout=900)
-    Path('source.m4a').unlink(missing_ok=True)
+    Path('source.audio').unlink(missing_ok=True)
     size = Path('input.pcm').stat().st_size if Path('input.pcm').is_file() else 0
     if done.returncode != 0 or size < 4 or size % 4:
         raise ValueError('MUSIC_SOURCE_DECODE')
     return size // 4
 
 
-def write_pack(name, data):
+def write_pack(name, data, text_backup=False):
     # Keep raw files for legacy clients; announce compressed bytes only when smaller.
     Path(name).write_bytes(data)
     part = dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
@@ -389,6 +389,10 @@ def write_pack(name, data):
     if len(encoded) + 512 < len(data):
         Path(name + '.zlib').write_bytes(encoded)
         part.update(wire_encoding='zlib', wire_bytes=len(encoded), wire_sha256=hashlib.sha256(encoded).hexdigest())
+    if text_backup:
+        import base64
+        wire = encoded if part.get('wire_encoding') == 'zlib' else data
+        Path(name.removesuffix('.pcm') + '.b64.txt').write_bytes(base64.b64encode(wire))
     return part
 
 
