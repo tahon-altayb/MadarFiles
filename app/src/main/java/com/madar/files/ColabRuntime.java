@@ -53,15 +53,16 @@ final class ColabRuntime implements AutoCloseable {
  private synchronized void renewAccess(ColabCredentials.Grant rejected,AtomicBoolean stop)throws Exception{
   ColabProbe.check(stop);if(grant!=rejected)return;authEvents.accept("AUTH_REFRESH_START");
   ColabCredentials.Grant renewed=grantRenewal==null?googleGrant(rejected,stop):grantRenewal.renew(rejected,stop);
-  ColabProbe.check(stop);if(renewed==null||renewed.token==null||renewed.token.isEmpty()||!rejected.project.equals(renewed.project))throw new IOException("Colab · AUTH_REQUIRED");
+  ColabProbe.check(stop);if(renewed==null||renewed.token==null||renewed.token.isEmpty()||!rejected.project.equals(renewed.project)||!Objects.equals(rejected.account,renewed.account))throw new IOException("Colab · AUTH_REQUIRED");
   grant=renewed;refreshAt=0;authEvents.accept("AUTH_REFRESHED");
  }
  private ColabCredentials.Grant googleGrant(ColabCredentials.Grant previous,AtomicBoolean stop)throws Exception{
   com.google.android.gms.auth.api.identity.AuthorizationClient client=com.google.android.gms.auth.api.identity.Identity.getAuthorizationClient(context);
   awaitAuthorization(client.clearToken(com.google.android.gms.auth.api.identity.ClearTokenRequest.builder().setToken(previous.token).build()),stop);
-  com.google.android.gms.auth.api.identity.AuthorizationResult result=awaitAuthorization(client.authorize(com.google.android.gms.auth.api.identity.AuthorizationRequest.builder().setRequestedScopes(Collections.singletonList(new com.google.android.gms.common.api.Scope(ColabProbe.SCOPE))).build()),stop);
+  com.google.android.gms.auth.api.identity.AuthorizationResult result=awaitAuthorization(
+   client.authorize(ColabCredentials.authorizationRequest(ColabProbe.SCOPE,previous.account)),stop);
   if(result.hasResolution()||result.getAccessToken()==null||!result.getGrantedScopes().contains(ColabProbe.SCOPE))throw new IOException("Colab · AUTH_REQUIRED");
-  return new ColabCredentials.Grant(result.getAccessToken(),previous.project);
+  return new ColabCredentials.Grant(result.getAccessToken(),previous.project,null,previous.account);
  }
  private static <T> T awaitAuthorization(com.google.android.gms.tasks.Task<T> task,AtomicBoolean stop)throws Exception{
   long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(25);

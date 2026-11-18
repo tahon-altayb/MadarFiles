@@ -59,7 +59,7 @@ jobs:
           ram-size: 4096M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: gradle --no-daemon -PvalidationBuild=true :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.PlayerWatchTest#moderateClockDriftDoesNotSeekOrPauseAvailableCleanAudio,com.madar.files.PlayerWatchTest#feederSurvivesBusyUiAndClockCorrectionWithoutDroppingPcm,com.madar.files.PlayerWatchTest#rollingAudioWaitsForReserveAndResumesWithoutSkippingTheTail'
+          script: gradle --no-daemon -PvalidationBuild=true :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.madar.files.PlayerWatchTest#moderateClockDriftDoesNotSeekOrPauseAvailableCleanAudio,com.madar.files.PlayerWatchTest#feederSurvivesBusyUiAndClockCorrectionWithoutDroppingPcm,com.madar.files.PlayerWatchTest#rollingAudioWaitsForReserveAndResumesWithoutSkippingTheTail,com.madar.files.ColabAccountTest'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -171,9 +171,9 @@ jobs:
         run: gradle --no-daemon :app:assembleRelease :app:lintRelease
       - name: Verify original update certificate and version
         run: |
-          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 110 --version-name 1.9.75 --firebase-config app/google-services.json
-          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.75.apk
+          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 111 --version-name 1.9.76 --firebase-config app/google-services.json
+          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.76.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.75-APK
-          path: MadarFiles-1.9.75.apk
+          name: MadarFiles-1.9.76-APK
+          path: MadarFiles-1.9.76.apk
