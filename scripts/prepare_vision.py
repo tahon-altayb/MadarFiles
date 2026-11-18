@@ -5,7 +5,20 @@ root=Path(__file__).resolve().parents[1];assets=root/'app/src/main/assets/models
 base='https://huggingface.co/vladadu/pp-ocrv5-arabic-mobile-onnx/resolve/047899f6baac72fb983dfe29122d946bc14f7426/'
 files=[('PP-OCRv5_mobile_det.onnx','ocr-det.onnx','c8d9b07063420ce5365c74e42532de48238feeeedcdb7a330b195708bc38a93f'),('arabic_PP-OCRv5_mobile_rec.onnx','ocr-arabic.onnx','4e2f4ae42104e1b272463966c56ddafa3c6ad98ce9d8c7ed765ce66666ea13e1'),('arabic_PP-OCRv5_mobile_rec_dict.txt','ocr-arabic.txt','7f92f7dbb9b75a4787a83bfb4f6d14a8ab515525130c9d40a9036f61cf6999e9')]
 def get(url,path,sha):
- if not path.exists():urllib.request.urlretrieve(url,path)
+ if not path.exists():
+  urls=[url]
+  if path.name=='onnxruntime_c_api.h':
+   urls.append('https://huggingface.co/csukuangfj/android-onnxruntime-libs/resolve/cb2241782a53abc400eb4b9c7484f7718282d800/v1.17.3/headers/onnxruntime_c_api.h')
+  last=None
+  for candidate in urls:
+   temporary=path.with_suffix('.partial')
+   try:
+    with urllib.request.urlopen(candidate,timeout=30) as response: data=response.read()
+    if hashlib.sha256(data).hexdigest()!=sha:raise ValueError('Invalid asset: '+path.name)
+    temporary.write_bytes(data);temporary.replace(path);break
+   except (OSError,ValueError) as error:last=error
+   finally:temporary.unlink(missing_ok=True)
+  else:raise IOError('Pinned asset unavailable: '+path.name) from last
  if hashlib.sha256(path.read_bytes()).hexdigest()!=sha:raise ValueError('Invalid asset: '+path.name)
  print('Verified',path.name)
 with concurrent.futures.ThreadPoolExecutor(3) as pool:

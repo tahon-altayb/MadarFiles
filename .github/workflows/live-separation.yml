@@ -2,7 +2,7 @@ name: Live separation stability and signed update
 on:
   push:
     branches: [fixes/live-separation-20261118]
-    paths-ignore: ['diagnostics/**', 'docs/**', 'scripts/build_separation_comparison.py']
+    paths: ['app/**']
   workflow_dispatch:
 permissions:
   contents: read

@@ -57,10 +57,11 @@ FAST_WAV = JOB/'fast_input.wav' ''')
 import venv
 BANDIT_REV={BANDIT_REV!r}
 BANDIT_ENV=ROOT/'bandit_env'
-venv.EnvBuilder(with_pip=True,system_site_packages=True).create(BANDIT_ENV)
+venv.EnvBuilder(with_pip=False,system_site_packages=True).create(BANDIT_ENV)
 BPY=str(BANDIT_ENV/'bin/python')
 # Do not upgrade/downgrade Colab's Torch/CUDA or share the baseline's dependencies.
-subprocess.run([BPY,'-m','pip','install','--disable-pip-version-check','--no-deps',
+# Host pip targets the child interpreter; no ensurepip or global package changes.
+subprocess.run([sys.executable,'-m','pip','--python',BPY,'install','--disable-pip-version-check','--no-deps',
     'bandit-infer @ git+https://github.com/openmirlab/bandit-infer.git@'+BANDIT_REV,
     'soundfile==0.13.1'],check=True)
 subprocess.run([BPY,'-c',"import torch, soundfile, numpy; assert torch.cuda.is_available(), 'اختر GPU للجلسة'; print('Torch:',torch.__version__,'GPU:',torch.cuda.get_device_name(0))"],check=True)

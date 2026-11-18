@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 import numpy as np
 import soundfile as sf
 
@@ -48,6 +49,26 @@ class BanditSession:
 ''')
   script=folder/'runner.py';script.write_text(RUNNER)
   return subprocess.run([sys.executable,str(script),str(folder),'1'],text=True,capture_output=True)
+
+ def test_setup_installs_into_child_environment_without_ensurepip(self):
+  import venv
+  from unittest.mock import patch
+  setup=next(c for c in CODE if '#@title 5.' in c)
+  self.assertIn('with_pip=False',setup)
+  self.assertIn("'--python',BPY",setup)
+  with tempfile.TemporaryDirectory() as temporary:
+   root=Path(temporary);environment=root/'without-pip'
+   with patch.object(venv.EnvBuilder,'_setup_pip',side_effect=AssertionError('ensurepip must not run')):
+    venv.EnvBuilder(with_pip=False,system_site_packages=True).create(environment)
+   wheel=root/'madar_install_probe-0.0.1-py3-none-any.whl'
+   with zipfile.ZipFile(wheel,'w') as z:
+    z.writestr('madar_install_probe.py','value=109\n')
+    z.writestr('madar_install_probe-0.0.1.dist-info/METADATA','Metadata-Version: 2.1\nName: madar-install-probe\nVersion: 0.0.1\n')
+    z.writestr('madar_install_probe-0.0.1.dist-info/WHEEL','Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n')
+    z.writestr('madar_install_probe-0.0.1.dist-info/RECORD','')
+   child=str(environment/'bin/python')
+   subprocess.run([sys.executable,'-m','pip','--python',child,'install','--no-index','--no-deps',str(wheel)],check=True,stdout=subprocess.DEVNULL)
+   subprocess.run([child,'-c',"import madar_install_probe as m,sys; assert m.value==109; assert m.__file__.startswith(sys.prefix)"],check=True)
 
  def test_runner_sums_dialogue_and_effects_but_never_music(self):
   with tempfile.TemporaryDirectory() as t:
