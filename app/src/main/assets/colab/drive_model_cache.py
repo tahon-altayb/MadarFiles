@@ -71,7 +71,7 @@ def transfer(url, stage, partial, spec, status, headers=None):
     return False
 
 
-def entries(spec, auth):
+def entries(spec, auth, maximum=None):
     response = requests.get(FILES, headers=auth, params={
         'spaces': 'appDataFolder', 'q': f"name = 'model-{spec.sha256}' and trashed = false",
         'fields': 'files(id,size,sha256Checksum)', 'pageSize': 100,
@@ -80,9 +80,13 @@ def entries(spec, auth):
         raise ValueError('MUSIC_DRIVE_LIST')
     for item in response.json()['files']:
         file_id = item.get('id', '')
-        if (re.fullmatch(r'[A-Za-z0-9_-]{8,160}', file_id) and
-                item.get('size') == str(spec.size) and item.get('sha256Checksum') == spec.sha256):
+        size = item.get('size', '')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{8,160}', file_id) or item.get('sha256Checksum') != spec.sha256:
+            continue
+        if maximum is None and size == str(spec.size):
             yield file_id
+        elif maximum is not None and isinstance(size, str) and size.isdecimal() and 0 < int(size) <= maximum:
+            yield file_id, int(size)
 
 
 def store(path, spec, auth, status):
@@ -138,3 +142,108 @@ def materialize(folder, spec, token, status):
         except (ValueError, KeyError, requests.RequestException, OSError):
             pass
     return target, 'download_unsaved'
+
+
+def restore_pinned(target, sha256, maximum, token, status):
+    """Restore a model whose official size can vary by packaging but whose bytes are pinned."""
+    from types import SimpleNamespace
+    if target.is_file() and target.stat().st_size <= maximum:
+        with target.open('rb') as stream:
+            if hashlib.file_digest(stream, 'sha256').hexdigest() == sha256:
+                return 'local'
+    if not token:
+        return None
+    partial = target.with_suffix(target.suffix + '.drive-part')
+    auth = {'Authorization': 'Bearer ' + token}
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        spec = SimpleNamespace(sha256=sha256, size=None)
+        for file_id, size in entries(spec, auth, maximum=maximum):
+            spec.size = size
+            if transfer(f'{FILES}/{file_id}?alt=media', 'model_restore', partial, spec, status, auth):
+                os.replace(partial, target)
+                return 'drive'
+            partial.unlink(missing_ok=True)
+    except (OSError, ValueError, TypeError, KeyError, requests.RequestException):
+        pass
+    finally:
+        partial.unlink(missing_ok=True)
+    return None
+
+
+def save_pinned(path, sha256, maximum, token, status):
+    from types import SimpleNamespace
+    if not token:
+        return 'download_unsaved'
+    try:
+        spec = SimpleNamespace(sha256=sha256, size=path.stat().st_size)
+        if not 0 < spec.size <= maximum:
+            return 'download_unsaved'
+        auth = {'Authorization': 'Bearer ' + token}
+        if next(entries(spec, auth), None) or (verified(path, spec) and store(path, spec, auth, status)):
+            return 'download_saved'
+    except (OSError, ValueError, TypeError, KeyError, requests.RequestException):
+        pass
+    return 'download_unsaved'
+
+
+def hub_weights(repo, revision, token, names=None):
+    """Use Hub-authenticated LFS hashes before promoting weights into the local Hub cache."""
+    if not token:
+        return None
+    try:
+        from huggingface_hub import HfApi, constants
+        if not re.fullmatch(r'[-\w.]+/[-\w.]+', repo):
+            return None
+        info = HfApi().model_info(repo, revision=revision, files_metadata=True, timeout=12, token=False)
+        if not re.fullmatch(r'[a-f0-9]{40}', info.sha or ''):
+            return None
+        if revision and re.fullmatch(r'[a-f0-9]{40}', revision) and info.sha != revision:
+            return None
+        root = Path(constants.HF_HUB_CACHE) / ('models--'+repo.replace('/', '--'))
+        assets = []
+        for item in info.siblings or ():
+            name = item.rfilename
+            sha = item.lfs.sha256 if item.lfs else ''
+            size = item.size
+            if (not name or not re.fullmatch(r'[\w./-]+', name) or
+                    any(part in ('', '.', '..') for part in name.split('/')) or
+                    not re.fullmatch(r'[a-f0-9]{64}', sha or '') or
+                    type(size) is not int or not 0 < size < 30 * 1024**3):
+                continue
+            if names is not None and name not in names:
+                continue
+            if names is None and not name.endswith(('.safetensors','.bin','.pt','.gguf')):
+                continue
+            assets.append((name, sha, size))
+        return root, info.sha, assets
+    except Exception:
+        # The normal model loader still owns the official download path.
+        return None
+
+
+def hydrate_hub(cache, token, status=lambda *args, **kwargs: None):
+    if cache is None:
+        return None
+    root, revision, assets = cache
+    for name, sha, size in assets:
+        pointer = root/'snapshots'/revision/name
+        blob = root/'blobs'/sha
+        if pointer.is_file() or not restore_pinned(blob, sha, size, token, status):
+            continue
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            pointer.symlink_to(os.path.relpath(blob, pointer.parent))
+        except FileExistsError:
+            pass
+    return revision
+
+
+def save_hub(cache, token, status=lambda *args, **kwargs: None):
+    if cache is None:
+        return
+    root, revision, assets = cache
+    for name, sha, size in assets:
+        path = root/'snapshots'/revision/name
+        if path.is_file():
+            save_pinned(path, sha, size, token, status)

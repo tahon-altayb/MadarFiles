@@ -28,6 +28,15 @@ public class ColabAccountTest {
         }
     }
 
+    @Test public void keepsBroaderGoogleTokensOutOfTheWorker() {
+        String scope = ColabCredentials.MODEL_STORAGE_SCOPE;
+        assertTrue(ColabCredentials.storageScopes(Collections.singletonList(scope)));
+        assertFalse(ColabCredentials.storageScopes(java.util.Arrays.asList(scope, ColabProbe.SCOPE)));
+        assertFalse(ColabCredentials.storageScopes(Collections.emptyList()));
+        assertTrue(ColabCredentials.validStorageToken("ya29.valid-token+/="));
+        assertFalse(ColabCredentials.validStorageToken("ya29.token with spaces"));
+    }
+
     @Test public void rejectsIncompleteOrNonGoogleAccountResults() {
         assertNull(ColabActivity.selectedGoogleAccount(new Intent()));
         assertNull(ColabActivity.selectedGoogleAccount(new Intent()

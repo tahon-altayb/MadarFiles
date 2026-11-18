@@ -68,10 +68,11 @@ final class ColabSpeech {
     JSONObject request=new JSONObject().put("language",language).put("target",target).put("names",glossary);if(reviewed==null)request.put("chunks",chunks);else request.put("mode","text").put("cues",reviewed);
     runtime.put(folder+"/request.json",request.toString(),"text");
     String script;try(InputStream asset=context.getAssets().open("colab/worker.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);script=bytes.toString("UTF-8");}runtime.put(folder+"/worker.py",script,"text");
+    runtime.put(folder+"/drive_model_cache.py",ColabMusic.asset(context,"drive_model_cache.py"),"text");
     diagnostic.record("UPLOAD_COMPLETE");
     String bootstrap;try(InputStream asset=context.getAssets().open("colab/bootstrap.py")){ByteArrayOutputStream bytes=new ByteArrayOutputStream();FilesUtil.copy(asset,bytes);bootstrap=bytes.toString("UTF-8");}
     progress.update(27,"بدء قناة تنفيذ Colab وتهيئة العامل");final String[] lastStage={"bootstrap"};final String[] environmentRead={""};ColabDiagnostics.Watch watch=new ColabDiagnostics.Watch(android.os.SystemClock.elapsedRealtime());
-    try{channel.execute("JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap,()->{
+    try{channel.execute(grant.modelStoragePrefix()+"JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap,()->{
      JSONObject state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536));String key=state.optString("stage");
      if(state.optJSONObject("environment")!=null){String value=state.getJSONObject("environment").toString();if(!value.equals(environmentRead[0])){diagnostic.environment(state.getJSONObject("environment"));environmentRead[0]=value;}}
      if(key.equals("failed")){lastStage[0]=failedStage(state,lastStage[0]);diagnostic.record("STAGE_"+lastStage[0].toUpperCase(java.util.Locale.ROOT));throw new IOException("Colab · "+workerCode(state.optString("error")));}
@@ -116,4 +117,3 @@ final class ColabSpeech {
  }
  private static String text(JSONObject cue)throws Exception{Object raw=cue.get("text");if(!(raw instanceof String)||((String)raw).trim().isEmpty()||((String)raw).length()>1500)throw new IOException("نص Colab ناقص أو غير صالح");return ((String)raw).trim();}
 }
-

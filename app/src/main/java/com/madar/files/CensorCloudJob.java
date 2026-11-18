@@ -15,12 +15,12 @@ final class CensorCloudJob {
   runtime.jupyter("PUT","api/contents/"+root,new JSONObject().put("type","directory"),1024*1024);
   runtime.put(root+"/music_worker.py",ColabMusic.asset(session.context,"censor_worker.py"),"text");
   runtime.put(root+"/music_launch.py",ColabMusic.asset(session.context,"music_launch.py"),"text");
-  for(String script:new String[]{"censor_install.py","censor_engine.py","censor_tracking.py","censor_profile.py"})runtime.put(root+"/"+script,ColabMusic.asset(session.context,script),"text");
+  for(String script:new String[]{"censor_install.py","censor_engine.py","censor_tracking.py","censor_profile.py","drive_model_cache.py"})runtime.put(root+"/"+script,ColabMusic.asset(session.context,script),"text");
   runtime.put(root+"/progress.json",new JSONObject().put("stage","bootstrap").put("progress",27).put("heartbeat",0).toString(),"text");
   session.diagnostic.record("CENSOR_PREPARE");
   MusicStartup startup=new MusicStartup(runtime,root,session.cancel,(p,m)->progress.update(p,m.replace("الفصل","الحجب").replace("UVR","MiVOLO")),session.diagnostic);
   session.channel=runtime.openKernel(session.kernel,session.diagnostic::record);
-  try{session.channel.execute("SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+ColabMusic.asset(session.context,"censor_warmup.py"),startup::poll);startup.awaitReady();session.visionReady=true;session.diagnostic.record("CENSOR_READY");}
+  try{session.channel.execute(session.visionStoragePrefix()+"SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+ColabMusic.asset(session.context,"censor_warmup.py"),startup::poll);startup.awaitReady();session.visionReady=true;session.diagnostic.record("CENSOR_READY");}
   finally{session.channel.close();session.channel=null;}
  }
  static byte[] run(ColabMusic.Session session,File video,String source,long decodeStartMs,long startMs,long endMs,MusicSeparator.Progress progress)throws Exception{

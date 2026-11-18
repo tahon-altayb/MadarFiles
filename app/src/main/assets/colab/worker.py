@@ -24,6 +24,7 @@ os.environ['USE_TF'] = '0'
 os.environ['USE_FLAX'] = '0'
 os.environ['USE_TORCH'] = '1'
 
+_drive_token = os.environ.pop('MADAR_DRIVE_WORKER_TOKEN', '')
 _io_lock = threading.RLock()
 _environment = {}
 _asr_quality = {}
@@ -689,7 +690,9 @@ def recognize_audio(folder, request, source, torch):
         status(folder, 'asr_download', 30)
         from faster_whisper import WhisperModel
         from faster_whisper.utils import download_model
-        model_path = retry_download(lambda: download_model('large-v3'))
+        weights = weights_cache('Systran/faster-whisper-large-v3', names={'model.bin'})
+        model_path = retry_download(lambda: download_model('large-v3', **({'revision':weights[1]} if weights else {})))
+        persist_weights(weights)
         status(folder, 'asr_load', 34)
         recognizer = WhisperModel(model_path, device='cuda', compute_type='float16', local_files_only=True)
         status(folder, 'asr', 39)
@@ -712,6 +715,20 @@ def recognize_audio(folder, request, source, torch):
         if issue:raise TranslationError(issue)
         write_json(folder / 'asr-checkpoint.json', {'fingerprint': fingerprint, 'cues': cues, 'language': language, 'quality': _asr_quality})
     return cues, language
+
+
+def weights_cache(repo, revision=None, names=None):
+    if not _drive_token:
+        return None
+    from drive_model_cache import hub_weights, hydrate_hub
+    cache = hub_weights(repo, revision, _drive_token, names)
+    return (cache, hydrate_hub(cache, _drive_token)) if cache else None
+
+
+def persist_weights(weight):
+    if weight:
+        from drive_model_cache import save_hub
+        save_hub(weight[0], _drive_token)
 
 
 def run(folder):
@@ -756,11 +773,13 @@ def run(folder):
         from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
         from transformers.models.hunyuan_v1_dense.modeling_hunyuan_v1_dense import HunYuanDenseV1ForCausalLM  # Resolve imports before downloading weights.
         status(folder, 'translation_tokenizer', 65)
+        weights = weights_cache(TRANSLATION_MODEL, TRANSLATION_REVISION)
         tokenizer = retry_download(lambda: AutoTokenizer.from_pretrained(TRANSLATION_MODEL, revision=TRANSLATION_REVISION, trust_remote_code=False))
         status(folder, 'translation_download', 66)
         from huggingface_hub import snapshot_download
         translation_path = retry_download(lambda: snapshot_download(TRANSLATION_MODEL, revision=TRANSLATION_REVISION,
             allow_patterns=['*.json', '*.safetensors', '*.model', '*.jinja', 'merges.txt', 'vocab.txt'], max_workers=2))
+        persist_weights(weights)
         status(folder, 'translation_load', 68)
         model, precision = load_translation_model(torch, AutoModelForCausalLM,
             BitsAndBytesConfig, translation_path, precision)
@@ -806,4 +825,3 @@ def main(folder, prepare=False):
 
 if __name__ == '__main__':
     main(sys.argv[1], len(sys.argv) > 2 and sys.argv[2] == '--prepare')
-

@@ -86,7 +86,21 @@ ASR_CODE=r'''
 from faster_whisper import WhisperModel
 import json,numpy as np,wave,sys
 from pathlib import Path
-model=WhisperModel('small',device='cpu',compute_type='int8',cpu_threads=4)
+import os
+token=os.environ.pop('MADAR_DRIVE_WORKER_TOKEN','')
+cache=None
+if token:
+ sys.path.insert(0,str(Path(__file__).resolve().parent))
+ from drive_model_cache import hub_weights,hydrate_hub,save_hub
+ cache=hub_weights('Systran/faster-whisper-small',None,token,{'model.bin'})
+ revision=hydrate_hub(cache,token)
+else: revision=None
+if revision:
+ from faster_whisper.utils import download_model
+ model_path=download_model('small',revision=revision)
+else: model_path='small'
+model=WhisperModel(model_path,device='cpu',compute_type='int8',cpu_threads=4)
+if cache is not None:save_hub(cache,token)
 files=json.loads(Path('asr-inputs.json').read_text());out=[]
 for f in files:
  with wave.open(f,'rb') as w:

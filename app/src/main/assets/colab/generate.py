@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CHUNK = 1_500_000
+DRIVE_TOKEN = os.environ.pop('MADAR_DRIVE_WORKER_TOKEN', '')
 QA = os.environ.get('MADAR_GEN_QA') == '1'
 IMAGE_MODELS = {
     'anime': 'cagliostrolab/animagine-xl-4.0',
@@ -90,6 +91,21 @@ def deliver(path, kind, mime, extra):
     progress('done', 100, 'ready')
 
 
+def model_cache(model):
+    if not DRIVE_TOKEN or QA:
+        return None, {}
+    from drive_model_cache import hub_weights, hydrate_hub
+    cache = hub_weights(model, None, DRIVE_TOKEN)
+    revision = hydrate_hub(cache, DRIVE_TOKEN)
+    return cache, {'revision': revision} if revision else {}
+
+
+def save_model_cache(cache):
+    if cache is not None:
+        from drive_model_cache import save_hub
+        save_hub(cache, DRIVE_TOKEN)
+
+
 def image(job):
     install(['diffusers>=0.35', 'transformers>=4.46', 'accelerate', 'safetensors'])
     progress('model', 25, 'downloading the image model')
@@ -98,7 +114,9 @@ def image(job):
     model = os.environ.get('MADAR_GEN_IMAGE_MODEL') or IMAGE_MODELS[job['style']]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     dtype = torch.float16 if device == 'cuda' else torch.float32
-    pipe = StableDiffusionXLPipeline.from_pretrained(model, torch_dtype=dtype, use_safetensors=not QA)
+    cache, options = model_cache(model)
+    pipe = StableDiffusionXLPipeline.from_pretrained(model, torch_dtype=dtype, use_safetensors=not QA, **options)
+    save_model_cache(cache)
     pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
     pipe = pipe.to(device)
     if hasattr(pipe, 'enable_vae_tiling'):
@@ -140,8 +158,10 @@ def video(job):
     from diffusers.utils import export_to_video
     model = os.environ.get('MADAR_GEN_VIDEO_MODEL') or VIDEO_MODEL
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    vae = AutoencoderKLWan.from_pretrained(model, subfolder='vae', torch_dtype=torch.float32)
-    pipe = WanPipeline.from_pretrained(model, vae=vae, torch_dtype=torch.bfloat16 if device == 'cuda' else torch.float32)
+    cache, options = model_cache(model)
+    vae = AutoencoderKLWan.from_pretrained(model, subfolder='vae', torch_dtype=torch.float32, **options)
+    pipe = WanPipeline.from_pretrained(model, vae=vae, torch_dtype=torch.bfloat16 if device == 'cuda' else torch.float32, **options)
+    save_model_cache(cache)
     if device == 'cuda':
         pipe.enable_model_cpu_offload()
     fps = 24

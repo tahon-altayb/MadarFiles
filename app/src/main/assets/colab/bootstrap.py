@@ -36,6 +36,7 @@ libs = [p for root in site.getsitepackages() for p in glob.glob(root + '/nvidia/
 env['LD_LIBRARY_PATH'] = ':'.join(libs + [env.get('LD_LIBRARY_PATH', '')])
 env.update(HF_HUB_DISABLE_XET='1', HF_HUB_DISABLE_IMPLICIT_TOKEN='1',
            HF_HUB_DOWNLOAD_TIMEOUT='60', HF_HUB_ETAG_TIMEOUT='30')
+env['MADAR_DRIVE_WORKER_TOKEN'] = globals().pop('MADAR_MODEL_STORAGE_GRANT', '')
 retryable = {'NETWORK_TIMEOUT', 'MODEL_NETWORK', 'GPU_MEMORY', 'NATIVE_ABORT',
     'STAGE_TIMEOUT', 'MODEL_HTTP_429', 'MODEL_HTTP_500', 'MODEL_HTTP_502',
     'MODEL_HTTP_503', 'MODEL_HTTP_504'}

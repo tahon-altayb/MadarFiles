@@ -91,7 +91,10 @@ def serve(root):
     if not re.fullmatch(r'madar_[a-f0-9]{32}',ROOT.name): raise ValueError('CENSOR_JOB_PATH')
     os.chdir(ROOT)
     from censor_engine import Engine
-    engine=Engine(ROOT.parent/'madar_censor_models_v1',status,require_gpu=True)
+    token = sys.stdin.readline(8193).strip() if (ROOT/'drive_model_cache.py').is_file() else ''
+    if token and not re.fullmatch(r'[A-Za-z0-9._~+/\-]{10,8190}={0,2}', token):
+        token = ''
+    engine=Engine(ROOT.parent/'madar_censor_models_v1',status,require_gpu=True,drive_token=token)
     _READY=True;service_state()
     sequence=0;previous=None
     while True:
@@ -120,4 +123,3 @@ if __name__=='__main__':
     except Exception as error:
         report_failure(error);raise
     finally: stop.set();thread.join(timeout=3)
-

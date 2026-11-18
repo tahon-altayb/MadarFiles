@@ -70,25 +70,19 @@ final class ColabMusic {
    while(true){ColabProbe.check(cancel);try{runtime.jupyter("GET","api/kernelspecs",null,1024*1024);break;}catch(IOException e){if(!(e instanceof ColabRuntime.NetworkFailure)&&(!(e instanceof ColabRuntime.HttpFailure)||(((ColabRuntime.HttpFailure)e).status<500&&((ColabRuntime.HttpFailure)e).status!=404&&((ColabRuntime.HttpFailure)e).status!=429)))throw e;if(System.nanoTime()>ready)throw new IOException("Colab · JUPYTER_START_TIMEOUT");Thread.sleep(1000);}}
    status.update(14,"تجهيز ملفات محرك الفصل على جلسة GPU");
    runtime.jupyter("PUT","api/contents/"+root,new JSONObject().put("type","directory"),1024*1024);runtime.put(root+"/music_worker.py",asset(context,"music_worker.py"),"text");runtime.put(root+"/music_launch.py",asset(context,"music_launch.py"),"text");
-   for(String script:new String[]{"music_profiles.py","music_fx_bridge.py","music_fx_engine.py"})runtime.put(root+"/"+script,asset(context,script),"text");
-   if(MusicPipeline.BANDIT.equals(pipeline)){
-    for(String script:new String[]{"music_bandit.py","drive_model_cache.py"})runtime.put(root+"/"+script,asset(context,script),"text");
-   }
-   runtime.put(root+"/engine.json",new JSONObject().put("pipeline",pipeline).toString(),"text");
-   storageReady.countDown();diagnostic.record("JUPYTER_READY");status.update(15,"بدء نواة Python للفصل");diagnostic.record("KERNEL_CREATE");
+   for(String script:new String[]{"music_profiles.py","music_fx_bridge.py","music_fx_engine.py","drive_model_cache.py","music_bandit.py"})runtime.put(root+"/"+script,asset(context,script),"text");
+   runtime.put(root+"/engine.json",new JSONObject().put("pipeline",pipeline).put("drive_input",true).toString(),"text");
+   diagnostic.record("JUPYTER_READY");status.update(15,"بدء نواة Python للفصل");diagnostic.record("KERNEL_CREATE");
    String id=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",root),1024*1024).getString("id");if(!id.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرف نواة Colab غير صالح");kernel=id;
    status.update(16,"الاتصال بنواة Python على GPU");diagnostic.record("KERNEL_CONNECT");channel=runtime.openKernel(kernel,diagnostic::record);
+   storageReady.countDown();
    if(visionOnly){initialized=true;musicReady=false;channel.close();channel=null;diagnostic.record("CENSOR_RUNTIME");return;}
    status.update(27,"بدء محرك فصل الموسيقى على GPU");diagnostic.record("MUSIC_PREPARE");
    MusicStartup startup=new MusicStartup(runtime,root,cancel,(p,m)->status.update(p,m),diagnostic);
-   String warmup="SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py");
-   if(MusicPipeline.BANDIT.equals(pipeline)){
-    warmup="MADAR_FOREGROUND_MUSIC = True\nMADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n"+warmup;
-    modelStorageToken=null;
-   }
+   String warmup=musicWarmup();
    channel.execute(warmup,startup::poll);
    startup.awaitReady();
-   if(startup.cacheMissing())warning="تعذر حفظ أوزان Bandit في Drive لهذه الجلسة؛ راجع صلاحية التخزين ومساحته.";
+   if(startup.cacheMissing())warning="تعذر حفظ أوزان الفصل في Drive لهذه الجلسة؛ راجع صلاحية التخزين ومساحته.";
    initialized=true;channel.close();channel=null;
   }
 
@@ -112,10 +106,16 @@ final class ColabMusic {
    healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,progress,live);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
+  String visionStoragePrefix(){return "MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n";}
+  private String musicWarmup()throws IOException{
+   String grant=modelStorageToken;modelStorageToken=null;
+   return (MusicPipeline.BANDIT.equals(pipeline)?"MADAR_FOREGROUND_MUSIC = True\n":"")+
+    "MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(grant)+"\nSERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py");
+  }
   private void prepareMusicAfterVision()throws Exception{
    runtime.put(root+"/progress.json",new JSONObject().put("stage","bootstrap").put("progress",27).put("heartbeat",0).toString(),"text");
    channel=runtime.openKernel(kernel,diagnostic::record);MusicStartup startup=new MusicStartup(runtime,root,cancel,(p,m)->status.update(p,m),diagnostic);
-   try{channel.execute("SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_warmup.py"),startup::poll);startup.awaitReady();musicReady=true;}
+   try{channel.execute(musicWarmup(),startup::poll);startup.awaitReady();musicReady=true;}
    finally{channel.close();channel=null;}
   }
   @Override public void close(){MusicGpuSession.release(this);}

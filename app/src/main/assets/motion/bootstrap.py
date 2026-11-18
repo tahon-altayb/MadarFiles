@@ -109,10 +109,11 @@ def supervise(root, timeout=2400):
 
 if isinstance(globals().get('JOB_FOLDER'), str):
     root = locate(JOB_FOLDER)
+    inherited = dict(os.environ, MADAR_DRIVE_WORKER_TOKEN=globals().pop('MADAR_MODEL_STORAGE_GRANT', ''))
     with (root / 'launcher.log').open('ab') as log:
         subprocess.Popen([sys.executable, str(root / 'bootstrap.py'), '--supervise', str(root)],
             cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-            start_new_session=True)
+            start_new_session=True, env=inherited)
 elif __name__ == '__main__':
     if len(sys.argv) != 3 or sys.argv[1] != '--supervise':
         raise ValueError('MOTION_JOB_PATH')

@@ -90,10 +90,11 @@ final class MotionCloud {
      runtime.put(folder+"/request.json",new JSONObject().put("protocol",1).put("mode",mode).put("project",project).put("files",manifest).toString(),"text");
      // The owner's Groq model writes a first film's words on his own Colab, where the page and picture facts are known; the director reads his key once and deletes the file.
      if(mode.equals("compose")&&project.optString("motionCheckpoint").isEmpty()&&MotionCopywriter.colab(c,project))runtime.put(folder+"/writer.json",MotionCopywriter.writer(c).toString(),"text");
+     runtime.put(folder+"/drive_model_cache.py",ColabMusic.asset(c,"drive_model_cache.py"),"text");
      diagnostic.record("UPLOAD_COMPLETE");
      String bootstrap;try(InputStream in=c.getAssets().open("motion/bootstrap.py");ByteArrayOutputStream out=new ByteArrayOutputStream()){FilesUtil.copy(in,out);bootstrap=out.toString("UTF-8");}
      runtime.put(folder+"/bootstrap.py",bootstrap,"text");
-     String code="JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap;
+     String code=runtime.grant.modelStoragePrefix()+"JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap;
      long deadline=System.nanoTime()+TimeUnit.MINUTES.toNanos(41);
      WorkerProgress watch=new WorkerProgress(folder,diagnostic,progress);
      // Upload first; only then open a fresh channel. A detached, locked launcher

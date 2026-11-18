@@ -50,9 +50,9 @@ final class GenerateCloud {
    long until=System.nanoTime()+TimeUnit.MINUTES.toNanos(3);
    while(true){ColabProbe.check(cancel);try{runtime.jupyter("GET","api/kernelspecs",null,1024*1024);break;}catch(ColabRuntime.HttpFailure e){if(e.status!=404&&e.status<500&&e.status!=429)throw e;if(System.nanoTime()>until)throw new IOException("تأخر بدء Colab؛ أعد المحاولة");Thread.sleep(1500);}catch(ColabRuntime.NetworkFailure e){if(System.nanoTime()>until)throw e;Thread.sleep(1500);}}
    String folder="madar_"+MotionProject.id();runtime.jupyter("PUT","api/contents/"+folder,new JSONObject().put("type","directory"),1024*1024);
-   runtime.put(folder+"/generate.py",asset(c,"generate.py"),"text");runtime.put(folder+"/request.json",job.toString(),"text");String bootstrap=asset(c,"generate_bootstrap.py");runtime.put(folder+"/bootstrap.py",bootstrap,"text");
+   runtime.put(folder+"/generate.py",asset(c,"generate.py"),"text");runtime.put(folder+"/drive_model_cache.py",ColabMusic.asset(c,"drive_model_cache.py"),"text");runtime.put(folder+"/request.json",job.toString(),"text");String bootstrap=asset(c,"generate_bootstrap.py");runtime.put(folder+"/bootstrap.py",bootstrap,"text");
    JSONObject kernel=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",folder),1024*1024);String kernelId=kernel.getString("id");if(!kernelId.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("نواة Colab غير صالحة");
-   String code="JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap;
+   String code=grant.modelStoragePrefix()+"JOB_FOLDER = "+JSONObject.quote(folder)+"\n"+bootstrap;
    try(ColabKernel.Session channel=runtime.openKernel(kernelId,diagnostic::record)){channel.execute(code,()->{try{return runtime.getText(folder+"/status.json",65536)!=null;}catch(ColabRuntime.HttpFailure e){if(e.status==404)return false;throw e;}});}
    long deadline=System.nanoTime()+TimeUnit.MINUTES.toNanos(62),lastRest=System.nanoTime(),missingSince=lastRest,lastBeatAt=lastRest;long beat=-1;
    while(true){

@@ -14,8 +14,19 @@ import base64,json,time
 from pathlib import Path
 from huggingface_hub import snapshot_download,hf_hub_download
 REV='226dd7a65cadf51f9a6dbe3953fc89003b3844d5'
+cache_token=os.environ.pop('MADAR_DRIVE_WORKER_TOKEN','')
+caches=[]
+if cache_token:
+ from drive_model_cache import hub_weights,hydrate_hub,save_hub
+ for repo,revision,names in [
+     ('silma-ai/silma-tts',REV,{'model.pt'}),
+     ('charactr/vocos-mel-24khz','0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21',{'pytorch_model.bin'})]:
+  cache=hub_weights(repo,revision,cache_token,names)
+  hydrate_hub(cache,cache_token)
+  if cache is not None:caches.append(cache)
 snapshot_download('silma-ai/silma-tts',revision=REV,allow_patterns=['model.pt','config.yaml','vocab.txt'])
 for f in ['config.yaml','pytorch_model.bin']:hf_hub_download('charactr/vocos-mel-24khz',filename=f,revision='0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21')
+for cache in caches:save_hub(cache,cache_token)
 publish('speech_load')
 import onnxruntime as ort
 ort.disable_telemetry_events()

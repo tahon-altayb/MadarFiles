@@ -43,8 +43,7 @@ final class MusicGpuSession {
    if(busy())throw new IOException(closing()?"جارٍ إيقاف جلسة GPU السابقة بأمان؛ تابع حالتها من إشعار مدار":"توجد عملية GPU أخرى؛ أوقفها أو انتظر اكتمالها");
    s=idle;
    if(MusicPipeline.BANDIT.equals(profile)){
-    if(grant==null||!grant.hasModelStorage())throw new IOException("اتصل بحساب Colab ووافق على حفظ أوزان Bandit أولًا");
-    if(s!=null&&!s.runtime.grant.project.equals(grant.project))throw new IOException("أغلق جلسة حساب Colab السابقة قبل تبديل الحساب");
+    if(s!=null&&grant!=null&&!s.runtime.grant.project.equals(grant.project))throw new IOException("أغلق جلسة حساب Colab السابقة قبل تبديل الحساب");
     if(s!=null){previous=s;idle=null;retireLocked(s);}
    }
    if(previous==null&&s!=null&&(remainingIdle()<=0||grant!=null&&!s.runtime.grant.project.equals(grant.project))){idle=null;retireLocked(s);s=null;throw new IOException("انتهت صلاحية جلسة GPU؛ جارٍ إغلاقها قبل اتصال جديد");}

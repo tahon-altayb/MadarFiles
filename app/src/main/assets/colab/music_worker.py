@@ -42,6 +42,7 @@ ENGINE = None
 GPU_FREE_BEFORE = None
 GPU_VERIFIED = False
 CACHE = None
+DRIVE_TOKEN = ""
 
 RATE = 44100
 CORE = 4 * RATE
@@ -166,9 +167,14 @@ def prepare():
         from importlib.metadata import version as installed_version
         if version != installed_version('sherpa-onnx'):
             raise ValueError('MUSIC_GPU_WHEEL')
-        status('model_download', 32)
         model = (CACHE or Path.cwd()) / 'vocals.onnx'
-        if not model.is_file() or hashlib.sha256(model.read_bytes()).hexdigest() != MODEL_SHA:
+        cache_source = 'local'
+        cache_started = time.monotonic()
+        if CACHE is not None:
+            from drive_model_cache import restore_pinned, save_pinned
+            cache_source = restore_pinned(model, MODEL_SHA, 100*1024*1024, DRIVE_TOKEN, status)
+        if not cache_source or not model.is_file() or hashlib.sha256(model.read_bytes()).hexdigest() != MODEL_SHA:
+            status('model_download', 32)
             temporary = model.with_suffix('.download')
             digest = hashlib.sha256()
             with urllib.request.urlopen(MODEL_URL, timeout=60) as response, temporary.open('wb') as out:
@@ -186,6 +192,9 @@ def prepare():
                 temporary.unlink(missing_ok=True)
                 raise ValueError('MODEL_HASH')
             temporary.replace(model)
+            if CACHE is not None:
+                cache_source = save_pinned(model, MODEL_SHA, 100*1024*1024, DRIVE_TOKEN, status)
+        cache_ms = round((time.monotonic()-cache_started)*1000)
         status('model_load', 38)
         GPU_FREE_BEFORE = torch.cuda.mem_get_info()[0]
         config = sherpa_onnx.OfflineSourceSeparationConfig(
@@ -196,19 +205,14 @@ def prepare():
             raise ValueError('MODEL_CONFIG')
         ENGINE = sherpa_onnx.OfflineSourceSeparation(config)
         verify_gpu_inference()
-        status('ready', 38)
+        status('ready', 38, extra=dict(cache_source=cache_source, cache_ms=cache_ms))
 
 
 def prepare_bandit(root):
     global _BANDIT
     from music_bandit import Separator
 
-    # The isolated Drive appData grant is passed once through the worker's stdin pipe.
-    token = sys.stdin.readline(8193).strip()
-    sys.stdin.close()
-    if len(token) > 8192 or (token and not re.fullmatch(r'[A-Za-z0-9._~-]+', token)):
-        raise ValueError('MUSIC_DRIVE_AUTH')
-    _BANDIT = Separator(root.parent / 'madar_model_cache', token, status)
+    _BANDIT = Separator(root.parent / 'madar_model_cache', DRIVE_TOKEN, status)
     status('ready', 38, extra=_BANDIT.cache_details())
 
 
@@ -247,12 +251,30 @@ def publish_bandit(frames, stride):
 
 def prepare_fx():
     global _FX_CLIENT, _FX_VERIFIED
-    if _FX_CLIENT is None:
-        from music_fx_bridge import Client
-        _FX_CLIENT = Client(CACHE or Path.cwd(), status)
+    if _FX_VERIFIED:
+        return
+    from music_fx_bridge import Client
+    cache_root = CACHE or Path.cwd()
+    _FX_CLIENT = Client(cache_root, status)
+    sources = []
+    cache_started = time.monotonic()
+    if CACHE is not None:
+        from drive_model_cache import restore_pinned, save_pinned
+        from music_profiles import MODELS
+        for name, sha in MODELS:
+            model = cache_root / 'fx_models' / name
+            origin = restore_pinned(model, sha, 100*1024*1024, DRIVE_TOKEN, status)
+            if not origin:
+                model.unlink(missing_ok=True)
+            sources.append(origin)
     _FX_CLIENT.prepare()
+    if CACHE is not None:
+        sources = [origin or save_pinned(cache_root/'fx_models'/name, sha, 100*1024*1024, DRIVE_TOKEN, status)
+                   for origin, (name, sha) in zip(sources, MODELS)]
     _FX_VERIFIED = True
-    status('ready', 38)
+    source = ('download_unsaved' if 'download_unsaved' in sources else
+              'download_saved' if 'download_saved' in sources else 'drive' if 'drive' in sources else 'local')
+    status('ready', 38, extra=dict(cache_source=source, cache_ms=round((time.monotonic()-cache_started)*1000)))
 
 
 def publish_fx(frames):
@@ -560,12 +582,18 @@ def run_v2(req):
 
 
 def serve(root):
-    global CACHE, _SERVICE_ROOT, _ACTIVE_JOB, _NEXT_BATCH
+    global CACHE, _SERVICE_ROOT, _ACTIVE_JOB, _NEXT_BATCH, DRIVE_TOKEN
     root = Path(root).resolve()
     CACHE = _SERVICE_ROOT = root
     os.chdir(root)
     config_path = root / 'engine.json'
-    profile = json.loads(config_path.read_text()).get('pipeline', 'voc_ft') if config_path.is_file() else 'voc_ft'
+    config = json.loads(config_path.read_text()) if config_path.is_file() else {}
+    profile = config.get('pipeline', 'voc_ft')
+    if config.get('drive_input') is True:
+        DRIVE_TOKEN = sys.stdin.readline(8193).strip()
+        sys.stdin.close()
+        if DRIVE_TOKEN and not re.fullmatch(r'[A-Za-z0-9._~+/\-]{10,8190}={0,2}', DRIVE_TOKEN):
+            raise ValueError('MUSIC_DRIVE_AUTH')
     if profile == BANDIT_PIPELINE: prepare_bandit(root)
     elif profile == FX_PIPELINE: prepare_fx()
     elif profile == 'voc_ft': prepare()

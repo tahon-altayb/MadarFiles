@@ -33,7 +33,7 @@ def download(path, url, digest, maximum):
     finally: temporary.unlink(missing_ok=True)
 
 class Engine:
-    def __init__(self, cache, status=lambda *args:None, require_gpu=True):
+    def __init__(self, cache, status=lambda *args:None, require_gpu=True, drive_token=""):
         if os.environ.get('MADAR_CUDNN_LIB'):
             import ctypes
             self.cudnn=ctypes.CDLL(os.environ['MADAR_CUDNN_LIB'],mode=ctypes.RTLD_GLOBAL)
@@ -51,7 +51,16 @@ class Engine:
         paths={}
         for name,(url,sha,limit) in WEIGHTS.items():
             status('model_download',32)
-            paths[name]=download(cache/name,url,sha,limit)
+            path = cache/name
+            if drive_token:
+                from drive_model_cache import restore_pinned, save_pinned
+                report = lambda stage, percent, **kwargs: status(stage, percent)
+                origin = restore_pinned(path, sha, limit, drive_token, report)
+                paths[name] = path if origin else download(path,url,sha,limit)
+                if not origin:
+                    save_pinned(path, sha, limit, drive_token, report)
+            else:
+                paths[name] = download(path,url,sha,limit)
         source=cache/'MiVOLO-37475e3f8818b5f22448003feec3e64b01bfb188'
         if not (source/'mivolo/model/create_timm_model.py').is_file():
             with zipfile.ZipFile(paths['mivolo-source.zip']) as archive:
@@ -192,4 +201,3 @@ class Engine:
                     female_tracks=sum(t.female for t in tracker.all.values()),
                     uncertain_tracks=sum(not t.female and t.male_votes<2 for t in tracker.all.values()),
                     gpu_ms=round((time.monotonic()-began)*1000))
-

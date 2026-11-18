@@ -12,5 +12,10 @@ root=next((p.resolve() for p in roots if (p/'music_worker.py').is_file()),None)
 if root is None: raise FileNotFoundError('CENSOR_JOB_FILES')
 if '_madar_censor_service' not in globals() or _madar_censor_service.poll() is not None:
     _madar_censor_log=(root/'worker.log').open('ab')
-    _madar_censor_service=subprocess.Popen([sys.executable,str(root/'music_launch.py'),str(root)],stdout=_madar_censor_log,stderr=_madar_censor_log)
-
+    _madar_censor_service=subprocess.Popen([sys.executable,str(root/'music_launch.py'),str(root)],
+                                         stdin=subprocess.PIPE,stdout=_madar_censor_log,stderr=_madar_censor_log)
+    try:
+        with _madar_censor_service.stdin as pipe:
+            pipe.write((globals().pop('MADAR_MODEL_STORAGE_GRANT', '')+'\n').encode('ascii'))
+    finally:
+        _madar_censor_log.close()

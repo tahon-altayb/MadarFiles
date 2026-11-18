@@ -81,6 +81,37 @@ class CacheTest(unittest.TestCase):
             self.assertTrue(cache.transfer(self.spec.url, 'model_download', out, self.spec, self.status))
             self.assertEqual(get.call_args.kwargs['headers']['Range'], 'bytes=6-')
 
+    def test_pinned_onnx_restores_from_drive_and_rejects_corruption(self):
+        target = self.folder/'onnx'/'vocal.onnx'
+        with patch.object(cache, 'entries', return_value=[('drive_file', self.spec.size)]), patch.object(
+                cache.requests, 'get', return_value=self.reply(self.payload)) as get:
+            origin = cache.restore_pinned(target, self.spec.sha256, 100, 'scoped-test', self.status)
+            self.assertEqual(origin, 'drive')
+            self.assertTrue(get.call_args.args[0].startswith(cache.FILES))
+            self.assertEqual(target.read_bytes(), self.payload)
+        target.write_bytes(b'wrong')
+        with patch.object(cache, 'entries', return_value=iter([])):
+            self.assertIsNone(cache.restore_pinned(target, self.spec.sha256, 100, 'scoped-test', self.status))
+        with patch.object(cache, 'entries', return_value=iter([])), patch.object(cache, 'store') as upload:
+            self.assertEqual(cache.save_pinned(target, self.spec.sha256, 100, 'scope', self.status), 'download_unsaved')
+            upload.assert_not_called()
+
+    def test_hub_blob_links_exact_revision_only_after_hash_checked_restore(self):
+        root = self.folder/'models--fixture'
+        revision = '9'*40
+        info = (root, revision, [('sub/model.safetensors', self.spec.sha256, self.spec.size)])
+        def restore(path, sha, maximum, token, status):
+            self.assertEqual(sha, self.spec.sha256)
+            self.assertEqual(maximum, self.spec.size)
+            path.parent.mkdir(parents=True)
+            path.write_bytes(self.payload)
+            return 'drive'
+        with patch.object(cache, 'restore_pinned', side_effect=restore):
+            self.assertEqual(cache.hydrate_hub(info, 'test-token'), revision)
+        link = root/'snapshots'/revision/'sub/model.safetensors'
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.read_bytes(), self.payload)
+
     def test_upload_creates_only_private_app_data(self):
         blob = self.folder / 'checked'
         blob.write_bytes(self.payload)
