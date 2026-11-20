@@ -6,6 +6,19 @@ import org.json.JSONObject;
 
 /** A unique, replay-safe REST submission to the already running GPU worker. */
 final class MusicMailbox {
+ static boolean recoverable(IOException failure){
+  for(Throwable cause=failure;cause!=null;cause=cause.getCause()){
+   if(cause instanceof ColabRuntime.NetworkFailure)return true;
+   if(cause instanceof ColabRuntime.HttpFailure){
+    int status=((ColabRuntime.HttpFailure)cause).status;
+    return status==404||status==410||status==429||status>=500&&status<=504;
+   }
+   String message=cause.getMessage();
+   if(message!=null&&(message.contains("MUSIC_RUNTIME_LOST")||message.contains("WORKER_HEARTBEAT_TIMEOUT")))return true;
+  }
+  return false;
+ }
+
  interface Read<T> {T get()throws Exception;}
  static <T> T read(ColabRuntime runtime,AtomicBoolean cancel,ColabKernel.Events events,String stage,Read<T> request)throws Exception{
   for(int attempt=0;;attempt++){
@@ -15,7 +28,8 @@ final class MusicMailbox {
     if(missing.status!=404&&missing.status!=410)throw missing;
     if(attempt==2)throw new IOException("Colab · MUSIC_"+stage+"_MISSING",missing);
     events.record("MUSIC_"+stage+"_RETRY");
-    if(attempt==0)try{runtime.refresh();}catch(ColabRuntime.HttpFailure expired){
+    try{runtime.refresh();}catch(ColabRuntime.HttpFailure expired){
+     if((expired.status==404||expired.status==410)&&attempt==0){pause(cancel,1000);continue;}
      if(expired.status==404||expired.status==410)throw new IOException("Colab · MUSIC_RUNTIME_LOST · انتهت جلسة Colab أثناء المعالجة",expired);
      throw expired;
     }
@@ -36,7 +50,7 @@ final class MusicMailbox {
     JSONObject state;
     try{state=ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536,10000));}
     catch(ColabRuntime.HttpFailure pending){
-     if(pending.status!=404)throw pending;
+     if(pending.status!=404&&pending.status!=410)throw pending;
      if(receivedProgress){
       state=read(runtime,cancel,events,"PROGRESS",()->ColabRuntime.parseJson(runtime.getText(folder+"/progress.json",65536,10000)));
      }else{
@@ -55,10 +69,14 @@ final class MusicMailbox {
      if(stage.equals("failed"))throw new IOException("Colab · "+MusicStartup.workerError(state.optString("error")));
      watch.update(state,lastRest);receiver.accept(state);if(stage.equals("done"))return;
     }
-   }catch(ColabRuntime.HttpFailure transientHttp){if(transientHttp.status!=429&&transientHttp.status<500)throw transientHttp;if(android.os.SystemClock.elapsedRealtime()-lastRest>60000)throw transientHttp;events.record("PROGRESS_RETRY");}
-   catch(ColabRuntime.NetworkFailure transientNetwork){if(android.os.SystemClock.elapsedRealtime()-lastRest>60000)throw transientNetwork;events.record("PROGRESS_RETRY");}
+   }catch(ColabRuntime.HttpFailure transientHttp){if(transientHttp.status!=429&&transientHttp.status<500)throw transientHttp;if(android.os.SystemClock.elapsedRealtime()-lastRest>120000)throw transientHttp;events.record("PROGRESS_RETRY");}
+   catch(ColabRuntime.NetworkFailure transientNetwork){if(android.os.SystemClock.elapsedRealtime()-lastRest>120000)throw transientNetwork;events.record("PROGRESS_RETRY");}
    long end=android.os.SystemClock.elapsedRealtime()+1000;while(android.os.SystemClock.elapsedRealtime()<end){ColabProbe.check(cancel);Thread.sleep(50);}
   }
+ }
+ private static void pause(AtomicBoolean cancel,long duration)throws InterruptedException{
+  long end=android.os.SystemClock.elapsedRealtime()+duration;
+  while(android.os.SystemClock.elapsedRealtime()<end){ColabProbe.check(cancel);Thread.sleep(50);}
  }
  private MusicMailbox(){}
 }

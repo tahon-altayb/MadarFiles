@@ -20,16 +20,16 @@ public final class ColabActivity extends Activity {
  private static final int AUTHORIZE=7201, MODEL_STORAGE=7211, CHOOSE_ACCOUNT=7212;
  private final ExecutorService worker=Executors.newSingleThreadExecutor();
  private AtomicBoolean cancel=new AtomicBoolean();private int generation;private boolean busy,destroyed;private int pendingRequest;
- private boolean authorizeOnly,cleanupMode,automatic,bandit,modelStorage;
- private Account banditAccount;private ColabCredentials.Grant pendingModelGrant;
+ private boolean authorizeOnly,cleanupMode,automatic,modelStorage;
+ private Account storageAccount;private ColabCredentials.Grant pendingModelGrant;
  private record Retained(Account account,ColabCredentials.Grant grant){}private Button cleanup;
  private EditText project;private Button connect,stop,copy;private TextView status;private String report="",activeProject="";
  @Override public void onCreate(Bundle saved){
-  super.onCreate(saved);authorizeOnly=getIntent().getBooleanExtra("authorizeSpeech",false);automatic=authorizeOnly&&getIntent().getBooleanExtra("autoStart",false);bandit=authorizeOnly&&getIntent().getBooleanExtra("bandit",false);modelStorage=authorizeOnly&&(bandit||getIntent().getBooleanExtra("musicOnly",false)||getIntent().getBooleanExtra("modelStorage",false));if(getLastNonConfigurationInstance() instanceof Retained retained){banditAccount=retained.account();pendingModelGrant=retained.grant();}boolean textOnly=getIntent().getBooleanExtra("textOnly",false),musicOnly=getIntent().getBooleanExtra("musicOnly",false);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+  super.onCreate(saved);authorizeOnly=getIntent().getBooleanExtra("authorizeSpeech",false);automatic=authorizeOnly&&getIntent().getBooleanExtra("autoStart",false);modelStorage=authorizeOnly&&(getIntent().getBooleanExtra("musicOnly",false)||getIntent().getBooleanExtra("modelStorage",false));if(getLastNonConfigurationInstance() instanceof Retained retained){storageAccount=retained.account();pendingModelGrant=retained.grant();}boolean textOnly=getIntent().getBooleanExtra("textOnly",false),musicOnly=getIntent().getBooleanExtra("musicOnly",false);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
   LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);int pad=(int)(20*getResources().getDisplayMetrics().density);box.setPadding(pad,pad,pad,pad);box.setBackgroundColor(Color.rgb(248,244,237));
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(box);setContentView(scroll);
   scroll.setOnApplyWindowInsetsListener((view,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);}else view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});scroll.requestApplyInsets();
-  TextView title=text(authorizeOnly?(musicOnly?"فصل الموسيقى على Colab":textOnly?"إعادة ترجمة النص على Colab":"التفريغ والترجمة على Colab"):"اتصال Colab · تجربة الربط",23);box.addView(title);if(getIntent().getBooleanExtra("motionStudio",false))title.setText("استوديو الفيديو · Colab");boolean generating=getIntent().getBooleanExtra("generate",false);if(generating)title.setText("التوليد بالذكاء · Colab");if(bandit)title.setText("الحوار والمؤثرات · Bandit");
+  TextView title=text(authorizeOnly?(musicOnly?"فصل الموسيقى على Colab":textOnly?"إعادة ترجمة النص على Colab":"التفريغ والترجمة على Colab"):"اتصال Colab · تجربة الربط",23);box.addView(title);if(getIntent().getBooleanExtra("motionStudio",false))title.setText("استوديو الفيديو · Colab");boolean generating=getIntent().getBooleanExtra("generate",false);if(generating)title.setText("التوليد بالذكاء · Colab");
   box.addView(text(generating?"يُرسل وصف التوليد فقط إلى جلستك في Colab: الصور بنموذج SDXL على كرت T4، والمقاطع بنموذج Wan 2.2 على كرت L4 أو A100. أول مرة ينزل النموذج (الفيديو حوالي 20 جيجا) فتاخذ وقت أطول. قد تُستهلك وحدات حسابك، وتُغلق الجلسة بعد التنزيل.":getIntent().getBooleanExtra("motionStudio",false)?"تُرسل بيانات المشاهد والصور والصوت اللازمة إلى جلستك في Colab لقياس التوقيت أو تصدير الفيديو. قد تستهلك الجلسة وحدات حسابك بحسب المورد المتاح. تبقى جلسة الموشن مفتوحة للمراجعات حتى اعتماد النسخة أو إغلاقها صراحة. قد ينهي Colab الجلسة أو يوقفها النظام، وتبقى المشاريع والنتائج محفوظة. تعليق قوقل وتوليد الصور يخضعان لحصة حسابك.":authorizeOnly?(musicOnly?"سيُرفع الصوت فقط إلى جلستك في Colab لفصل الموسيقى بنموذج UVR-MDX-NET-Voc_FT على GPU. لا تُستخدم حصة Gemini. قد تُستهلك وحدات Colab. تُحتفظ بالجلسة والنموذج حتى 20 دقيقة بعد نجاح العملية لتسريع الملف التالي، ويمكن إيقافها من الإشعار. بدء مورد جديد يعتمد على توفره لدى Colab.":textOnly?"سيُرسل النص المراجع وتوقيته فقط إلى جلسة Colab الخاصة بحسابك. لا يُرفع الصوت ولا يُعاد التفريغ. يعمل نموذج الترجمة على GPU وقد يستهلك وحدات Colab Pro، وسيحاول مدار إنهاء جلسته بعد المعالجة أو الإلغاء.":"سيُرفع الصوت فقط إلى جلسة Colab الخاصة بحسابك. تعمل النماذج على GPU وقد تستهلك وحدات Colab Pro. سيحاول مدار إنهاء جلسته بعد المعالجة أو الإلغاء. أول تشغيل يحتاج تنزيل النماذج على Colab؛ ابدأ بعينة 30 ثانية."):"اختر حساب Google الذي أضفته إلى مستخدمي الاختبار. سيطلب مدار صلاحية Colab، ثم يعرض اشتراكك والموارد المؤهلة لحسابك. هذا الفحص لا يرفع ملفات ولا يبدأ جلسة معالجة. لتجربة المعالجة اختر Colab من أداة التفريغ والترجمة.",16));
   if(modelStorage){
    TextView storageNotice=text("يحفظ مدار أوزان النماذج في مساحة التطبيق الخاصة في Google Drive بإذنك. يمكنك متابعة المعالجة إذا لم يكتمل إذن التخزين.",16);
@@ -53,7 +53,7 @@ public final class ColabActivity extends Activity {
  }
  private TextView text(String value,int size){TextView view=new TextView(this);view.setText(value);view.setTextSize(size);view.setTextColor(Color.rgb(37,48,45));view.setPadding(0,12,0,12);return view;}
  private void setBusy(boolean value){busy=value;connect.setEnabled(!value);project.setEnabled(!value);if(cleanup!=null)cleanup.setEnabled(!value);stop.setEnabled(value);copy.setEnabled(!value&&!report.isEmpty());}
- private void complete(String value){pendingRequest=0;banditAccount=null;pendingModelGrant=null;report=value;status.setText(value);setBusy(false);if(automatic){connect.setVisibility(View.VISIBLE);connect.setText("إعادة الاتصال والمتابعة");stop.setEnabled(true);}}
+ private void complete(String value){pendingRequest=0;storageAccount=null;pendingModelGrant=null;report=value;status.setText(value);setBusy(false);if(automatic){connect.setVisibility(View.VISIBLE);connect.setText("إعادة الاتصال والمتابعة");stop.setEnabled(true);}}
  private void start(){
   if(busy)return;String selected=project.getText().toString().trim();if(!ColabProbe.validProject(selected)){complete("أدخل معرّف المشروع، مثل madarfiles، وليس اسم العرض أو رقم المشروع.");return;}
   if(GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this)!=ConnectionResult.SUCCESS){complete("خدمات Google Play غير متاحة أو تحتاج تحديثًا على هذا الجهاز. حدّثها ثم أعد الفحص.");return;}
@@ -65,7 +65,7 @@ public final class ColabActivity extends Activity {
     Account[] visible=AccountManager.get(this).getAccountsByType("com.google");
     String savedAccount=getSharedPreferences("colab_connection",0).getString("model_account","");
     if(!retry)for(Account account:visible)if(account.name.equals(savedAccount)){
-     banditAccount=account;authorize(ticket,AUTHORIZE);return;
+     storageAccount=account;authorize(ticket,AUTHORIZE);return;
     }
     status.setText("اختر حساب Google لاستخدامه مع Colab وحفظ الأوزان");
     pendingRequest=CHOOSE_ACCOUNT;
@@ -78,11 +78,11 @@ public final class ColabActivity extends Activity {
  }
  private void authorize(int ticket,int step){
   if(!current(ticket))return;
-  if(modelStorage&&banditAccount==null){complete("اختر حساب Google للمتابعة.");return;}
+  if(modelStorage&&storageAccount==null){complete("اختر حساب Google للمتابعة.");return;}
   boolean storage=step==MODEL_STORAGE;
   String scope=storage?ColabCredentials.MODEL_STORAGE_SCOPE:ColabProbe.SCOPE;
   status.setText(storage?"جارٍ ربط مساحة أوزان مدار الخاصة على Google Drive…":"جارٍ طلب موافقة حساب Google…");
-  AuthorizationRequest request=ColabCredentials.authorizationRequest(scope,banditAccount);
+  AuthorizationRequest request=ColabCredentials.authorizationRequest(scope,storageAccount);
   Identity.getAuthorizationClient(this).authorize(request).addOnSuccessListener(this,result->{
    if(!current(ticket))return;
    try{
@@ -100,8 +100,8 @@ public final class ColabActivity extends Activity {
   pendingRequest=0;
   if(resultCode!=RESULT_OK||data==null){if(requestCode==MODEL_STORAGE){offerWithoutStorage();return;}complete(requestCode==CHOOSE_ACCOUNT?"يمكنك اختيار حساب Google عند إعادة الاتصال.":"لم تكتمل موافقة Google. يمكنك إعادة الاتصال عند الرغبة.");return;}
   if(requestCode==CHOOSE_ACCOUNT){
-   banditAccount=selectedGoogleAccount(data);
-   if(banditAccount==null){complete("اختر حساب Google للمتابعة.");return;}
+   storageAccount=selectedGoogleAccount(data);
+   if(storageAccount==null){complete("اختر حساب Google للمتابعة.");return;}
    authorize(generation,AUTHORIZE);return;
   }
   try{acceptAuthorization(Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data),generation,requestCode);}
@@ -119,8 +119,8 @@ public final class ColabActivity extends Activity {
   if(!current(ticket))return;
   String token=result.getAccessToken();if(token==null||token.isEmpty()||!result.getGrantedScopes().contains(ColabProbe.SCOPE)){complete("لم تُمنح صلاحية Colab كاملة. راجع حساب الاختبار وصلاحية colaboratory في إعدادات Google.");return;}
   if(modelStorage){
-   if(banditAccount==null){complete("أعد اختيار حساب Google لمتابعة الربط.");return;}
-   pendingModelGrant=new ColabCredentials.Grant(token,activeProject,null,banditAccount);
+   if(storageAccount==null){complete("أعد اختيار حساب Google لمتابعة الربط.");return;}
+   pendingModelGrant=new ColabCredentials.Grant(token,activeProject,null,storageAccount);
    authorize(ticket,MODEL_STORAGE);return;
   }
   if(authorizeOnly){ColabCredentials.put(token,activeProject);setResult(RESULT_OK);finish();return;}
@@ -157,7 +157,7 @@ public final class ColabActivity extends Activity {
   ColabCredentials.put(pendingModelGrant.token,pendingModelGrant.project,token,pendingModelGrant.account);
   pendingModelGrant=null;setResult(RESULT_OK);finish();
  }
- @Override public Object onRetainNonConfigurationInstance(){return banditAccount==null?null:new Retained(banditAccount,pendingModelGrant);}
+ @Override public Object onRetainNonConfigurationInstance(){return storageAccount==null?null:new Retained(storageAccount,pendingModelGrant);}
  private void authFailure(Exception e){int code=e instanceof ApiException?((ApiException)e).getStatusCode():-1;String hint=code==10?"تحقق من عميل Android: الحزمة com.madar.files وبصمة توقيع مدار، ومن تفعيل إعدادات OAuth.":code==7?"تحقق من اتصال الشبكة وخدمات Google Play.":code==16?"أُلغيت موافقة Google.":"تحقق من إضافة الحساب إلى مستخدمي الاختبار وصلاحية Colab، ثم أعد المحاولة.";complete("تعذر تصريح حساب Google ("+code+").\n"+hint);}
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putString("project",project.getText().toString());out.putString("activeProject",activeProject);out.putString("report",report);out.putInt("pendingRequest",pendingRequest);out.putBoolean("busy",busy);out.putBoolean("cleanupMode",cleanupMode);}
  @Override protected void onDestroy(){destroyed=true;generation++;cancel.set(true);worker.shutdownNow();super.onDestroy();}

@@ -23,7 +23,7 @@ def verified(path, spec):
 
 def transfer(url, stage, partial, spec, status, headers=None):
     """Keep partial bytes for transient failures and expose byte-level progress."""
-    deadline = time.monotonic() + (240 if headers else 1800)
+    deadline = time.monotonic() + (600 if headers else 1800)
     for attempt in range(3):
         if verified(partial, spec):
             return True
@@ -101,17 +101,55 @@ def store(path, spec, auth, status, metadata=None):
     if (response.status_code != 200 or endpoint.scheme != 'https' or
             endpoint.netloc not in ('www.googleapis.com', 'content.googleapis.com') or endpoint.path != '/upload/drive/v3/files'):
         return False
-    # The upload URL is a per-file capability. Use it without sending OAuth credentials.
+    # The upload URL is a per-file capability. Do not send OAuth credentials.
+    deadline = time.monotonic() + 1800
+    offset, retries, probe = 0, 0, False
     with path.open('rb') as stream:
-        reply = requests.put(location, data=stream,
-                             headers={'Content-Type': 'application/octet-stream',
-                                      'Content-Length': str(spec.size)},
-                             timeout=(15, 70), allow_redirects=False)
-    if reply.status_code not in (200, 201):
-        return False
-    metadata = reply.json()
-    return (metadata.get('size') == str(spec.size) and
-            metadata.get('sha256Checksum') == spec.sha256)
+        while offset < spec.size and time.monotonic() < deadline:
+            if probe:
+                data = b''
+                offered = f'bytes */{spec.size}'
+            else:
+                stream.seek(offset)
+                data = stream.read(min(16 * BLOCK, spec.size - offset))
+                if not data:
+                    return False
+                offered = f'bytes {offset}-{offset + len(data) - 1}/{spec.size}'
+            try:
+                with requests.put(location, data=data,
+                        headers={'Content-Type': 'application/octet-stream',
+                                 'Content-Length': str(len(data)), 'Content-Range': offered},
+                        timeout=(15, 60), allow_redirects=False) as reply:
+                    if reply.status_code in (200, 201):
+                        result = reply.json()
+                        return result.get('size') == str(spec.size) and result.get('sha256Checksum') == spec.sha256
+                    if reply.status_code == 308:
+                        received = reply.headers.get('Range')
+                        match = re.fullmatch(r'bytes=0-(\d+)', received) if received else None
+                        if received and not match:
+                            return False
+                        confirmed = int(match[1]) + 1 if match else 0
+                        if confirmed >= spec.size:
+                            return False
+                        if confirmed > offset:
+                            retries = 0
+                            offset = confirmed
+                            probe = False
+                            status('model_save', 36, extra=dict(bytes=offset, total_bytes=spec.size))
+                            continue
+                        if probe and confirmed == offset:
+                            probe = False
+                            continue
+                    elif reply.status_code != 429 and reply.status_code < 500:
+                        return False
+            except (OSError, requests.RequestException):
+                pass
+            retries += 1
+            if retries > 4:
+                break
+            probe = True
+            time.sleep(min(8, 2 ** (retries - 1)))
+    return False
 
 
 def materialize(folder, spec, token, status):
@@ -133,7 +171,7 @@ def materialize(folder, spec, token, status):
         except (ValueError, KeyError, requests.RequestException):
             pass
     if not transfer(spec.url, 'model_download', partial, spec, status):
-        raise ValueError('MUSIC_BANDIT_WEIGHTS')
+        raise ValueError('MUSIC_MODEL_WEIGHTS')
     os.replace(partial, target)
     if auth:
         try:

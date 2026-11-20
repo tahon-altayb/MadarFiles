@@ -71,5 +71,54 @@ class AvcassLiveTest(unittest.TestCase):
                 os.chdir(previous)
 
 
+class DriveCacheTest(unittest.TestCase):
+    def test_upload_resumes_at_the_confirmed_offset(self):
+        import drive_model_cache as cache
+        from types import SimpleNamespace
+        data = b'abcdefghij'
+        spec = SimpleNamespace(size=len(data), sha256=hashlib.sha256(data).hexdigest())
+        sent = []
+
+        class Response:
+            def __init__(self, code, **headers):
+                self.status_code, self.headers = code, headers
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def json(self):
+                return dict(size=str(spec.size), sha256Checksum=spec.sha256)
+
+        def put(url, data, headers, **kwargs):
+            self.assertNotIn('Authorization', headers)
+            sent.append((headers['Content-Range'], data))
+            if len(sent) == 1:
+                raise cache.requests.ConnectionError('connection changed')
+            if len(sent) == 2:
+                return Response(308, Range='bytes=0-3')
+            return Response(201)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            file = Path(tmp) / 'weights'
+            file.write_bytes(data)
+            start = Response(200, Location='https://www.googleapis.com/upload/drive/v3/files?upload_id=example')
+            with patch.object(cache.requests, 'post', return_value=start), patch.object(
+                    cache.requests, 'put', side_effect=put), patch.object(cache.time, 'sleep'):
+                self.assertTrue(cache.store(file, spec, {'Authorization': 'Bearer local'}, lambda *a, **k: None))
+        self.assertEqual(sent, [('bytes 0-9/10', data), ('bytes */10', b''), ('bytes 4-9/10', data[4:])])
+
+    def test_bundle_identity_binds_content_and_installation(self):
+        from music_drive_bundle import cache_context
+        a, b = [cache_context('fixture', key * 64) for key in ('a', 'b')]
+        first = a.name('avcass-runtime', {'source': 'same'})
+        self.assertEqual(first, a.name('avcass-runtime', {'source': 'same'}))
+        self.assertNotEqual(first, a.name('avcass-runtime', {'source': 'changed'}))
+        self.assertNotEqual(first, b.name('avcass-runtime', {'source': 'same'}))
+        self.assertNotEqual(a.signature(first, 'a'*64, 10), a.signature(first, 'b'*64, 10))
+
+
 if __name__ == '__main__':
     unittest.main()

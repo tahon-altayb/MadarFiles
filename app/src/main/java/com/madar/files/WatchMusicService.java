@@ -60,12 +60,12 @@ public class WatchMusicService extends Service {
   catch(Exception error){starting=false;LiveSeparation.end(job.clean,error.getMessage());active=false;stopSelfResult(jobStartId);}return START_NOT_STICKY;
  }
  private void update(String text){job.stage=text;main.post(()->{if(active)notifications.notify(81,notification());});}
- private void process(){final Job job=this.job;String error=null;ColabCredentials.Grant grant=job.cloud?ColabCredentials.take():null;ColabMusic.Session cloudSession=null;
+ private void process(){final Job job=this.job;String error=null;ColabCredentials.Grant grant=job.cloud?ColabCredentials.take():null;MusicRecovery gpu=null;
   try{
    if(job.ownsSource&&!job.sourceReady&&!ExternalMedia.network(job.uri)){update("تجهيز نسخة خاصة من المقطع · الأصل محفوظ");try(InputStream in=getContentResolver().openInputStream(job.uri);OutputStream out=new FileOutputStream(job.source)){if(in==null)throw new IOException("تعذر قراءة المقطع");byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1){MusicSeparator.check(job.cancel);if(job.source.getUsableSpace()<16L*1024*1024)throw new IOException("المساحة لا تكفي لتجهيز المقطع");out.write(b,0,n);}}job.sourceReady=true;}
    MusicSeparator.check(job.cancel);if(!ExternalMedia.network(job.uri))try(MediaMetadataRetriever metadata=new MediaMetadataRetriever()){metadata.setDataSource(job.source.getPath());if(!"yes".equals(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)))throw new IOException("المقطع لا يحتوي على صوت");}
    File aggregate=File.createTempFile("madar_watch_clean_",".pcm",getCacheDir());LiveSeparation.attach(job.clean,aggregate,0);
-   if(job.cloud){cloudSession=MusicGpuSession.acquire(this,grant,job.cancel,(p,m)->update(m),job.pipeline);cloudSession.startWarmup();}
+   if(job.cloud)gpu=new MusicRecovery(this,grant,job.cancel,(p,m)->update(m),job.pipeline);
    try(RandomAccessFile out=new RandomAccessFile(aggregate,"rw")){
     boolean audiovisual=MusicPipeline.AVCASS.equals(job.pipeline);
     WatchPlan plan=new WatchPlan(job.startUs,job.durationUs,job.cloud,job.clean.coverage,audiovisual);double transferSecondsPerMedia=0;byte[] previousTail=null;WatchWindows window;while((window=plan.next(job.clean.requestedFrame))!=null){
@@ -78,30 +78,30 @@ public class WatchMusicService extends Service {
        long visualStart=decoded.offsetUs/1000,visualEnd=(window.decodeEnd+999)/1000;
        visual=CensorVideoWindow.extractForSound(this,PlayerInput.processing(job),visualStart,visualEnd,job.width,job.height,job.cancel);
       }
-      long decodeMs=SystemClock.elapsedRealtime()-decodeAt;if(job.cloud)cloudSession.diagnostic.measure("DECODE",decodeMs,decoded.pcm.length(),decoded.pcm.length()/4);
+      long decodeMs=SystemClock.elapsedRealtime()-decodeAt;if(job.cloud)gpu.session.diagnostic.measure("DECODE",decodeMs,decoded.pcm.length(),decoded.pcm.length()/4);
       long skip=Math.max(0,Math.round((window.coreStart-decoded.offsetUs)*44100.0/1000000)),base=WatchPlan.frame(window.coreStart),count=WatchPlan.frame(window.coreEnd)-base;long[] copied={0};
       LiveSeparation.Session part=new LiveSeparation.Session(job.source,true);
       final byte[] join=previousTail;
       MusicSeparator.Progress progress=(p,m)->{try{copied[0]=appendWindow(part,job.clean,out,base,copied[0],skip,count,join);update(m);}catch(IOException e){throw new java.io.UncheckedIOException(e);}};
-      if(job.cloud){ColabMusic.Result result=cloudSession.run(decoded,visual,progress,part);processed=result.pcm;}else processed=MusicSeparator.separate(this,decoded,job.cancel,progress,part);
+      if(job.cloud){ColabMusic.Result result=gpu.run(decoded,visual,progress,part);processed=result.pcm;}else processed=MusicSeparator.separate(this,decoded,job.cancel,progress,part);
       copied[0]=appendWindow(part,job.clean,out,base,copied[0],skip,count,join);MusicSeparator.check(job.cancel);
       if(audiovisual)previousTail=tailForJoin(part,skip+count);
       if(copied[0]<count){if(WatchPlan.frame(window.coreEnd)<WatchPlan.frame(job.durationUs))throw new IOException("جزء الصوت غير مكتمل");plan.trimEnd(base+copied[0]);}
       if(copied[0]==0&&job.clean.coverage.total()==0)throw new IOException("لم يُنتج الفصل صوتًا قابلًا للمشاهدة");
-      long cycleMs=SystemClock.elapsedRealtime()-cycleBegan-(job.cloud?cloudSession.lastColdStartMs:0);
-      if(job.cloud){cycleMs=Math.max(cycleMs,decodeMs+cloudSession.lastUploadMs+cloudSession.lastProcessMs);transferSecondsPerMedia=(decodeMs+cloudSession.lastUploadMs)/1000.0/((window.decodeEnd-window.decodeStart)/1e6);}
+      long cycleMs=SystemClock.elapsedRealtime()-cycleBegan-(job.cloud?gpu.session.lastColdStartMs:0);
+      if(job.cloud){cycleMs=Math.max(cycleMs,decodeMs+gpu.session.lastUploadMs+gpu.session.lastProcessMs);transferSecondsPerMedia=(decodeMs+gpu.session.lastUploadMs)/1000.0/((window.decodeEnd-window.decodeStart)/1e6);}
       if(job.clean.buffer!=null)job.clean.buffer.completeCycle(copied[0]/44100.0,Math.max(1,cycleMs)/1000.0);
      }finally{if(decoded!=null)decoded.pcm.delete();if(processed!=null)processed.delete();if(visual!=null)visual.delete();}
     }
    }
   }catch(java.util.concurrent.CancellationException cancelled){error="أوقفت إزالة الموسيقى";}catch(Exception|OutOfMemoryError|UnsatisfiedLinkError failure){error="تعذر تنظيف الصوت: "+(failure.getMessage()==null?"جرّب مقطعًا آخر":failure.getMessage());}
-  finally{if(cloudSession!=null){if(error!=null)cloudSession.healthy=false;cloudSession.close();if(job.cancel.get())MusicGpuSession.awaitCancelled(job.cancel,(p,m)->update(m));job.warning=cloudSession.warning;}LiveSeparation.end(job.clean,error);job.stage=error==null?"اكتمل تنظيف الصوت"+(job.warning.isEmpty()?"":" · "+job.warning):error;main.post(()->{main.removeCallbacksAndMessages(null);if(lock!=null&&lock.isHeld())lock.release();if(processing==job){processing=null;active=false;starting=false;}stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(jobStartId);});}
+  finally{if(gpu!=null){if(error!=null&&gpu.session!=null)gpu.session.healthy=false;gpu.close();if(job.cancel.get())MusicGpuSession.awaitCancelled(job.cancel,(p,m)->update(m));if(gpu.session!=null)job.warning=gpu.session.warning;}LiveSeparation.end(job.clean,error);job.stage=error==null?"اكتمل تنظيف الصوت"+(job.warning.isEmpty()?"":" · "+job.warning):error;main.post(()->{main.removeCallbacksAndMessages(null);if(lock!=null&&lock.isHeld())lock.release();if(processing==job){processing=null;active=false;starting=false;}stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(jobStartId);});}
  }
  /** Write a bounded core at its original time, then publish only bytes already written. */
  static long appendWindow(LiveSeparation.Session part,LiveSeparation.Session target,RandomAccessFile out,long start,long copied,long skip,long count)throws IOException{
   return appendWindow(part,target,out,start,copied,skip,count,null);
  }
- private static long appendWindow(LiveSeparation.Session part,LiveSeparation.Session target,RandomAccessFile out,long start,long copied,long skip,long count,byte[] tail)throws IOException{
+ static long appendWindow(LiveSeparation.Session part,LiveSeparation.Session target,RandomAccessFile out,long start,long copied,long skip,long count,byte[] tail)throws IOException{
   if(part.pcm==null)return copied;
   long available=Math.min(count,Math.max(0,part.frames-skip)),keep=available-copied;
   if(keep<=0)return copied;
@@ -131,7 +131,7 @@ public class WatchMusicService extends Service {
    }
   }
  }
- private static byte[] tailForJoin(LiveSeparation.Session part,long start)throws IOException{
+ static byte[] tailForJoin(LiveSeparation.Session part,long start)throws IOException{
   int frames=(int)Math.min(4410,Math.max(0,part.frames-start));
   if(frames<2||part.pcm==null)return null;
   byte[] bytes=new byte[frames*4];

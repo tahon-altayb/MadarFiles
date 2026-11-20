@@ -10,7 +10,9 @@ final class MusicExport {
  }
  static Result run(Context c,File input,long endUs,boolean cloud,AtomicBoolean cancel,MusicSeparator.Progress progress,LiveSeparation.Session live,String profile)throws Exception{
   profile=MusicPipeline.checked(profile);
-  if(endUs<=0)throw new IOException("مدة المقطع غير معروفة");if(cloud)return runCloud(c,input,endUs,cancel,progress,live,profile);Result result=new Result();result.pcm=File.createTempFile("madar_export_clean_",".pcm",c.getCacheDir());
+  if(endUs<=0)throw new IOException("مدة المقطع غير معروفة");
+  if(cloud&&MusicPipeline.AVCASS.equals(profile))return runAudiovisual(c,input,endUs,cancel,progress,live);
+  if(cloud)return runCloud(c,input,endUs,cancel,progress,live,profile);Result result=new Result();result.pcm=File.createTempFile("madar_export_clean_",".pcm",c.getCacheDir());
   LiveSeparation.Session target=live==null?new LiveSeparation.Session(input,false):live;target.buffer=new WatchBuffer(endUs/1e6,true);LiveSeparation.attach(target,result.pcm,0);ColabMusic.Session gpu=null;boolean success=false;
   try(OutputStream out=new BufferedOutputStream(new FileOutputStream(result.pcm))){
    if(cloud){gpu=MusicGpuSession.acquire(c,ColabCredentials.take(),cancel,progress);gpu.startWarmup();}
@@ -26,6 +28,72 @@ final class MusicExport {
    success=true;return result;
   }finally{if(gpu!=null){if(!success)gpu.healthy=false;gpu.close();result.warning=gpu.warning;}if(!success)result.pcm.delete();}
  }
+ private static Result runAudiovisual(Context c,File input,long endUs,AtomicBoolean cancel,
+                                     MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
+  int width,height;
+  try(android.media.MediaMetadataRetriever reader=new android.media.MediaMetadataRetriever()){
+   reader.setDataSource(input.getAbsolutePath());
+   width=dimension(reader,android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+   height=dimension(reader,android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+   String rotation=reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+   if("90".equals(rotation)||"270".equals(rotation)){int temp=width;width=height;height=temp;}
+  }
+  if(width<=0||height<=0)throw new IOException("اختر فيديو لميزة الصوت البشري مع المحيط");
+  if(c.getCacheDir().getUsableSpace()<WatchPlan.frame(endUs)*4+48L*1024*1024)
+   throw new IOException("المساحة لا تكفي لحفظ الصوت المنظّف");
+  Result result=new Result();
+  result.pcm=File.createTempFile("madar_export_avcass_",".pcm",c.getCacheDir());
+  LiveSeparation.Session target=live==null?new LiveSeparation.Session(input,true):live;
+  target.coverage=new PcmRanges();
+  target.buffer=new WatchBuffer(endUs/1e6,true,true);
+  LiveSeparation.attach(target,result.pcm,0);
+  MusicRecovery lease=null;
+  boolean success=false;
+  try(RandomAccessFile out=new RandomAccessFile(result.pcm,"rw")){
+   lease=new MusicRecovery(c,ColabCredentials.take(),cancel,progress,MusicPipeline.AVCASS);
+   WatchPlan plan=new WatchPlan(0,endUs,true,target.coverage,true);
+   PlayerInput visual=PlayerInput.processing(input);
+   WatchWindows window;
+   byte[] tail=null;
+   while((window=plan.next(-1))!=null){
+    MusicSeparator.check(cancel);
+    long began=MusicCloudJob.now();
+    AudioPipeline.Decoded decoded=null;
+    File video=null,clean=null;
+    try{
+     decoded=AudioPipeline.decodeRange(c,input,window.decodeStart,window.decodeEnd,cancel,progress);
+     video=CensorVideoWindow.extractForSound(c,visual,decoded.offsetUs/1000,(window.decodeEnd+999)/1000,width,height,cancel);
+     long base=WatchPlan.frame(window.coreStart);
+     long count=WatchPlan.frame(window.coreEnd)-base;
+     long skip=WatchPlan.frame(Math.max(0,window.coreStart-decoded.offsetUs));
+     LiveSeparation.Session part=new LiveSeparation.Session(input,true);
+     final long from=window.coreStart,to=window.coreEnd;
+     clean=lease.run(decoded,video,(p,m)->progress.update(p<0?p:(int)Math.min(97,(from+(to-from)*(p/100.0))*100/endUs),m),part).pcm;
+     MusicSeparator.check(cancel);
+     long written=WatchMusicService.appendWindow(part,target,out,base,0,skip,count,tail);
+     tail=WatchMusicService.tailForJoin(part,skip+count);
+     if(written==0||written<count&&window.coreEnd<endUs)throw new IOException("جزء الصوت المفصول غير مكتمل");
+     if(written<count)plan.trimEnd(base+written);
+     target.buffer.completeCycle(written/44100.0,Math.max(1,MusicCloudJob.now()-began)/1000.0);
+    }finally{if(decoded!=null)decoded.pcm.delete();if(video!=null)video.delete();if(clean!=null)clean.delete();}
+   }
+   result.diagnostic=lease.session.diagnostic;
+   success=true;
+   return result;
+  }finally{
+   if(lease!=null){
+    if(!success&&lease.session!=null)lease.session.healthy=false;
+    lease.close();
+    if(lease.session!=null)result.warning=lease.session.warning;
+   }
+   if(!success&&!LiveSeparation.retain(result.pcm))result.pcm.delete();
+  }
+ }
+ private static int dimension(android.media.MediaMetadataRetriever reader,int key){
+  String value=reader.extractMetadata(key);
+  return value==null?0:Integer.parseInt(value);
+ }
+
  private static Result runCloud(Context c,File input,long endUs,AtomicBoolean cancel,MusicSeparator.Progress progress,LiveSeparation.Session live,String profile)throws Exception{
   long expected=Math.round(endUs/1e6*44100)*4;
   if(expected<=0||expected>Long.MAX_VALUE/3||c.getCacheDir().getUsableSpace()<expected*3+32L*1024*1024)throw new IOException("المساحة لا تكفي لتجهيز الملف كاملًا دون فقد");
@@ -36,7 +104,7 @@ final class MusicExport {
    // decoding and four minutes uploading 100 MB sends about a tenth of that and decodes nothing. Whatever this way
    // cannot carry (another codec, a refusal by the job) takes the decoded way below, in the same session.
    // (Listening while it separates was on for every music job, and kept 1.9.67 on the long way: it is carried here too.)
-   if(fastUpload(c)||MusicPipeline.BANDIT.equals(profile)){
+   if(fastUpload(c)){
     AudioPipeline.Compressed compact=null;
     try{progress.update(15,"تجهيز الصوت المضغوط للرفع");compact=AudioPipeline.audioOnly(c,input,endUs,cancel,gpu.diagnostic::record);
      if(compact==null)gpu.diagnostic.record("SOURCE_UNSUPPORTED");

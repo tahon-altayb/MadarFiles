@@ -93,16 +93,13 @@ public class PlayerActivity extends Activity {
  private void music(){
   if(cleanRequested){new AlertDialog.Builder(this).setTitle("الصوت أثناء المشاهدة").setItems(new String[]{"الإبقاء على الصوت المنظّف","تشغيل الصوت الأصلي","إيقاف الفصل وتشغيل الصوت الأصلي"},(d,n)->{if(n==2){if(watchJob!=null&&!watchJob.clean.done)startService(new Intent(this,WatchMusicService.class).setAction("cancel").putExtra("job",watchJob.id));else if(legacyClean&&VideoExportService.active)startService(new Intent(this,VideoExportService.class).setAction("cancel"));}if(n>0)originalAudio();}).show();return;}
   boolean cloud=getSharedPreferences("player",0).getBoolean("watch_cloud",false);
-  String saved=getSharedPreferences("player",0).getString("watch_pipeline",MusicPipeline.LEGACY);
-  boolean advanced=cloud&&!MusicPipeline.LEGACY.equals(saved)&&!MusicPipeline.AVCASS.equals(saved);
-  String[] choices=advanced?new String[]{"الصوت البشري","الصوت البشري مع المحيط · تجريبي (Colab)","طريقة الفصل المحفوظة"}
-    :new String[]{"الصوت البشري","الصوت البشري مع المحيط · تجريبي (Colab)"};
+  String[] choices={"الصوت البشري","الصوت البشري مع المحيط (Colab)"};
   new AlertDialog.Builder(this).setTitle("إزالة الموسيقى أثناء المشاهدة").setItems(choices,(dialog,choice)->{
    if(choice==1){
     new AlertDialog.Builder(this).setTitle("الصوت البشري مع المحيط")
      .setMessage("يعالج مدار الصوت وأجزاء قصيرة من الصورة على Colab لتحديد المؤثرات. تبدأ المشاهدة بعد تجهيز الدفعة الأولى.")
      .setPositiveButton("ابدأ الفصل",(d,n)->watchSelected(true,MusicPipeline.AVCASS,true)).setNegativeButton("رجوع",null).show();
-   }else watchSelected(cloud,choice==2?saved:MusicPipeline.LEGACY,true);
+   }else watchSelected(cloud,MusicPipeline.LEGACY,true);
   }).setNegativeButton("إلغاء",null).show();
  }
  private void watchSelected(boolean cloud,String profile,boolean progressive){
@@ -130,8 +127,7 @@ public class PlayerActivity extends Activity {
  }
  private void prepareWatch(long selected,boolean complete){
   position=pendingWatchPosition=selected;pendingWatchComplete=complete;resume=playback.wanted();cleanRequested=true;playback.waitForClean();showCleanStatus(complete?"فصل المقطع كاملًا قبل المتابعة":"تجهيز الصوت من البداية حتى "+stamp(position)+" واحتياطي للمتابعة",true);musicButton.setText("الصوت المنظّف");
-  String profile=pendingWatchProfile;
-  if(pendingWatchCloud&&!MusicGpuSession.hasAccess(this,profile)){startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("musicOnly",true).putExtra("bandit",MusicPipeline.BANDIT.equals(profile)),7204);return;}beginWatch();
+  if(pendingWatchCloud&&!MusicGpuSession.hasAccess(this,pendingWatchProfile)){startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("musicOnly",true),7204);return;}beginWatch();
  }
  private void beginWatch(){try{
   if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},84);
@@ -145,7 +141,14 @@ public class PlayerActivity extends Activity {
  private void watchError(String text){playback.waitForClean();playback.status=text==null?"تعذر بدء الفصل":text;playback.waiting=true;syncPlayback();new AlertDialog.Builder(this).setTitle("تعذر إزالة الموسيقى").setMessage(text).setPositiveButton("البقاء مكتومًا",null).setNegativeButton("تشغيل الصوت الأصلي",(d,n)->originalAudio()).show();}
  private void originalAudio(){if(equalizer!=null){equalizer.release();equalizer=null;}playback.original();syncPlayback();}
  private void bufferMode(){new AlertDialog.Builder(this).setTitle("الانتظار قبل المشاهدة").setSingleChoiceItems(new String[]{"تلقائي · احتياطي محسوب من السرعة الفعلية", "اكتمال الفصل · المشاهدة بعد تجهيز الصوت كاملًا"},(cleanSession!=null?cleanSession.waitForComplete:getSharedPreferences("player",0).getBoolean("watch_complete",false))?1:0,(d,n)->{getSharedPreferences("player",0).edit().putBoolean("watch_complete",n==1).apply();if(cleanSession!=null)cleanSession.waitForComplete=n==1;d.dismiss();}).setNegativeButton("رجوع",null).show();}
- private void musicMode(){boolean cloud=getSharedPreferences("player",0).getBoolean("watch_cloud",false);String profile=getSharedPreferences("player",0).getString("watch_pipeline",MusicPipeline.LEGACY);new AlertDialog.Builder(this).setTitle("إزالة الموسيقى أثناء المشاهدة").setSingleChoiceItems(new String[]{"على الجهاز · الفصل الحالي", "Colab · الفصل الحالي", "Colab · الحوار والمؤثرات · مرحلتان", "Colab · الحوار والمؤثرات · Bandit"},cloud?(MusicPipeline.BANDIT.equals(profile)?3:MusicPipeline.FX.equals(profile)?2:1):0,(d,n)->{getSharedPreferences("player",0).edit().putBoolean("watch_cloud",n!=0).putString("watch_pipeline",n==3?MusicPipeline.BANDIT:n==2?MusicPipeline.FX:MusicPipeline.LEGACY).apply();d.dismiss();toast("تُستخدم الطريقة المختارة عند بدء فصل جديد");}).setNegativeButton("رجوع",null).show();}
+ private void musicMode(){
+  boolean cloud=getSharedPreferences("player",0).getBoolean("watch_cloud",false);
+  new AlertDialog.Builder(this).setTitle("مكان فصل الصوت البشري")
+   .setSingleChoiceItems(new String[]{"على الجهاز","GPU · Colab"},cloud?1:0,(d,n)->{
+    getSharedPreferences("player",0).edit().putBoolean("watch_cloud",n==1).remove("watch_pipeline").apply();
+    d.dismiss();
+   }).setNegativeButton("رجوع",null).show();
+ }
 
  private String stamp(long ms){return String.format(Locale.US,"%d:%02d",ms/60000,ms/1000%60);}private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
  private void updateMiniPlayer(){if(player==null||playback==null||playback.closed||isFinishing()||!getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE))return;try{androidx.media3.common.VideoSize size=player.getVideoSize();double ratio=size.height>0?size.width*size.pixelWidthHeightRatio/size.height:16.0/9;ratio=Math.max(1/2.39,Math.min(2.39,ratio));android.graphics.Rect rect=new android.graphics.Rect();if(!isInPictureInPictureMode())view.getGlobalVisibleRect(rect);boolean play=playback.wanted(),seek=player.isCurrentMediaItemSeekable();String key=playback.id+":"+ratio+":"+play+":"+seek+":"+(isInPictureInPictureMode()?"pip":rect.toShortString());if(key.equals(miniKey))return;PictureInPictureParams.Builder p=new PictureInPictureParams.Builder().setAspectRatio(new android.util.Rational((int)Math.round(ratio*1000),1000));if(!rect.isEmpty())p.setSourceRectHint(rect);

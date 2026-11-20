@@ -123,9 +123,15 @@ const colabHome=$('colabConnect');if(colabHome)colabHome.onclick=()=>native('col
 const colabOpenTool=openTool;
 openTool=function(tool){colabOpenTool(tool);if(['music','subtitles'].includes(tool))$('form').append(colabConnectionButton());if(tool==='music'){
  const mode=document.createElement('select');mode.id='musicMode';mode.setAttribute('aria-label','مكان فصل الموسيقى');mode.innerHTML='<option value="colab">GPU · Colab · المقطع كاملًا</option><option value="local">على الجهاز · المقطع كاملًا</option>';
- const pipeline=document.createElement('select');pipeline.id='musicPipeline';pipeline.setAttribute('aria-label','نتيجة فصل الموسيقى');pipeline.innerHTML='<option value="bandit_v2_multi">Bandit · الحوار والمؤثرات</option><option value="voc_ft">الفصل الحالي · الصوت البشري</option><option value="inst_hq_4_3">الحوار والمؤثرات · مرحلتان</option>';
- const label=document.createElement('label');const consent=document.createElement('input');consent.id='onlineAudioConsent';consent.type='checkbox';label.append(consent,document.createTextNode(' أوافق على رفع صوت هذا المقطع إلى جلستي في Colab؛ قد يستهلك وحدات الحساب.'));
- const note=document.createElement('p');note.className='hint';const describe=()=>{note.textContent=pipeline.value==='bandit_v2_multi'?'يحفظ مدار أوزان Bandit في مساحة التطبيق الخاصة في Google Drive لتسريع المرات التالية، ويغلق جلسة GPU بعد الفصل.':pipeline.value==='inst_hq_4_3'?'أول تشغيل على مرحلتين قد يطول لتجهيز الأوزان ومكتبات التشغيل وحفظها في Google Drive. الجلسات التالية تسترجع الحزم المتوافقة.':'تظل جلسة GPU جاهزة لإعادة الاستخدام حتى 20 دقيقة، ويمكن إيقافها من الإشعار.';};pipeline.onchange=describe;describe();
- const update=()=>{label.hidden=note.hidden=pipeline.hidden=mode.value!=='colab';consent.checked=false;$('toolKicker').textContent=mode.value==='colab'?'الفصل في جلستك السحابية':'على جهازك · دون رفع الصوت';};mode.onchange=update;$('form').prepend(mode);$('form').append(pipeline,note,label);update();
+ const pipeline=document.createElement('select');pipeline.id='musicPipeline';pipeline.setAttribute('aria-label','نتيجة فصل الموسيقى');pipeline.innerHTML='<option value="voc_ft">الصوت البشري</option><option value="avcass_roformer_sw">الصوت البشري مع المحيط</option>';
+ const label=document.createElement('label');const consent=document.createElement('input');consent.id='onlineAudioConsent';consent.type='checkbox';const disclosure=document.createTextNode('');label.append(consent,disclosure);
+ const note=document.createElement('p');note.className='hint';
+ const describe=()=>{
+  const visual=pipeline.value==='avcass_roformer_sw';
+  disclosure.textContent=visual?' أوافق على رفع الصوت وأجزاء قصيرة من الصورة إلى جلستي في Colab.':' أوافق على رفع الصوت إلى جلستي في Colab.';
+  consent.checked=false;
+  note.textContent=visual?'يفصل الحوار والمؤثرات عبر AV-CASS، ثم يطرح الطبول. يسترجع تجهيز المحرك من Drive عند توفر نسخة متوافقة.':'يفصل الموسيقى للإبقاء على الصوت البشري.';
+ };pipeline.onchange=describe;describe();
+ const update=()=>{label.hidden=note.hidden=pipeline.hidden=mode.value!=='colab';describe();$('toolKicker').textContent=mode.value==='colab'?'الفصل في جلستك السحابية':'على جهازك · دون رفع الصوت';};mode.onchange=update;$('form').prepend(mode);$('form').append(pipeline,note,label);update();
 }};
 

@@ -38,13 +38,13 @@ def pcm_packs(clean, stride):
 
 
 class Separator:
-    def __init__(self, directory, token, status):
+    def __init__(self, directory, token, status, bundle_key=None):
         from music_avcass_setup import setup
         import torch
         if not torch.cuda.is_available():
             raise ValueError('MUSIC_GPU_REQUIRED')
         load_start = time.monotonic()
-        checkpoint, cavp, weights, config, cache = setup(directory, token, status)
+        checkpoint, cavp, weights, config, cache, bundle, timings = setup(directory, token, status, bundle_key)
         status('model_load', 37)
         # Import after the isolated dependencies are available.
         import yaml
@@ -71,7 +71,7 @@ class Separator:
         self.rofo = get_model_from_config('bs_roformer', config)
         self.rofo.load_state_dict(load_checkpoint_state(weights))
         self.rofo = self.rofo.to(self.device).eval()
-        self.cache = dict(cache_source=cache, cache_ms=round((time.monotonic() - load_start) * 1000))
+        self.cache = dict(cache_source=cache, bundle_source=bundle, bundle_timings=timings, cache_ms=round((time.monotonic() - load_start) * 1000))
 
     def av_mix(self, samples, frames):
         import numpy as np

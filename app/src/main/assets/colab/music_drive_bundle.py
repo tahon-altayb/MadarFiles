@@ -1,6 +1,7 @@
-"""Authenticated, ABI-specific FX package snapshot. The signing key stays with this installation."""
+"""Authenticated, ABI-specific model runtime snapshot. The signing key stays with this installation."""
 import hashlib
 import hmac
+from importlib.metadata import PackageNotFoundError, version
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,16 @@ class Timings:
         row[1] += size
 
 
+def runtime_identity(*packages):
+    versions = {}
+    for package in packages:
+        try:
+            versions[package] = version(package)
+        except PackageNotFoundError:
+            versions[package] = None
+    return versions
+
+
 def cache_context(token, key):
     return BundleCache(token, key) if token and re.fullmatch(r'[a-f0-9]{64}', key or '') else None
 
@@ -43,7 +54,7 @@ class BundleCache:
                              python=platform.python_version(), arch=platform.machine(),
                              libc=platform.libc_ver(), system=platform.system())
         identity = json.dumps([1, kind, compatibility, identity], sort_keys=True).encode()
-        return 'fx-runtime-' + hmac.new(self.key, identity, 'sha256').hexdigest()
+        return 'madar-music-runtime-' + hmac.new(self.key, identity, 'sha256').hexdigest()
 
     def signature(self, name, digest, size):
         return hmac.new(self.key, f'{name}:{digest}:{size}'.encode(), 'sha256').hexdigest()
@@ -70,12 +81,12 @@ class BundleCache:
         except (OSError, ValueError, TypeError, drive.requests.RequestException):
             return False
         finally:
-            timings.add(f'FX_DRIVE_{component}_LOOKUP', lookup)
+            timings.add(f'MUSIC_DRIVE_{component}_LOOKUP', lookup)
         if not hit:
             return False
         file_id, spec = hit
         target.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='madar-fx-restore-',dir=target.parent) as work:
+        with tempfile.TemporaryDirectory(prefix='madar-music-restore-',dir=target.parent) as work:
             archive = Path(work)/'runtime.tgz'
             extracted = Path(work)/'files'
             try:
@@ -83,10 +94,11 @@ class BundleCache:
                 try:
                     ok = drive.transfer(f'{drive.FILES}/{file_id}?alt=media','model_restore',archive,spec,status,self.auth)
                 finally:
-                    timings.add(f'FX_DRIVE_{component}_GET',started,archive.stat().st_size if archive.is_file() else 0)
+                    timings.add(f'MUSIC_DRIVE_{component}_GET',started,archive.stat().st_size if archive.is_file() else 0)
                 if not ok:
                     return False
                 started=time.monotonic()
+                extracted.mkdir()
                 with tarfile.open(archive,'r:gz') as stream:
                     total=0
                     for count, item in enumerate(stream):
@@ -96,15 +108,16 @@ class BundleCache:
                             or '..' in candidate.parts or not (item.isfile() or item.isdir() or item.issym() or item.islnk())):
                             return False
                         stream.extract(item,extracted,filter='data')
-                # Merge an already authenticated package into the newly made environment.
-                shutil.copytree(extracted,target,symlinks=True,dirs_exist_ok=True)
-                timings.add(f'FX_{component}_UNPACK',started)
+                if target.exists():
+                    shutil.rmtree(target)
+                extracted.replace(target)
+                timings.add(f'MUSIC_{component}_UNPACK',started)
                 return True
             except (OSError, ValueError, tarfile.TarError):
                 return False
 
     def save(self, name, target, status, timings, omit=(), component="RUNTIME"):
-        with tempfile.TemporaryDirectory(prefix='madar-fx-save-',dir=target.parent) as work:
+        with tempfile.TemporaryDirectory(prefix='madar-music-save-',dir=target.parent) as work:
             archive=Path(work)/'runtime.tgz'
             try:
                 started=time.monotonic()
@@ -117,7 +130,7 @@ class BundleCache:
                     return False
                 with archive.open('rb') as handle:
                     digest=hashlib.file_digest(handle,'sha256').hexdigest()
-                timings.add(f'FX_{component}_PACK',started,size)
+                timings.add(f'MUSIC_{component}_PACK',started,size)
                 started=time.monotonic()
                 saved = False
                 try:
@@ -125,6 +138,6 @@ class BundleCache:
                         dict(name=name,appProperties={'signature':self.signature(name,digest,size)}))
                     return saved
                 finally:
-                    timings.add(f'FX_DRIVE_{component}_PUT',started,size if saved else 0)
+                    timings.add(f'MUSIC_DRIVE_{component}_PUT',started,size if saved else 0)
             except (OSError, ValueError, TypeError, tarfile.TarError, drive.requests.RequestException):
                 return False

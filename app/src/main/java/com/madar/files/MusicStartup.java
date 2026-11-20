@@ -25,18 +25,16 @@ final class MusicStartup {
   long bytes=state.optLong("bytes",0),total=state.optLong("total_bytes",0);
   if(bytes>0&&total>=bytes)message+=" · "+bytes/1000000+" / "+total/1000000+" ميجابايت";
   progress.update(Math.max(27,Math.min(38,state.optInt("progress",27))),message+" · مضى "+Math.max(0,(at-began)/1000)+" ثانية");ready=stage.equals("ready");if(ready){
-   String source=state.optString("cache_source");cacheMissing="download_unsaved".equals(source);
+   String source=state.optString("cache_source");String bundle=state.optString("bundle_source"),nativeCache=state.optString("native_cache");
+   cacheMissing="download_unsaved".equals(source)||"unsaved".equals(bundle)||"no_drive".equals(bundle)||"unsaved".equals(nativeCache);
    if(diagnostic!=null){
     if(java.util.Arrays.asList("local","drive","download_saved","download_unsaved").contains(source)){
      diagnostic.record("MUSIC_CACHE_"+source.toUpperCase(java.util.Locale.ROOT));
      diagnostic.measure("MODEL_CACHE",state.optLong("cache_ms"),0,0);
     }
-    JSONObject timings=state.optJSONObject("fx_timings");
-    if(timings!=null){
-     String bundle=state.optString("fx_bundle_source");
-     diagnostic.record("FX_BUNDLE_"+bundle.toUpperCase(java.util.Locale.ROOT));
-     diagnostic.fxTimings(timings);
-    }
+    if(!bundle.isEmpty())diagnostic.record("MUSIC_BUNDLE_"+bundle.toUpperCase(java.util.Locale.ROOT));
+    if(!nativeCache.isEmpty())diagnostic.record("MUSIC_CUDNN_CACHE_"+nativeCache.toUpperCase(java.util.Locale.ROOT));
+    diagnostic.musicBundleTimings(state.optJSONObject("bundle_timings"));
     diagnostic.record("MUSIC_READY");
    }
   }

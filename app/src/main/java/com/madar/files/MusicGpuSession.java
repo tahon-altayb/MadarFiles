@@ -9,12 +9,8 @@ final class MusicGpuSession {
  private static volatile ColabMusic.Session idle,active,retiring;private static volatile boolean busy;private static volatile long idleAt,generation;
  static boolean available(Context c){ColabMusic.Session s=idle;return !busy()&&s!=null&&s.runtime.grant.project.equals(c.getSharedPreferences("colab_connection",0).getString("project","madarfiles"))&&remainingIdle()>0;}
  static boolean hasAccess(Context c,String profile){
-  if(MusicPipeline.FX.equals(profile)||MusicPipeline.AVCASS.equals(profile)){
-   ColabMusic.Session session=idle;
-   return ColabCredentials.readyForMusic(profile)||(session!=null&&profile.equals(session.pipeline)&&available(c));
-  }
   ColabMusic.Session session=idle;
-  return ColabCredentials.readyForMusic(profile)||(!MusicPipeline.BANDIT.equals(profile)&&session!=null&&!MusicPipeline.AVCASS.equals(session.pipeline)&&available(c));
+  return ColabCredentials.readyForMusic(profile)||(session!=null&&profile.equals(session.pipeline)&&available(c));
  }
  static boolean busy(){return busy||retiring!=null;}
  static boolean closing(){return retiring!=null;}
@@ -29,6 +25,15 @@ final class MusicGpuSession {
   for(;;){synchronized(MusicGpuSession.class){if((active==null||active.callerCancel!=owner)&&(retiring==null||retiring.callerCancel!=owner))break;}
    long now=SystemClock.elapsedRealtime();if(now-last>1000){last=now;progress.update(-1,"إلغاء الطلب وإغلاق جلسة Colab السابقة…");}try{Thread.sleep(100);}catch(InterruptedException stop){interrupted=true;}
   }if(interrupted)Thread.currentThread().interrupt();
+ }
+ static void awaitRetirement(ColabMusic.Session previous,AtomicBoolean stop)throws Exception{
+  long deadline=SystemClock.elapsedRealtime()+180000;
+  while(retiring==previous){
+   ColabProbe.check(stop);
+   if(SystemClock.elapsedRealtime()>deadline)throw new IOException("Colab · CLEANUP_PENDING");
+   Thread.sleep(150);
+  }
+  ColabProbe.check(stop);
  }
  static long generation(){return generation;}
  static long remainingIdle(){ColabMusic.Session s=idle;return s==null?0:Math.max(0,Math.min(IDLE_MS-(SystemClock.elapsedRealtime()-idleAt),MAX_AGE_MS-(SystemClock.elapsedRealtime()-s.createdAt)));}
@@ -47,7 +52,7 @@ final class MusicGpuSession {
   synchronized(MusicGpuSession.class){
    if(busy())throw new IOException(closing()?"جارٍ إيقاف جلسة GPU السابقة بأمان؛ تابع حالتها من إشعار مدار":"توجد عملية GPU أخرى؛ أوقفها أو انتظر اكتمالها");
    s=idle;
-   if(MusicPipeline.BANDIT.equals(profile)||(s!=null&&!profile.equals(s.pipeline)&&(MusicPipeline.FX.equals(profile)||MusicPipeline.AVCASS.equals(profile)||MusicPipeline.AVCASS.equals(s.pipeline)))){
+   if(s!=null&&!profile.equals(s.pipeline)){
     if(s!=null&&grant!=null&&!s.runtime.grant.project.equals(grant.project))throw new IOException("أغلق جلسة حساب Colab السابقة قبل تبديل الحساب");
     if(s!=null){previous=s;idle=null;retireLocked(s);}
    }
@@ -69,14 +74,14 @@ final class MusicGpuSession {
  static void release(ColabMusic.Session s){
   synchronized(MusicGpuSession.class){
    if(active!=s||!s.leased)return;s.leased=false;s.stopWatcher();if(s.channel!=null){s.channel.close();s.channel=null;}active=null;busy=false;
-   if(!MusicPipeline.BANDIT.equals(s.pipeline)&&s.healthy&&!s.cancel.get()&&!s.callerCancel.get()&&SystemClock.elapsedRealtime()-s.createdAt<MAX_AGE_MS){idle=s;idleAt=SystemClock.elapsedRealtime();generation++;s.status=(p,m)->{};}
+   if(s.healthy&&!s.cancel.get()&&!s.callerCancel.get()&&SystemClock.elapsedRealtime()-s.createdAt<MAX_AGE_MS){idle=s;idleAt=SystemClock.elapsedRealtime();generation++;s.status=(p,m)->{};}
    else retireLocked(s);
   }
   try{notifyState(s.context);}catch(RuntimeException denied){synchronized(MusicGpuSession.class){if(idle==s){idle=null;retireLocked(s);}}}
  }
  /** Caller holds the state monitor; all blocking disposal runs on a separate thread after release. */
  private static void retireLocked(ColabMusic.Session s){
-  retiring=s;generation++;s.cancel.set(true);s.stopWatcher();if(!MusicPipeline.BANDIT.equals(s.pipeline))s.warning="إيقاف جلسة GPU السابقة جارٍ في الخلفية؛ تابع إشعار مدار";s.status=(p,m)->{};
+  retiring=s;generation++;s.cancel.set(true);s.stopWatcher();s.warning="إيقاف جلسة GPU السابقة جارٍ في الخلفية؛ تابع إشعار مدار";s.status=(p,m)->{};
   Thread cleanup=new Thread(()->{try{s.dispose();}finally{synchronized(MusicGpuSession.class){if(retiring==s){retiring=null;generation++;}}try{notifyState(s.context);}catch(RuntimeException ignored){}}},"madar-gpu-retire");cleanup.setDaemon(true);cleanup.start();
  }
  static void beforeRuntime(ColabRuntime runtime)throws IOException{

@@ -64,6 +64,22 @@ final class ColabRuntime implements AutoCloseable {
   if(result.hasResolution()||result.getAccessToken()==null||!result.getGrantedScopes().contains(ColabProbe.SCOPE))throw new IOException("Colab · AUTH_REQUIRED");
   return new ColabCredentials.Grant(result.getAccessToken(),previous.project,null,previous.account);
  }
+ ColabCredentials.Grant recoveryGrant(AtomicBoolean stop)throws Exception{
+  ColabProbe.check(stop);
+  ColabCredentials.Grant previous=grant;
+  String storage=null;
+  if(previous.account!=null){
+   try{
+    com.google.android.gms.auth.api.identity.AuthorizationClient client=com.google.android.gms.auth.api.identity.Identity.getAuthorizationClient(context);
+    com.google.android.gms.auth.api.identity.AuthorizationResult result=awaitAuthorization(
+     client.authorize(ColabCredentials.authorizationRequest(ColabCredentials.MODEL_STORAGE_SCOPE,previous.account)),stop);
+    if(!result.hasResolution()&&ColabCredentials.validStorageToken(result.getAccessToken())&&
+       ColabCredentials.storageScopes(result.getGrantedScopes()))storage=result.getAccessToken();
+   }catch(IOException unavailable){ColabProbe.check(stop);}
+  }
+  return new ColabCredentials.Grant(previous.token,previous.project,storage,previous.account);
+ }
+
  private static <T> T awaitAuthorization(com.google.android.gms.tasks.Task<T> task,AtomicBoolean stop)throws Exception{
   long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(25);
   while(!task.isComplete()){ColabProbe.check(stop);if(System.nanoTime()>until)throw new IOException("Colab · AUTH_REQUIRED");Thread.sleep(100);}

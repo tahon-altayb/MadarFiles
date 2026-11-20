@@ -92,14 +92,20 @@ public class MusicCloudJobTest {
   try{session.run(audio,(p,m)->{if(m.startsWith("استرجاع الصوت")){cancel.set(true);session.cancel.set(true);}},live);fail();}
   catch(CancellationException expected){assertTrue(live.frames>0);assertFalse(live.pcm.exists());assertEquals(1,submitted.get());assertEquals(0,channels.get());}finally{audio.pcm.delete();}
  }
- @Test(timeout=90000) public void twoPassAndOriginalProfilesReuseTheSameRestSessionWithExplicitResults()throws Exception{
-  for(String profile:new String[]{MusicPipeline.FX,MusicPipeline.LEGACY,MusicPipeline.FX}){session.pipeline=profile;AudioPipeline.Decoded audio=audio(1);ColabMusic.Result result=null;
-   try{result=session.run(audio,(p,m)->{},null);String job=session.root+"_b"+(session.batch-1);assertEquals(profile,requests.get(job).getString("pipeline"));assertEquals(audio.pcm.length(),result.pcm.length());}finally{audio.pcm.delete();if(result!=null)result.pcm.delete();}}
-  assertEquals(3,submitted.get());assertEquals(0,channels.get());assertTrue(session.healthy);
+ @Test(timeout=45000) public void legacyResultCannotMasqueradeAsAudiovisualResult()throws Exception{
+  session.pipeline=MusicPipeline.AVCASS;wrongProfile=true;
+  AudioPipeline.Decoded audio=audio(1);
+  File video=File.createTempFile("avcass_fixture_",".mp4",context.getCacheDir());
+  Files.write(video.toPath(),new byte[]{1,2,3});
+  LiveSeparation.Session live=new LiveSeparation.Session(audio.pcm,true);
+  try{session.run(audio,video,(p,m)->{},live);fail("Mismatched pipeline must be rejected");}
+  catch(IOException expected){assertTrue(expected.getMessage().contains("MUSIC_RESULT_SCHEMA"));assertEquals(0,live.frames);assertFalse(live.pcm.exists());}
+  finally{audio.pcm.delete();video.delete();}
  }
- @Test(timeout=45000) public void oldModelOutputCannotMasqueradeAsTheTwoPassResult()throws Exception{
-  session.pipeline=MusicPipeline.FX;wrongProfile=true;AudioPipeline.Decoded audio=audio(1);LiveSeparation.Session live=new LiveSeparation.Session(audio.pcm,true);
-  try{session.run(audio,(p,m)->{},live);fail("Mismatched pipeline must be rejected");}catch(IOException expected){assertTrue(expected.getMessage().contains("MUSIC_RESULT_SCHEMA"));assertEquals(0,live.frames);assertFalse(live.pcm.exists());}finally{audio.pcm.delete();}
+ @Test public void onlyTransportAndRuntimeLossTriggerRecovery(){
+  assertTrue(MusicMailbox.recoverable(new IOException("Colab · MUSIC_RUNTIME_LOST")));
+  assertTrue(MusicMailbox.recoverable(new ColabRuntime.HttpFailure(404,null,null)));
+  assertFalse(MusicMailbox.recoverable(new IOException("Colab · MUSIC_WIRE_HASH")));
+  assertFalse(MusicMailbox.recoverable(new ColabRuntime.HttpFailure(403,null,null)));
  }
-
 }

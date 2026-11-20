@@ -12,7 +12,6 @@ import re
 import zlib
 import threading
 
-BANDIT_PIPELINE = "bandit_v2_multi"
 AVCASS_PIPELINE = "avcass_roformer_sw"
 _AVCASS = None
 
@@ -25,12 +24,6 @@ _SERVICE_ROOT = None
 _SERVICE_ERROR = None
 _ACTIVE_JOB = ""
 _NEXT_BATCH = 0
-_FX_CLIENT = None
-_FX_VERIFIED = False
-_BANDIT = None
-FX_PIPELINE = 'inst_hq_4_3'
-FX_SHA = 'e165729735b0493b2711b73de37f17cd57dc0a550bd2dff1d4c627586ed32a55'
-
 def load_private_cudnn():
     global _cudnn
     if os.environ.get('MADAR_CUDNN_LIB'):
@@ -45,8 +38,9 @@ GPU_FREE_BEFORE = None
 GPU_VERIFIED = False
 CACHE = None
 DRIVE_TOKEN = ""
-FX_KEY = ""
-FX_PRELAUNCH = {}
+BUNDLE_KEY = ""
+BUNDLE_TIMINGS = {}
+NATIVE_CACHE = ""
 
 RATE = 44100
 CORE = 4 * RATE
@@ -83,7 +77,7 @@ def status(stage, progress, parts=None, frames=None, packs=None, extra=None):
 def service_state():
     if _SERVICE_ROOT is not None:
         value = dict(protocol=2, heartbeat=_HEARTBEAT, next_batch=_NEXT_BATCH,
-                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED or _FX_VERIFIED or _BANDIT is not None or _AVCASS is not None else 'bootstrap',
+                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED or _AVCASS is not None else 'bootstrap',
                      active_job=_ACTIVE_JOB)
         if _SERVICE_ERROR:
             value['error'] = _SERVICE_ERROR
@@ -153,20 +147,43 @@ def prepare():
         major = int(torch.version.cuda.split('.')[0])
         cuda = 13 if major >= 13 else 12
         version = f'1.13.8+cuda{cuda}.cudnn9.onnxruntime1.28.2'
-        status('install', 28)
-        from importlib.metadata import PackageNotFoundError, version as installed_version
-        try:
-            installed = installed_version('sherpa-onnx') == version and installed_version('numpy') == '2.2.6'
-        except PackageNotFoundError:
-            installed = False
-        if not installed:
-            with open('install.log', 'wb') as log:
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
-                                '--only-binary=:all:', '--timeout', '20', '--retries', '2',
-                                f'sherpa-onnx=={version}', 'numpy==2.2.6',
-                                '-f', 'https://k2-fsa.github.io/sherpa/onnx/cuda.html'],
-                               stdout=log, stderr=log, check=True, timeout=600)
-        # Importing torch first loads the CUDA/cuDNN libraries used by this runtime.
+        bundle_source = 'session'
+        if CACHE is not None:
+            from music_drive_bundle import cache_context, runtime_identity, Timings
+            bundle = cache_context(DRIVE_TOKEN, BUNDLE_KEY)
+            vault = CACHE.parent / ('madar_voice_deps_' + sys.implementation.cache_tag + '_' + str(cuda))
+            timings = Timings(BUNDLE_TIMINGS)
+            key = bundle.name('voice-wheels', dict(wheel=version, numpy='2.2.6', base=runtime_identity('torch'))) if bundle else None
+            marker = vault / '.ready'
+            if not marker.is_file() and bundle and bundle.restore(key, vault, status, timings):
+                bundle_source = 'drive'
+            if not marker.is_file() or marker.read_text() != version:
+                status('install', 28)
+                if vault.exists():
+                    shutil.rmtree(vault)
+                with open('install.log', 'wb') as log:
+                    subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
+                                    '--only-binary=:all:', '--timeout', '20', '--retries', '2',
+                                    '--target', str(vault), f'sherpa-onnx=={version}', 'numpy==2.2.6',
+                                    '-f', 'https://k2-fsa.github.io/sherpa/onnx/cuda.html'],
+                                   stdout=log, stderr=log, check=True, timeout=600)
+                marker.write_text(version)
+                bundle_source = ('saved' if bundle.save(key, vault, status, timings) else 'unsaved') if bundle else 'no_drive'
+            sys.path.insert(0, str(vault))
+        else:
+            from importlib.metadata import PackageNotFoundError, version as installed_version
+            try:
+                installed = installed_version('sherpa-onnx') == version and installed_version('numpy') == '2.2.6'
+            except PackageNotFoundError:
+                installed = False
+            if not installed:
+                status('install', 28)
+                with open('install.log', 'wb') as log:
+                    subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
+                                    '--only-binary=:all:', '--timeout', '20', '--retries', '2',
+                                    f'sherpa-onnx=={version}', 'numpy==2.2.6',
+                                    '-f', 'https://k2-fsa.github.io/sherpa/onnx/cuda.html'],
+                                   stdout=log, stderr=log, check=True, timeout=600)
         import sherpa_onnx
         from importlib.metadata import version as installed_version
         if version != installed_version('sherpa-onnx'):
@@ -209,15 +226,8 @@ def prepare():
             raise ValueError('MODEL_CONFIG')
         ENGINE = sherpa_onnx.OfflineSourceSeparation(config)
         verify_gpu_inference()
-        status('ready', 38, extra=dict(cache_source=cache_source, cache_ms=cache_ms))
-
-
-def prepare_bandit(root):
-    global _BANDIT
-    from music_bandit import Separator
-
-    _BANDIT = Separator(root.parent / 'madar_model_cache', DRIVE_TOKEN, status)
-    status('ready', 38, extra=_BANDIT.cache_details())
+        status('ready', 38, extra=dict(cache_source=cache_source, cache_ms=cache_ms,
+            bundle_source=bundle_source, native_cache=NATIVE_CACHE, bundle_timings=timings.values if CACHE is not None else {}))
 
 
 def prepare_avcass(root):
@@ -225,27 +235,24 @@ def prepare_avcass(root):
     from music_avcass import Separator
 
     load_private_cudnn()
-    _AVCASS = Separator(root.parent / 'madar_avcass_cache', DRIVE_TOKEN, status)
+    _AVCASS = Separator(root.parent / 'madar_avcass_cache', DRIVE_TOKEN, status, BUNDLE_KEY)
+    _AVCASS.cache['native_cache'] = NATIVE_CACHE
+    _AVCASS.cache['bundle_timings'].update(BUNDLE_TIMINGS)
     status('ready', 38, extra=_AVCASS.cache)
 
 
-def publish_stem_mix(frames, stride, video=None):
+def publish_stem_mix(frames, stride, video):
     import numpy as np
-    from music_bandit import FINGERPRINT as BANDIT_SHA
-
-    profile, fingerprint = BANDIT_PIPELINE, BANDIT_SHA
-    if video is not None:
-        from music_avcass import FINGERPRINT
-        profile, fingerprint = AVCASS_PIPELINE, FINGERPRINT
+    from music_avcass import FINGERPRINT
 
     recent = []
     with open('input.pcm', 'rb') as stream:
         source = np.memmap(stream, dtype='<i2', mode='r', shape=(frames, 2))
         try:
             manifest = dict(protocol=2, job=Path.cwd().name, frames=frames,
-                            sample_rate=RATE, channels=2, model_sha256=fingerprint,
-                            pipeline=profile, provider='cuda', output_frames=stride)
-            packs = _BANDIT.packs(source, stride) if video is None else _AVCASS.packs(source, stride, video, status)
+                            sample_rate=RATE, channels=2, model_sha256=FINGERPRINT,
+                            pipeline=AVCASS_PIPELINE, provider='cuda', output_frames=stride)
+            packs = _AVCASS.packs(source, stride, video, status)
             for index, (pcm, gpu_ms) in enumerate(packs):
                 if len(pcm) != min(stride, frames-index*stride)*4:
                     raise ValueError('MUSIC_OUTPUT_LENGTH')
@@ -266,74 +273,6 @@ def publish_stem_mix(frames, stride, video=None):
         finally:
             source._mmap.close()
     Path('input.pcm').unlink(missing_ok=True)
-
-
-def prepare_fx():
-    global _FX_CLIENT, _FX_VERIFIED
-    if _FX_VERIFIED:
-        return
-    from music_fx_bridge import Client
-    cache_root = CACHE or Path.cwd()
-    try:
-        from fx_drive_runtime import Timings
-        timings = Timings(FX_PRELAUNCH)
-    except ModuleNotFoundError:
-        from types import SimpleNamespace
-        timings = SimpleNamespace(add=lambda *args: None, values={})
-    _FX_CLIENT = Client(cache_root, status, DRIVE_TOKEN, FX_KEY, timings)
-    sources = []
-    cache_started = time.monotonic()
-    if CACHE is not None:
-        from drive_model_cache import restore_pinned, save_pinned
-        from music_profiles import MODELS
-        for name, sha in MODELS:
-            model = cache_root / 'fx_models' / name
-            origin = restore_pinned(model, sha, 100*1024*1024, DRIVE_TOKEN, status, timings)
-            if not origin:
-                model.unlink(missing_ok=True)
-            sources.append(origin)
-    _FX_CLIENT.prepare()
-    if CACHE is not None:
-        for i, ((name, sha), origin) in enumerate(zip(MODELS, sources)):
-            if not origin:
-                model = cache_root/'fx_models'/name
-                sources[i] = save_pinned(model, sha, 100*1024*1024, DRIVE_TOKEN, status, timings)
-    _FX_VERIFIED = True
-    source = ('download_unsaved' if 'download_unsaved' in sources else
-              'download_saved' if 'download_saved' in sources else 'drive' if 'drive' in sources else 'local')
-    status('ready', 38, extra=dict(cache_source=source, fx_bundle_source=_FX_CLIENT.bundle_source, fx_timings=timings.values, cache_ms=round((time.monotonic()-cache_started)*1000)))
-
-
-def publish_fx(frames):
-    output, gpu_ms = _FX_CLIENT.run(Path.cwd(), frames)
-    pack_at=time.monotonic()
-    stride, recent, count = 16 * RATE, [], 0
-    try:
-        with output.open('rb') as stream:
-            while True:
-                data = stream.read(stride * 4)
-                if not data: break
-                meta = write_pack(f'pack_{count}.pcm', data)
-                meta['index'] = count
-                write_json(f'pack_{count}.json', meta)
-                recent.append(meta); recent = recent[-8:]; count += 1
-                complete = min(frames, count * stride)
-                status('separate', 90 + int(7 * complete / frames), extra=dict(
-                    frames=frames, completed_frames=complete, sample_rate=RATE, channels=2,
-                    model_sha256=FX_SHA, pipeline=FX_PIPELINE, pack_count=count,
-                    output_frames=stride, recent_packs=recent, gpu_ms=gpu_ms))
-        manifest = dict(protocol=2, job=Path.cwd().name, frames=frames, completed_frames=frames,
-            sample_rate=RATE, channels=2, model_sha256=FX_SHA, pipeline=FX_PIPELINE,
-            provider='cuda', pack_count=count, output_frames=stride,
-            recent_packs=recent, gpu_ms=gpu_ms)
-        details=dict(_FX_CLIENT.job_timings)
-        details['FX_OUTPUT_PACK']=[round((time.monotonic()-pack_at)*1000),frames*4]
-        manifest['fx_job_timings']=details
-        write_json('result.json', manifest)
-        status('done', 97, extra=manifest)
-    finally:
-        output.unlink(missing_ok=True)
-        Path('input.pcm').unlink(missing_ok=True)
 
 
 def verify_gpu_inference():
@@ -528,7 +467,7 @@ def run_v2(req):
     import numpy as np
     frames = req.get('frames')
     pipeline = req.get('pipeline', 'voc_ft')
-    if pipeline not in ('voc_ft', FX_PIPELINE, BANDIT_PIPELINE, AVCASS_PIPELINE):
+    if pipeline not in ('voc_ft', AVCASS_PIPELINE):
         raise ValueError('MUSIC_PIPELINE')
     voice = pipeline == 'voc_ft'
     stride = req.get('input_frames', 32 * RATE)
@@ -556,10 +495,6 @@ def run_v2(req):
         if hashlib.sha256(uploaded.read_bytes()).hexdigest() != meta.get('sha256'):
             raise ValueError('MUSIC_AVCASS_VIDEO')
         uploaded.replace(video)
-    elif pipeline == BANDIT_PIPELINE:
-        if _BANDIT is None:
-            raise ValueError('MUSIC_BANDIT_NOT_READY')
-    elif pipeline == FX_PIPELINE: prepare_fx()
     else: prepare()
     if compressed is not None:
         # The phone sent the clip's own compressed audio. When it cannot be read here the job ends without a result
@@ -580,14 +515,12 @@ def run_v2(req):
                 if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
                     raise ValueError('MUSIC_DISK')
                 out.write(read_wire(part, f'input_{i}.pcm', expected))
-    if pipeline == BANDIT_PIPELINE or pipeline == AVCASS_PIPELINE:
+    if pipeline == AVCASS_PIPELINE:
         try:
             return publish_stem_mix(frames, output_stride, video)
         finally:
             if video is not None:
                 video.unlink(missing_ok=True)
-    if pipeline == FX_PIPELINE:
-        return publish_fx(frames)
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
     recent, packed, count = [], bytearray(), 0
     previous_tail = None
@@ -644,7 +577,7 @@ def run_v2(req):
 
 
 def serve(root):
-    global CACHE, _SERVICE_ROOT, _ACTIVE_JOB, _NEXT_BATCH, DRIVE_TOKEN, FX_KEY, FX_PRELAUNCH
+    global CACHE, _SERVICE_ROOT, _ACTIVE_JOB, _NEXT_BATCH, DRIVE_TOKEN, BUNDLE_KEY, BUNDLE_TIMINGS, NATIVE_CACHE
     root = Path(root).resolve()
     CACHE = _SERVICE_ROOT = root
     os.chdir(root)
@@ -652,19 +585,18 @@ def serve(root):
     config = json.loads(config_path.read_text()) if config_path.is_file() else {}
     profile = config.get('pipeline', 'voc_ft')
     if config.get('drive_input') is True:
-        provided = os.environ.pop('MADAR_FX_DRIVE_BOOTSTRAP', '') or sys.stdin.readline(8512).strip()
-        if profile == FX_PIPELINE and provided.startswith('{'):
+        provided = os.environ.pop('MADAR_MUSIC_DRIVE_BOOTSTRAP', '') or sys.stdin.readline(8512).strip()
+        if provided.startswith('{'):
             payload = json.loads(provided)
-            DRIVE_TOKEN, FX_KEY = payload.get('drive',''), payload.get('key','')
-            FX_PRELAUNCH = payload.get('timings', {})
+            DRIVE_TOKEN, BUNDLE_KEY = payload.get('drive',''), payload.get('key','')
+            BUNDLE_TIMINGS = payload.get('timings', {})
+            NATIVE_CACHE = payload.get('native_cache', '')
         else:
             DRIVE_TOKEN = provided
         sys.stdin.close()
         if DRIVE_TOKEN and not re.fullmatch(r'[A-Za-z0-9._~+/\-]{10,8190}={0,2}', DRIVE_TOKEN):
             raise ValueError('MUSIC_DRIVE_AUTH')
     if profile == AVCASS_PIPELINE: prepare_avcass(root)
-    elif profile == BANDIT_PIPELINE: prepare_bandit(root)
-    elif profile == FX_PIPELINE: prepare_fx()
     elif profile == 'voc_ft': prepare()
     else: raise ValueError('MUSIC_PIPELINE')
     with _STATUS_LOCK:

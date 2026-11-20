@@ -13,9 +13,9 @@ def cell(kind, text):
 
 def build(output):
     names = ['music_worker.py','music_launch.py','music_warmup.py','music_bootstrap.py',
-             'music_profiles.py','music_fx_bridge.py','music_fx_engine.py']
+             'drive_model_cache.py','music_drive_bundle.py']
     sources = {name:(ASSETS/name).read_text() for name in names}
-    cells = [cell('markdown', '''# مدار — الفصل الحالي وخيار الحوار والمؤثرات على مرحلتين
+    cells = [cell('markdown', '''# مدار — فصل الصوت البشري
 
 اختر **Runtime → Change runtime type → T4 GPU** ثم شغّل الخلايا بالترتيب.
 هذا دفتر كامل مستقل، يحتوي كود العامل نفسه الذي يرسله تطبيق مدار عبر Jupyter.
@@ -23,15 +23,12 @@ def build(output):
 لا تحتاج Flask أو Ngrok أو Drive، ولا يستبدل هذا الدفتر حسابك أو طريقة استقبال التطبيق.
 
 - `voc_ft`: الفصل السابق كما هو، باستخدام UVR-MDX-NET-Voc_FT.
-- `inst_hq_4_3`: HQ4 ثم HQ3، وفي كل مرحلة يُحتفظ بمخرج Vocals فقط؛ الإعدادات batch=8 وoverlap=0.1.
-- يُجهز الخيار الإضافي في بيئة Python مستقلة ويعيد استخدام النموذجين في الجلسة نفسها.
-- قياس دقيقتين ونصف ونتيجة 99% من تجربة المستخدم، وليسا ضمانًا لكل ملف أو GPU أو شبكة. بعض المؤثرات قد تتأثر.
 - لا تُضاف موسيقى. الفيديو يُنسخ دون إعادة ترميز، والصوت النهائي AAC 192k.
 
 خلايا الرفع وإعادة الدمج أدناه للتجربة المستقلة؛ تطبيق مدار يفك الصوت ويركب النتيجة محليًا بنفس مساره السابق.
 ''')]
     cells.append(cell('code', '''#@title 1. اختيار طريقة الفصل
-PIPELINE = "inst_hq_4_3" #@param ["voc_ft", "inst_hq_4_3"]
+PIPELINE = "voc_ft"
 import json, os, sys, subprocess, time, uuid, hashlib, zlib, wave
 from pathlib import Path
 subprocess.run(["nvidia-smi", "-L"], check=True)
@@ -47,8 +44,7 @@ RESULTS.mkdir()
     (ROOT/name).write_text(source, encoding="utf-8")
 (ROOT/"engine.json").write_text(json.dumps({"pipeline": PIPELINE}))
 sys.path.insert(0, str(ROOT))
-from music_profiles import validate, fingerprint
-validate(PIPELINE)
+from music_worker import MODEL_SHA
 print("كتب الكود الكامل:", ", ".join(SOURCES))
 '''
     cells.append(cell('code', code))
@@ -106,7 +102,7 @@ try:
         if time.monotonic()-started>3600: raise TimeoutError('انتهت مهلة التجربة')
         time.sleep(.5)
     result=json.loads((JOB/'result.json').read_text())
-    assert result['model_sha256']==fingerprint(PIPELINE)
+    assert result['model_sha256']==MODEL_SHA
     assert result.get('pipeline','voc_ft')==PIPELINE
     assert result['provider']=='cuda' and result['completed_frames']==FRAMES
     FINAL_WAV=RESULTS/'final_clean.wav'

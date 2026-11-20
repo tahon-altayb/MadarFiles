@@ -9,7 +9,6 @@ import subprocess
 import sys
 import threading
 import uuid
-import venv
 
 PIN = '9.13.0.50'
 
@@ -47,40 +46,29 @@ def launch(root):
         worker.status('gpu_check', 27)
         config = root / 'engine.json'
         engine = json.loads(config.read_text()) if config.is_file() else {}
-        profile = engine.get('pipeline')
-        if profile == 'bandit_v2_multi':
-            from music_bandit import REVISION
-            worker.status('install', 28)
-            environment = root / 'bandit_env'
-            venv.EnvBuilder(with_pip=False, system_site_packages=True).create(environment)
-            python = str(environment / 'bin/python')
-            subprocess.run([sys.executable, '-m', 'pip', '--python', python, 'install',
-                            '--disable-pip-version-check', '--no-deps', '--timeout', '20', '--retries', '2',
-                            'bandit-infer @ git+https://github.com/openmirlab/bandit-infer.git@' + REVISION],
-                           stdin=subprocess.DEVNULL, check=True, timeout=360)
-            stop.set()
-            thread.join(timeout=3)
-            os.execv(python, [python, str(root/'music_worker.py'), str(root), '--serve'])
         major = cuda_major()
         env = os.environ.copy()
         env['CUDNN_LIB_CONFIG'] = 'FULL'
         env.pop('MADAR_CUDNN_LIB', None)
-        fx_cache, fx_payload = None, {}
-        if profile == 'inst_hq_4_3' and engine.get('drive_input'):
-            from fx_drive_runtime import cache_context, Timings
+        bundle_cache, bundle_payload = None, {}
+        if engine.get('drive_input'):
+            from music_drive_bundle import cache_context, Timings
             line = sys.stdin.readline(8512).strip()
-            fx_payload = json.loads(line) if line.startswith('{') else {'drive':line}
-            fx_cache = cache_context(fx_payload.get('drive'),fx_payload.get('key'))
-            fx_timings = Timings()
+            bundle_payload = json.loads(line) if line.startswith('{') else {'drive':line}
+            bundle_cache = cache_context(bundle_payload.get('drive'),bundle_payload.get('key'))
+            bundle_timings = Timings()
             sys.stdin.close()
+        native_cache = "system"
         if major == 13:
+            native_cache = "session"
             worker.status('gpu_dependencies', 28)
             cache = root.parent/'madar_cudnn_9130050'
             libs = cache/'nvidia/cudnn/lib'
             required = ['libcudnn.so.9', 'libcudnn_engines_precompiled.so.9']
-            key = fx_cache.name('cudnn',{'cuda':major,'version':PIN}) if fx_cache else None
-            if fx_cache and not all((libs/name).is_file() for name in required):
-                fx_cache.restore(key,cache,worker.status,fx_timings,component="CUDNN")
+            key = bundle_cache.name('cudnn',{'cuda':major,'version':PIN}) if bundle_cache else None
+            if bundle_cache and not all((libs/name).is_file() for name in required):
+                if bundle_cache.restore(key,cache,worker.status,bundle_timings,component="CUDNN"):
+                    native_cache = "drive"
             if not all((libs/name).is_file() for name in required):
                 staging = root.parent/('madar_cudnn_stage_'+uuid.uuid4().hex)
                 try:
@@ -91,16 +79,17 @@ def launch(root):
                         raise ValueError('MUSIC_CUDNN_INSTALL')
                     if cache.exists():shutil.rmtree(cache)
                     staging.replace(cache)
-                    if fx_cache:
-                        fx_timings.add('FX_GPU_LIB_INSTALL',started)
-                        fx_cache.save(key,cache,worker.status,fx_timings,component="CUDNN")
+                    if bundle_cache:
+                        bundle_timings.add('MUSIC_GPU_LIB_INSTALL',started)
+                        native_cache = "saved" if bundle_cache.save(key,cache,worker.status,bundle_timings,component="CUDNN") else "unsaved"
                 finally:
                     if staging.exists():shutil.rmtree(staging)
             env['MADAR_CUDNN_LIB'] = str(libs/'libcudnn.so.9')
             env['LD_LIBRARY_PATH'] = str(libs)+os.pathsep+env.get('LD_LIBRARY_PATH', '')
-        if fx_payload:
-            fx_payload['timings']=fx_timings.values
-            env['MADAR_FX_DRIVE_BOOTSTRAP']=json.dumps(fx_payload)
+        if bundle_payload:
+            bundle_payload['timings']=bundle_timings.values
+            bundle_payload['native_cache']=native_cache
+            env['MADAR_MUSIC_DRIVE_BOOTSTRAP']=json.dumps(bundle_payload)
         # No torch import in the launcher. The clean worker imports only
         # after the pinned native library has been preloaded by music_worker.py.
         stop.set();thread.join(timeout=3)
