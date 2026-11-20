@@ -17,6 +17,10 @@ final class MusicCloudJob {
   if(state.optInt("protocol")!=2||!folder.equals(state.optString("job"))||state.optLong("frames",-1)!=frames||state.optInt("sample_rate")!=44100||state.optInt("channels")!=2||state.optInt("output_frames")!=OUTPUT_FRAMES||!MusicPipeline.fingerprint(profile).equals(state.optString("model_sha256"))||!MusicPipeline.checked(profile).equals(state.optString("pipeline",MusicPipeline.LEGACY)))throw new IOException("Colab · MUSIC_RESULT_SCHEMA");
  }
  static ColabMusic.Result run(ColabMusic.Session session,AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
+  return run(session,audio,null,progress,live);
+ }
+ static ColabMusic.Result run(ColabMusic.Session session,AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
+  if(MusicPipeline.AVCASS.equals(session.pipeline)!=(video!=null))throw new IOException("Colab · MUSIC_AVCASS_VIDEO");
   long sourceFrames=audio.pcm.length()/4,frames=Math.round(sourceFrames*44100.0/audio.sampleRate);if(frames<=0)throw new IOException("Colab · MUSIC_DURATION");
   ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean cold=session.batch==0,voice=MusicPipeline.LEGACY.equals(session.pipeline);long began=now();
   int inputFrames=voice?VOICE_INPUT_FRAMES:INPUT_FRAMES;
@@ -36,6 +40,16 @@ final class MusicCloudJob {
    }
    JSONObject request=new JSONObject().put("protocol",2).put("pipeline",session.pipeline).put("frames",frames).put("inputs",inputs);
    if(voice)request.put("input_frames",inputFrames);
+   if(video!=null){
+    ColabProbe.check(session.cancel);
+    long size=video.length();
+    if(size<=0||size>5_000_000)throw new IOException("Colab · MUSIC_AVCASS_VIDEO");
+    byte[] visual=java.nio.file.Files.readAllBytes(video.toPath());
+    progress.update(25,"رفع إطارات المشهد لتحديد المؤثرات");
+    uploadPart(runtime,folder+"/visual.bin",visual,false);
+    request.put("video",new JSONObject().put("bytes",visual.length).put("sha256",ColabMusic.sha(visual)));
+    wireBytes+=visual.length;
+   }
    runtime.put(folder+"/request.json",request.toString(),"text");
    session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,wireBytes,frames);uploaded=true;
   }finally{if(!uploaded)output.delete();}
@@ -86,6 +100,9 @@ final class MusicCloudJob {
    try(OutputStream out=new BufferedOutputStream(new FileOutputStream(output))){
     MusicMailbox.await(runtime,session.root,folder,session.cancel,diagnostic::record,state->{
      String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));
+     String phase=state.optString("avcass_phase");
+     if(phase.equals("dialogue"))progress.update(50,"فصل الكلام والمؤثرات · AV-CASS");
+     else if(phase.equals("drums"))progress.update(70,"طرح مسار الطبول · BS Roformer SW");
      if(state.has("source_failed"))throw new SourceRejected(MusicStartup.workerError(state.optString("source_failed")));
      if(state.has("pack_count")){
       if(total[0]==0){long learned=state.optLong("frames",-1);if(learned<=0||Math.abs(learned-near)>2L*44100)throw new IOException("Colab · MUSIC_SOURCE_LENGTH");total[0]=learned;diagnostic.record("SOURCE_DECODED");}

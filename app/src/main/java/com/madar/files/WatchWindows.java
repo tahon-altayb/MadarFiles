@@ -6,6 +6,7 @@ final class WatchWindows {
  static final int[] CLOUD_SECONDS={40,60,90,150,240,360,540,600};
  final long coreStart,coreEnd,decodeStart,decodeEnd;
  WatchWindows(long next,long end,boolean cloud){this(next,end,cloud?120:52);}
+ static WatchWindows audiovisual(long next,long end,int index){return new WatchWindows(next,end,index==0?8:14);}
  static WatchWindows forWatch(long next,long end,boolean cloud,int index){return new WatchWindows(next,end,cloud?CLOUD_SECONDS[Math.min(Math.max(index,0),CLOUD_SECONDS.length-1)]:52);}
  // Compatibility for old callers/tests; production tracks the ordinal, independent of reserve.
  static WatchWindows forWatch(long next,long end,boolean cloud,boolean first,double reserve){return forWatch(next,end,cloud,first?0:1);}

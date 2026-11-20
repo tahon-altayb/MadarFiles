@@ -64,7 +64,7 @@ final class ColabMusic {
    try{initializeEngine();}catch(Exception error){diagnostic.failed(error);throw error;}finally{storageReady.countDown();}
   }
   private void initializeEngine()throws Exception{
-   if(initialized)return;runtime.allocationEvents=diagnostic::allocation;runtime.authEvents=code->diagnostic.record(code);runtime.transferEvents=code->diagnostic.record(code);diagnostic.record(MusicPipeline.BANDIT.equals(pipeline)?"MUSIC_PROFILE_BANDIT":MusicPipeline.FX.equals(pipeline)?"MUSIC_PROFILE_FX":"MUSIC_PROFILE_LEGACY");diagnostic.record("RUNTIME_CREATE");long allocationAt=MusicCloudJob.now();runtime.create((p,m)->status.update(p,m),true);
+   if(initialized)return;runtime.allocationEvents=diagnostic::allocation;runtime.authEvents=code->diagnostic.record(code);runtime.transferEvents=code->diagnostic.record(code);diagnostic.record(MusicPipeline.AVCASS.equals(pipeline)?"MUSIC_PROFILE_AVCASS":MusicPipeline.BANDIT.equals(pipeline)?"MUSIC_PROFILE_BANDIT":MusicPipeline.FX.equals(pipeline)?"MUSIC_PROFILE_FX":"MUSIC_PROFILE_LEGACY");diagnostic.record("RUNTIME_CREATE");long allocationAt=MusicCloudJob.now();runtime.create((p,m)->status.update(p,m),true);
    boolean fx=MusicPipeline.FX.equals(pipeline);
    if(fx)diagnostic.measure("FX_GPU_REQUEST",MusicCloudJob.now()-allocationAt,0,0);
    long kernelAt=MusicCloudJob.now();
@@ -74,6 +74,9 @@ final class ColabMusic {
    status.update(14,"تجهيز ملفات محرك الفصل على جلسة GPU");
    runtime.jupyter("PUT","api/contents/"+root,new JSONObject().put("type","directory"),1024*1024);runtime.put(root+"/music_worker.py",asset(context,"music_worker.py"),"text");runtime.put(root+"/music_launch.py",asset(context,"music_launch.py"),"text");
    for(String script:new String[]{"music_profiles.py","music_fx_bridge.py","music_fx_engine.py","drive_model_cache.py","music_bandit.py","fx_drive_runtime.py"})runtime.put(root+"/"+script,asset(context,script),"text");
+   if(MusicPipeline.AVCASS.equals(pipeline)){
+    for(String script:new String[]{"music_avcass.py","music_avcass_setup.py"})runtime.put(root+"/"+script,asset(context,script),"text");
+   }
    runtime.put(root+"/engine.json",new JSONObject().put("pipeline",pipeline).put("drive_input",true).toString(),"text");
    diagnostic.record("JUPYTER_READY");status.update(15,"بدء نواة Python للفصل");diagnostic.record("KERNEL_CREATE");
    String id=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",root),1024*1024).getString("id");if(!id.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("معرف نواة Colab غير صالح");kernel=id;
@@ -107,7 +110,10 @@ final class ColabMusic {
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
   Result run(AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
-   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,progress,live);healthy=true;return result;}
+   return run(audio,null,progress,live);
+  }
+  Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
+   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,video,progress,live);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
   String visionStoragePrefix(){return "MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n";}

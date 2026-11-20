@@ -16,7 +16,7 @@ import java.util.*;
 @androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 public class PlayerActivity extends Activity {
  private long cleanStatusUntil;private boolean cleanStatusActive;private final Runnable hideCleanStatus=this::updateCleanStatusVisibility;private boolean screenResumed,miniPending;private long miniDeadline;private final String screenOwner=java.util.UUID.randomUUID().toString();private PictureInPictureParams miniParams;private String miniKey="";private Boolean controlsWanted;private PlaybackSession playback;private ExoPlayer observedPlayer;private Player.Listener activityListener;private final PlaybackSession.Observer playbackObserver=this::syncPlayback;
- private PlayerInput input,sourceInput;private MediaResolver mediaResolver;private boolean resolutionTried,sourceError;private String audioDecoder="";private WatchMusicService.Job watchJob;private LiveSeparation.Session cleanSession;private boolean legacyClean;private CleanAudioController clean;private boolean cleanRequested;private TextView cleanStatus;private Button musicButton,censorButton;private TextView censorShield;private long pendingCensorPosition;private boolean pendingCensorComplete,pendingCensorWanted,censorPending;private float volume=1;private long pendingWatchPosition;private boolean pendingWatchComplete;
+ private PlayerInput input,sourceInput;private MediaResolver mediaResolver;private boolean resolutionTried,sourceError;private String audioDecoder="";private WatchMusicService.Job watchJob;private LiveSeparation.Session cleanSession;private boolean legacyClean;private CleanAudioController clean;private boolean cleanRequested;private TextView cleanStatus;private Button musicButton,censorButton;private TextView censorShield;private long pendingCensorPosition;private boolean pendingCensorComplete,pendingCensorWanted,censorPending;private float volume=1;private long pendingWatchPosition;private boolean pendingWatchComplete,pendingWatchCloud,pendingWatchProgressive;private String pendingWatchProfile=MusicPipeline.LEGACY;
  private String lastPlaybackError="لا توجد أخطاء تشغيل مسجلة";private boolean controlsVisible=true;private int displayMode=0;private final Runnable hideControls=()->showControls(false);private boolean firstFrameSeen;private android.media.audiofx.Equalizer equalizer;private ExoPlayer player;private PlayerView view;private File file,subtitle;private String key;private long loopA=-1,loopB=-1;private final Handler timer=new Handler(Looper.getMainLooper());private TextView status;private float speed=1,pitch=1;private boolean locked;private LinearLayout toolbar;private FrameLayout stage;private View cover;private long position;private boolean resume=true;
  @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().setStatusBarColor(Color.rgb(24,34,34));getWindow().setNavigationBarColor(Color.rgb(24,34,34));getWindow().getDecorView().setSystemUiVisibility(0);try{
   input=sourceInput=PlayerInput.read(this,getIntent());file=input.file;key=input.key;position=getSharedPreferences("player",0).getLong(key,0);if(state!=null){censorPending=state.getBoolean("censorPending",false);pendingCensorPosition=state.getLong("censorPosition",position);pendingCensorComplete=state.getBoolean("censorComplete",false);pendingCensorWanted=state.getBoolean("censorWanted",false);}
@@ -91,13 +91,34 @@ public class PlayerActivity extends Activity {
   censorShield.setVisibility(View.VISIBLE);view.setPlayer(null);playback.useCensor(job);censorPending=false;playback.setWanted(pendingCensorWanted);view.setPlayer(playback.controls);revealCleanStatus();syncPlayback();
  }catch(Exception error){censorPending=false;view.setPlayer(playback.controls);syncPlayback();new AlertDialog.Builder(this).setTitle("تعذر بدء الحجب").setMessage(error.getMessage()).setPositiveButton("حسنًا",null).show();}}
  private void music(){
-  if(!cleanRequested&&getSharedPreferences("player",0).getBoolean("watch_cloud",false)&&playback.censorRequested&&(WatchCensorService.active||WatchCensorService.starting)){toast("انتظر اكتمال تحليل الحجب الحالي؛ يمكن تشغيل الصوت المفصول مسبقًا معه");return;}
   if(cleanRequested){new AlertDialog.Builder(this).setTitle("الصوت أثناء المشاهدة").setItems(new String[]{"الإبقاء على الصوت المنظّف","تشغيل الصوت الأصلي","إيقاف الفصل وتشغيل الصوت الأصلي"},(d,n)->{if(n==2){if(watchJob!=null&&!watchJob.clean.done)startService(new Intent(this,WatchMusicService.class).setAction("cancel").putExtra("job",watchJob.id));else if(legacyClean&&VideoExportService.active)startService(new Intent(this,VideoExportService.class).setAction("cancel"));}if(n>0)originalAudio();}).show();return;}
-  if(legacyClean&&cleanSession!=null&&!cleanSession.failed){position=player.getCurrentPosition();resume=player.getPlayWhenReady();cleanRequested=true;attachWatch();return;}
-  WatchMusicService.Job existing=WatchMusicService.current;if(existing!=null&&existing.identity.equals(input.identity)&&existing.usable()){watchJob=existing;cleanSession=existing.clean;position=player.getCurrentPosition();resume=player.getPlayWhenReady();cleanRequested=true;attachWatch();return;}
+  boolean cloud=getSharedPreferences("player",0).getBoolean("watch_cloud",false);
+  String saved=getSharedPreferences("player",0).getString("watch_pipeline",MusicPipeline.LEGACY);
+  boolean advanced=cloud&&!MusicPipeline.LEGACY.equals(saved)&&!MusicPipeline.AVCASS.equals(saved);
+  String[] choices=advanced?new String[]{"الصوت البشري","الصوت البشري مع المحيط · تجريبي (Colab)","طريقة الفصل المحفوظة"}
+    :new String[]{"الصوت البشري","الصوت البشري مع المحيط · تجريبي (Colab)"};
+  new AlertDialog.Builder(this).setTitle("إزالة الموسيقى أثناء المشاهدة").setItems(choices,(dialog,choice)->{
+   if(choice==1){
+    new AlertDialog.Builder(this).setTitle("الصوت البشري مع المحيط")
+     .setMessage("يعالج مدار الصوت وأجزاء قصيرة من الصورة على Colab لتحديد المؤثرات. تبدأ المشاهدة بعد تجهيز الدفعة الأولى.")
+     .setPositiveButton("ابدأ الفصل",(d,n)->watchSelected(true,MusicPipeline.AVCASS,true)).setNegativeButton("رجوع",null).show();
+   }else watchSelected(cloud,choice==2?saved:MusicPipeline.LEGACY,true);
+  }).setNegativeButton("إلغاء",null).show();
+ }
+ private void watchSelected(boolean cloud,String profile,boolean progressive){
+  if(cloud&&playback.censorRequested&&(WatchCensorService.active||WatchCensorService.starting)){toast("انتظر اكتمال تحليل الحجب الحالي؛ يمكن تشغيل الصوت المفصول مسبقًا معه");return;}
+  if(MusicPipeline.AVCASS.equals(profile)&&(player.getVideoSize().width<=0||player.getVideoSize().height<=0)){toast("انتظر تحميل صورة الفيديو أولًا");return;}
+  if(MusicPipeline.LEGACY.equals(profile)&&legacyClean&&cleanSession!=null&&!cleanSession.failed){position=player.getCurrentPosition();resume=player.getPlayWhenReady();cleanRequested=true;attachWatch();return;}
+  WatchMusicService.Job existing=WatchMusicService.current;
+  if(existing!=null&&existing.identity.equals(input.identity)&&existing.cloud==cloud&&existing.pipeline.equals(profile)&&existing.usable()){
+   watchJob=existing;cleanSession=existing.clean;position=player.getCurrentPosition();resume=player.getPlayWhenReady();cleanRequested=true;attachWatch();return;
+  }
   if(WatchMusicService.busy()){toast("انتظر اكتمال المعالجة الحالية أو أوقفها من الإشعار");return;}
   long duration=player.getDuration();if(duration<=0||duration==C.TIME_UNSET){toast("انتظر تحميل المقطع أولًا");return;}
-  chooseWatchStart(Math.max(0,Math.min(player.getCurrentPosition(),duration-100)));
+  pendingWatchCloud=cloud;pendingWatchProfile=profile;pendingWatchProgressive=progressive;
+  long selected=Math.max(0,Math.min(player.getCurrentPosition(),duration-100));
+  if(progressive)prepareWatch(WatchPlan.needsStartChoice(selected)?0:selected,false);
+  else chooseWatchStart(selected);
  }
  private AlertDialog chooseWatchStart(long selected){
   if(WatchPlan.needsStartChoice(selected)){
@@ -109,13 +130,14 @@ public class PlayerActivity extends Activity {
  }
  private void prepareWatch(long selected,boolean complete){
   position=pendingWatchPosition=selected;pendingWatchComplete=complete;resume=playback.wanted();cleanRequested=true;playback.waitForClean();showCleanStatus(complete?"فصل المقطع كاملًا قبل المتابعة":"تجهيز الصوت من البداية حتى "+stamp(position)+" واحتياطي للمتابعة",true);musicButton.setText("الصوت المنظّف");
-  boolean cloud=getSharedPreferences("player",0).getBoolean("watch_cloud",false);
-  String profile=getSharedPreferences("player",0).getString("watch_pipeline",MusicPipeline.LEGACY);
-  if(cloud&&!MusicGpuSession.hasAccess(this,profile)){startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("musicOnly",true).putExtra("bandit",MusicPipeline.BANDIT.equals(profile)),7204);return;}beginWatch();
+  String profile=pendingWatchProfile;
+  if(pendingWatchCloud&&!MusicGpuSession.hasAccess(this,profile)){startActivityForResult(new Intent(this,ColabActivity.class).putExtra("authorizeSpeech",true).putExtra("autoStart",true).putExtra("musicOnly",true).putExtra("bandit",MusicPipeline.BANDIT.equals(profile)),7204);return;}beginWatch();
  }
  private void beginWatch(){try{
   if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},84);
-  if(legacyClean&&cleanSession!=null)LiveSeparation.leave(cleanSession);legacyClean=false;watchJob=WatchMusicService.start(this,input.uri,input.file,input.identity,input.title,input.headers,input.mime,pendingWatchPosition,player.getDuration(),getSharedPreferences("player",0).getBoolean("watch_cloud",false),input.http,pendingWatchComplete);cleanSession=watchJob.clean;position=pendingWatchPosition;attachWatch();
+  androidx.media3.common.VideoSize size=player.getVideoSize();
+  if(legacyClean&&cleanSession!=null)LiveSeparation.leave(cleanSession);legacyClean=false;
+  watchJob=WatchMusicService.start(this,input.uri,input.file,input.identity,input.title,input.headers,input.mime,pendingWatchPosition,player.getDuration(),pendingWatchCloud,input.http,pendingWatchComplete,pendingWatchProfile,size.width,size.height,pendingWatchProgressive);cleanSession=watchJob.clean;position=pendingWatchPosition;attachWatch();
  }catch(Exception error){watchError(error.getMessage());}}
  private void attachWatch(){try{if(equalizer!=null){equalizer.release();equalizer=null;}playback.useClean(cleanSession,watchJob,legacyClean,position,resume);view.setPlayer(playback.controls);syncPlayback();}catch(Exception error){watchError(error.getMessage());}}
  private void cleanSettings(){if(playback!=null)playback.settings(speed,pitch,volume);}

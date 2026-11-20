@@ -9,11 +9,12 @@ final class MusicGpuSession {
  private static volatile ColabMusic.Session idle,active,retiring;private static volatile boolean busy;private static volatile long idleAt,generation;
  static boolean available(Context c){ColabMusic.Session s=idle;return !busy()&&s!=null&&s.runtime.grant.project.equals(c.getSharedPreferences("colab_connection",0).getString("project","madarfiles"))&&remainingIdle()>0;}
  static boolean hasAccess(Context c,String profile){
-  if(MusicPipeline.FX.equals(profile)){
+  if(MusicPipeline.FX.equals(profile)||MusicPipeline.AVCASS.equals(profile)){
    ColabMusic.Session session=idle;
-   return ColabCredentials.readyForMusic(profile)||(session!=null&&MusicPipeline.FX.equals(session.pipeline)&&available(c));
+   return ColabCredentials.readyForMusic(profile)||(session!=null&&profile.equals(session.pipeline)&&available(c));
   }
-  return ColabCredentials.readyForMusic(profile)||(!MusicPipeline.BANDIT.equals(profile)&&available(c));
+  ColabMusic.Session session=idle;
+  return ColabCredentials.readyForMusic(profile)||(!MusicPipeline.BANDIT.equals(profile)&&session!=null&&!MusicPipeline.AVCASS.equals(session.pipeline)&&available(c));
  }
  static boolean busy(){return busy||retiring!=null;}
  static boolean closing(){return retiring!=null;}
@@ -46,7 +47,7 @@ final class MusicGpuSession {
   synchronized(MusicGpuSession.class){
    if(busy())throw new IOException(closing()?"جارٍ إيقاف جلسة GPU السابقة بأمان؛ تابع حالتها من إشعار مدار":"توجد عملية GPU أخرى؛ أوقفها أو انتظر اكتمالها");
    s=idle;
-   if(MusicPipeline.BANDIT.equals(profile)||(MusicPipeline.FX.equals(profile)&&s!=null&&!MusicPipeline.FX.equals(s.pipeline))){
+   if(MusicPipeline.BANDIT.equals(profile)||(s!=null&&!profile.equals(s.pipeline)&&(MusicPipeline.FX.equals(profile)||MusicPipeline.AVCASS.equals(profile)||MusicPipeline.AVCASS.equals(s.pipeline)))){
     if(s!=null&&grant!=null&&!s.runtime.grant.project.equals(grant.project))throw new IOException("أغلق جلسة حساب Colab السابقة قبل تبديل الحساب");
     if(s!=null){previous=s;idle=null;retireLocked(s);}
    }

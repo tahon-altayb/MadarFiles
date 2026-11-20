@@ -1,8 +1,8 @@
 name: Live separation stability and signed update
 on:
   push:
-    branches: [fixes/live-separation-20261118]
-    paths: ['app/**', '.github/workflows/live-separation.yml']
+    branches: [fixes/live-separation-20261118, features/live-avcass-roformer-20261120]
+    paths: ['app/**', 'qa/colab-avcass-live.test.py', '.github/workflows/live-separation.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
         run: |
           python3 -m pip install requests==2.32.5 numpy==2.2.6 scipy==1.15.3
           python3 qa/bandit-drive.test.py
+          python3 qa/colab-avcass-live.test.py
       - name: Compile and unit tests
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug
       - name: Prepare playback fixture
@@ -181,9 +182,17 @@ jobs:
         run: gradle --no-daemon :app:assembleRelease :app:lintRelease
       - name: Verify original update certificate and version
         run: |
-          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code 115 --version-name 1.9.80 --firebase-config app/google-services.json
-          cp app/build/outputs/apk/release/app-release.apk MadarFiles-1.9.80.apk
+          if [ "${GITHUB_REF_NAME}" = "features/live-avcass-roformer-20261120" ]; then
+            version=1.9.81
+            code=116
+          else
+            version=1.9.80
+            code=115
+          fi
+          python3 scripts/verify_release.py app/build/outputs/apk/release/app-release.apk --version-code "$code" --version-name "$version" --firebase-config app/google-services.json
+          cp app/build/outputs/apk/release/app-release.apk "MadarFiles-$version.apk"
+          echo "apk=MadarFiles-$version" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
-          name: MadarFiles-1.9.80-APK
-          path: MadarFiles-1.9.80.apk
+          name: ${{ env.apk }}-APK
+          path: ${{ env.apk }}.apk

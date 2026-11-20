@@ -2,9 +2,10 @@ package com.madar.files;
 
 /** A measured production budget, in media seconds. No device/server speed is assumed. */
 final class WatchBuffer {
- private final double duration;private final boolean waitForCycle;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;private double plannedGap;
+ private final double duration;private final boolean waitForCycle,progressive;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;private double plannedGap;
  WatchBuffer(double duration){this(duration,false);}
- WatchBuffer(double duration,boolean waitForCycle){this.duration=Math.max(0,duration);this.waitForCycle=waitForCycle;}
+ WatchBuffer(double duration,boolean waitForCycle){this(duration,waitForCycle,false);}
+ WatchBuffer(double duration,boolean waitForCycle,boolean progressive){this.duration=Math.max(0,duration);this.waitForCycle=waitForCycle;this.progressive=progressive;}
  synchronized void planGap(double seconds){plannedGap=Double.isFinite(seconds)?Math.max(0,seconds):0;}
  synchronized void completeCycle(double seconds,double elapsed){if(seconds>0&&elapsed>0)cycleRatio=cycleRatio==0?elapsed/seconds:.6*cycleRatio+.4*elapsed/seconds;}
  synchronized void commit(double ready,long now){
@@ -26,10 +27,13 @@ final class WatchBuffer {
  }
  synchronized double required(double played,double playbackSpeed,long now){
   double remaining=Math.max(0,duration-played),rate=speed(now),s=Math.max(.25,playbackSpeed);
-  // Before speed is measured, collect a bounded startup sample. Once measured,
-  // cover the predicted production deficit: a 30 s cap guaranteed repeated
-  // starvation whenever decode + upload + separation was slower than playback.
   double limit=remaining;
+  if(progressive){
+   // Start with a usable prefix and replenish at a bounded target if GPU or upload is slower.
+   double target=rate==0?6*s:Math.max(6*s,Math.min(18*s,gap*s));
+   return Math.min(limit,target);
+  }
+  // For the legacy policy, budget the total predicted production deficit.
   if(rate==0)return Math.min(limit,30*s);
   double safety=Math.max(Math.max(20*s,Math.min(120,gap*1.5)*s),plannedGap*1.25*s);
   return Math.min(limit,Math.max(safety,remaining*(1-rate/s)+safety));

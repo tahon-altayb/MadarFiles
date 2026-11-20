@@ -13,6 +13,8 @@ import zlib
 import threading
 
 BANDIT_PIPELINE = "bandit_v2_multi"
+AVCASS_PIPELINE = "avcass_roformer_sw"
+_AVCASS = None
 
 _STATUS_LOCK = threading.RLock()
 _STATUS_PATH = None
@@ -81,7 +83,7 @@ def status(stage, progress, parts=None, frames=None, packs=None, extra=None):
 def service_state():
     if _SERVICE_ROOT is not None:
         value = dict(protocol=2, heartbeat=_HEARTBEAT, next_batch=_NEXT_BATCH,
-                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED or _FX_VERIFIED or _BANDIT is not None else 'bootstrap',
+                     stage='failed' if _SERVICE_ERROR else 'busy' if _ACTIVE_JOB else 'ready' if GPU_VERIFIED or _FX_VERIFIED or _BANDIT is not None or _AVCASS is not None else 'bootstrap',
                      active_job=_ACTIVE_JOB)
         if _SERVICE_ERROR:
             value['error'] = _SERVICE_ERROR
@@ -218,18 +220,33 @@ def prepare_bandit(root):
     status('ready', 38, extra=_BANDIT.cache_details())
 
 
-def publish_bandit(frames, stride):
+def prepare_avcass(root):
+    global _AVCASS
+    from music_avcass import Separator
+
+    load_private_cudnn()
+    _AVCASS = Separator(root.parent / 'madar_avcass_cache', DRIVE_TOKEN, status)
+    status('ready', 38, extra=_AVCASS.cache)
+
+
+def publish_stem_mix(frames, stride, video=None):
     import numpy as np
     from music_bandit import FINGERPRINT as BANDIT_SHA
+
+    profile, fingerprint = BANDIT_PIPELINE, BANDIT_SHA
+    if video is not None:
+        from music_avcass import FINGERPRINT
+        profile, fingerprint = AVCASS_PIPELINE, FINGERPRINT
 
     recent = []
     with open('input.pcm', 'rb') as stream:
         source = np.memmap(stream, dtype='<i2', mode='r', shape=(frames, 2))
         try:
             manifest = dict(protocol=2, job=Path.cwd().name, frames=frames,
-                            sample_rate=RATE, channels=2, model_sha256=BANDIT_SHA,
-                            pipeline=BANDIT_PIPELINE, provider='cuda', output_frames=stride)
-            for index, (pcm, gpu_ms) in enumerate(_BANDIT.packs(source, stride)):
+                            sample_rate=RATE, channels=2, model_sha256=fingerprint,
+                            pipeline=profile, provider='cuda', output_frames=stride)
+            packs = _BANDIT.packs(source, stride) if video is None else _AVCASS.packs(source, stride, video, status)
+            for index, (pcm, gpu_ms) in enumerate(packs):
                 if len(pcm) != min(stride, frames-index*stride)*4:
                     raise ValueError('MUSIC_OUTPUT_LENGTH')
                 if shutil.disk_usage('.').free < len(pcm)*3 + 16*1024*1024:
@@ -511,7 +528,7 @@ def run_v2(req):
     import numpy as np
     frames = req.get('frames')
     pipeline = req.get('pipeline', 'voc_ft')
-    if pipeline not in ('voc_ft', FX_PIPELINE, BANDIT_PIPELINE):
+    if pipeline not in ('voc_ft', FX_PIPELINE, BANDIT_PIPELINE, AVCASS_PIPELINE):
         raise ValueError('MUSIC_PIPELINE')
     voice = pipeline == 'voc_ft'
     stride = req.get('input_frames', 32 * RATE)
@@ -525,7 +542,21 @@ def run_v2(req):
             raise ValueError('MUSIC_DURATION')
         if not isinstance(inputs, list) or len(inputs) != (frames + stride - 1) // stride:
             raise ValueError('MUSIC_MANIFEST')
-    if pipeline == BANDIT_PIPELINE:
+    video = None
+    if pipeline == AVCASS_PIPELINE:
+        if _AVCASS is None or compressed is not None or type(frames) is not int or frames > 25 * RATE:
+            raise ValueError('MUSIC_AVCASS_REQUEST')
+        meta = req.get('video')
+        if not isinstance(meta, dict) or type(meta.get('bytes')) is not int or not 0 < meta['bytes'] <= 5_000_000:
+            raise ValueError('MUSIC_AVCASS_VIDEO')
+        video = Path('visual.mp4')
+        uploaded = Path('visual.bin')
+        if not uploaded.is_file() or uploaded.stat().st_size != meta['bytes']:
+            raise ValueError('MUSIC_AVCASS_VIDEO')
+        if hashlib.sha256(uploaded.read_bytes()).hexdigest() != meta.get('sha256'):
+            raise ValueError('MUSIC_AVCASS_VIDEO')
+        uploaded.replace(video)
+    elif pipeline == BANDIT_PIPELINE:
         if _BANDIT is None:
             raise ValueError('MUSIC_BANDIT_NOT_READY')
     elif pipeline == FX_PIPELINE: prepare_fx()
@@ -549,8 +580,12 @@ def run_v2(req):
                 if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
                     raise ValueError('MUSIC_DISK')
                 out.write(read_wire(part, f'input_{i}.pcm', expected))
-    if pipeline == BANDIT_PIPELINE:
-        return publish_bandit(frames, output_stride)
+    if pipeline == BANDIT_PIPELINE or pipeline == AVCASS_PIPELINE:
+        try:
+            return publish_stem_mix(frames, output_stride, video)
+        finally:
+            if video is not None:
+                video.unlink(missing_ok=True)
     if pipeline == FX_PIPELINE:
         return publish_fx(frames)
     source = np.memmap('input.pcm', dtype='<i2', mode='r', shape=(frames, 2))
@@ -627,7 +662,8 @@ def serve(root):
         sys.stdin.close()
         if DRIVE_TOKEN and not re.fullmatch(r'[A-Za-z0-9._~+/\-]{10,8190}={0,2}', DRIVE_TOKEN):
             raise ValueError('MUSIC_DRIVE_AUTH')
-    if profile == BANDIT_PIPELINE: prepare_bandit(root)
+    if profile == AVCASS_PIPELINE: prepare_avcass(root)
+    elif profile == BANDIT_PIPELINE: prepare_bandit(root)
     elif profile == FX_PIPELINE: prepare_fx()
     elif profile == 'voc_ft': prepare()
     else: raise ValueError('MUSIC_PIPELINE')

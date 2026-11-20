@@ -324,7 +324,7 @@ class AudioTest(unittest.TestCase):
                 os.chdir(work)
                 Path('input.pcm').write_bytes(pcm)
                 with patch.object(music_worker, '_BANDIT', Fake()), patch.object(music_worker, '_PROTOCOL', 2):
-                    music_worker.publish_bandit(frames, stride)
+                    music_worker.publish_stem_mix(frames, stride)
                 report = json.loads(Path('result.json').read_text())
                 self.assertEqual(report['frames'], frames)
                 self.assertEqual(report['completed_frames'], frames)
