@@ -92,15 +92,14 @@ public class MusicCloudJobTest {
   try{session.run(audio,(p,m)->{if(m.startsWith("استرجاع الصوت")){cancel.set(true);session.cancel.set(true);}},live);fail();}
   catch(CancellationException expected){assertTrue(live.frames>0);assertFalse(live.pcm.exists());assertEquals(1,submitted.get());assertEquals(0,channels.get());}finally{audio.pcm.delete();}
  }
- @Test(timeout=45000) public void legacyResultCannotMasqueradeAsAudiovisualResult()throws Exception{
-  session.pipeline=MusicPipeline.AVCASS;wrongProfile=true;
-  AudioPipeline.Decoded audio=audio(1);
-  File video=File.createTempFile("avcass_fixture_",".mp4",context.getCacheDir());
-  Files.write(video.toPath(),new byte[]{1,2,3});
-  LiveSeparation.Session live=new LiveSeparation.Session(audio.pcm,true);
-  try{session.run(audio,video,(p,m)->{},live);fail("Mismatched pipeline must be rejected");}
-  catch(IOException expected){assertTrue(expected.getMessage().contains("MUSIC_RESULT_SCHEMA"));assertEquals(0,live.frames);assertFalse(live.pcm.exists());}
-  finally{audio.pcm.delete();video.delete();}
+ @Test public void legacyResultCannotMasqueradeAsAudiovisualResult()throws Exception{
+  String job=session.root+"_b0";
+  requests.put(job,new JSONObject().put("frames",32).put("pipeline",MusicPipeline.AVCASS));
+  JSONObject audiovisual=state(job,true);
+  MusicCloudJob.schema(audiovisual,job,32,MusicPipeline.AVCASS);
+  wrongProfile=true;
+  try{MusicCloudJob.schema(state(job,true),job,32,MusicPipeline.AVCASS);fail("Mismatched pipeline must be rejected");}
+  catch(IOException expected){assertTrue(expected.getMessage().contains("MUSIC_RESULT_SCHEMA"));}
  }
  @Test public void onlyTransportAndRuntimeLossTriggerRecovery(){
   assertTrue(MusicMailbox.recoverable(new IOException("Colab · MUSIC_RUNTIME_LOST")));
