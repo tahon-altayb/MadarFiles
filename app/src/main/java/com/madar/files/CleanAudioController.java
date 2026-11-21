@@ -14,7 +14,7 @@ final class CleanAudioController implements AutoCloseable {
  private final Context context;private final AudioManager manager;private final AudioFocusRequest focus;private boolean focused,hasFocusRequest;private final ExoPlayer video;private final LiveSeparation.Session session;private final Status status;
  private final Handler main=new Handler(Looper.getMainLooper());private final HandlerThread feederThread=new HandlerThread("madar-clean-audio",android.os.Process.THREAD_PRIORITY_AUDIO);private final Handler feeder;
  private final TrackSelectionParameters originalTracks;private final AudioTrack audio;private final AudioContentClock outputClock=new AudioContentClock();private long observedHead=-1,headChangedAt,guardAt=-1;private int guardWritten;private final Object audioLock=new Object();private RandomAccessFile input;private long cursor,baseFrame,pausedLimit;private volatile boolean closed;private boolean wanted,adjusting,rebuffered,reserveApproved;private volatile boolean playing,feedAllowed;private float volume=1,speed=1,pitch=1;private volatile String failure="";private long lastUi,lastSync,driftSince,refillAfter;
- private boolean seeking;private final java.util.ArrayDeque<Boolean> ownPlayChanges=new java.util.ArrayDeque<>();private final java.util.ArrayDeque<Long> ownSeeks=new java.util.ArrayDeque<>();
+ private boolean seeking,startedPlayback;private final java.util.ArrayDeque<Boolean> ownPlayChanges=new java.util.ArrayDeque<>();private final java.util.ArrayDeque<Long> ownSeeks=new java.util.ArrayDeque<>();
  // Diagnostics used by the native continuity regression tests (no source audio is recorded).
  int resetCount,syncSeekCount,bufferPauseCount;private long lastPlayed;
  private java.util.function.BooleanSupplier playbackGate=()->true;
@@ -78,16 +78,18 @@ final class CleanAudioController implements AutoCloseable {
   boolean gate=playbackGate.getAsBoolean();if(playing&&(!gate||video.getPlaybackState()==Player.STATE_BUFFERING||video.getPlaybackSuppressionReason()!=Player.PLAYBACK_SUPPRESSION_REASON_NONE)){bufferPauseCount++;pause();}
   long queued;synchronized(audioLock){queued=cursor-frames;}
   double reserve=session.waitForComplete?Double.POSITIVE_INFINITY:session.buffer==null?(rebuffered?8:3)*Math.max(1,speed):session.buffer.required(frames/44100.0,speed,now);
+  if(!startedPlayback&&!session.waitForComplete&&session.buffer!=null)
+   reserve=session.buffer.startupRequired(frames/44100.0,speed,now);
   // A transport seek needs only a short prefix at the requested position. It
   // must not re-impose the full adaptive startup budget or rewind the viewer.
-  if(seeking&&!session.waitForComplete)reserve=WatchBuffer.seekRequired(video.getDuration()==C.TIME_UNSET?Double.POSITIVE_INFINITY:Math.max(0,(video.getDuration()/1000.0)-played),speed);
+  if(seeking&&startedPlayback&&!session.waitForComplete)reserve=WatchBuffer.seekRequired(video.getDuration()==C.TIME_UNSET?Double.POSITIVE_INFINITY:Math.max(0,(video.getDuration()/1000.0)-played),speed);
   // A transport/manual pause retains the reserve already approved for queued PCM.
   // Only actual PCM exhaustion or a user seek requires a fresh reserve.
   if(gate&&wanted&&focused&&!playing&&video.getPlaybackState()==Player.STATE_READY&&ready>played&&now>=refillAfter&&((ready-played>=reserve)||session.done||(!session.waitForComplete&&reserveApproved&&queued>0))){
    // Only arm prefill when resuming is intended; never submit a tiny refill
    // into the final hardware quantum of a paused/starved AudioTrack.
    feedAllowed=true;
-   if(queued>0&&(queued>=Math.min(8820,session.availableEnd(frames)-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-outputClock.contentAt(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;reserveApproved=true;seeking=false;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
+   if(queued>0&&(queued>=Math.min(8820,session.availableEnd(frames)-frames)||session.done)){adjusting=true;try{if(Math.abs(video.getCurrentPosition()/1000.0-played)>.25)seekVideo(Math.round(played*1000));setVideoPlaying(true);synchronized(audioLock){audio.setPlaybackParams(new PlaybackParams().setSpeed(speed).setPitch(pitch));long at=playedLocked();baseFrame=at-outputClock.contentAt(audio.getPlaybackHeadPosition()&0xffffffffL);audio.play();playing=true;startedPlayback=true;reserveApproved=true;seeking=false;}lastSync=now;driftSince=0;}finally{adjusting=false;}}
   }
   if(playing){
    if(frames>=session.availableEnd(frames)){reserveApproved=false;pause();rebuffered=true;session.requestedFrame=frames;if(session.done&&frames>=session.frames)wanted=false;}
@@ -101,7 +103,7 @@ final class CleanAudioController implements AutoCloseable {
     else driftSince=0;
    }
   }
-  String text=!failure.isEmpty()?failure:session.failed?session.error:session.done?"الصوت المنظّف · اكتمل الفصل":"الصوت المنظّف · جاهز إلى "+stamp(Math.round(ready*1000))+(session.waitForComplete?" · انتظار اكتمال الفصل قبل المشاهدة":session.buffer!=null?" · "+session.buffer.describe(frames/44100.0,session.availableEnd(frames)/44100.0,speed,now):wanted&&!playing?" · تجهيز مخزون للمشاهدة المستقرة":"");
+  String text=!failure.isEmpty()?failure:session.failed?session.error:session.done?"الصوت المنظّف · اكتمل الفصل":"الصوت المنظّف · جاهز إلى "+stamp(Math.round(ready*1000))+(session.waitForComplete?" · انتظار اكتمال الفصل قبل المشاهدة":session.buffer!=null?" · "+session.buffer.describe(frames/44100.0,session.availableEnd(frames)/44100.0,speed,now,!startedPlayback):wanted&&!playing?" · تجهيز مخزون للمشاهدة المستقرة":"");
   if(now-lastUi>=250){lastUi=now;status.show(text,wanted&&!playing||session.failed||!failure.isEmpty());}
  }catch(Exception error){wanted=false;pause();failure="تعذرت متابعة الصوت المنظّف: "+error.getMessage();status.show(failure,true);}main.postDelayed(this,30);}};
  private static String stamp(long ms){return String.format(java.util.Locale.US,"%d:%02d",ms/60000,ms/1000%60);}

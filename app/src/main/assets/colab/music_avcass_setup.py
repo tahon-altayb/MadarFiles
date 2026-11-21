@@ -170,9 +170,9 @@ def setup(ROOT, token, status, bundle_key=None):
         checkpoint_av, av_cache = materialize(ROOT, av_spec, token, status)
         cavp, cavp_cache = materialize(ROOT, cavp_spec, token, status)
         weights, model_cache = materialize(ROOT, rofo, token, status)
-        config, _ = materialize(ROOT, cfg, '', status)
+        config, config_cache = materialize(ROOT, cfg, token, status)
     except ValueError as error:
         raise ValueError('MUSIC_AVCASS_WEIGHTS') from error
-    if "download_unsaved" in (av_cache, cavp_cache):
+    if "download_unsaved" in (av_cache, cavp_cache, config_cache):
         model_cache = "download_unsaved"
     return checkpoint_av, cavp, weights, config, model_cache, bundle_source, timings.values

@@ -97,7 +97,7 @@ public class PlayerActivity extends Activity {
   new AlertDialog.Builder(this).setTitle("إزالة الموسيقى أثناء المشاهدة").setItems(choices,(dialog,choice)->{
    if(choice==1){
     new AlertDialog.Builder(this).setTitle("الصوت البشري مع المحيط")
-     .setMessage("يعالج مدار الصوت وأجزاء قصيرة من الصورة على Colab لتحديد المؤثرات. تبدأ المشاهدة بعد تجهيز الدفعة الأولى.")
+     .setMessage("يعالج مدار الصوت وأجزاء قصيرة من الصورة على Colab لتحديد المؤثرات. تبدأ المشاهدة بعد تجهيز نحو دقيقة ونصف من الصوت المنظّف، ويستمر الفصل أثناء المشاهدة.")
      .setPositiveButton("ابدأ الفصل",(d,n)->watchSelected(true,MusicPipeline.AVCASS,true)).setNegativeButton("رجوع",null).show();
    }else watchSelected(cloud,MusicPipeline.LEGACY,true);
   }).setNegativeButton("إلغاء",null).show();

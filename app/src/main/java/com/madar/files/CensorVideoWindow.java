@@ -16,12 +16,21 @@ import java.util.concurrent.atomic.*;
 @androidx.annotation.OptIn(markerClass=androidx.media3.common.util.UnstableApi.class)
 final class CensorVideoWindow {
  static File extract(Context context,PlayerInput input,long startMs,long endMs,int width,int height,AtomicBoolean cancel)throws Exception{
-  return extract(context,input,startMs,endMs,width,height,cancel,false);
+  return extract(context,input,startMs,endMs,width,height,cancel,false,false);
  }
  static File extractForSound(Context context,PlayerInput input,long startMs,long endMs,int width,int height,AtomicBoolean cancel)throws Exception{
-  return extract(context,input,startMs,endMs,width,height,cancel,true);
+  return extractForSound(context,input,startMs,endMs,width,height,cancel,()->{});
  }
- private static File extract(Context context,PlayerInput input,long startMs,long endMs,int width,int height,AtomicBoolean cancel,boolean sound)throws Exception{
+ static File extractForSound(Context context,PlayerInput input,long startMs,long endMs,int width,int height,AtomicBoolean cancel,Runnable retry)throws Exception{
+  try{return extract(context,input,startMs,endMs,width,height,cancel,true,false);}
+  catch(IOException error){
+   if(!RemoteWatchAudio.muxTimedOut(error))throw error;
+   ColabProbe.check(cancel);
+   retry.run();
+   return extract(context,input,startMs,endMs,width,height,cancel,true,true);
+  }
+ }
+ private static File extract(Context context,PlayerInput input,long startMs,long endMs,int width,int height,AtomicBoolean cancel,boolean sound,boolean retry)throws Exception{
   if(startMs<0||endMs<=startMs||endMs-startMs>(sound?25000:16000)||width<=0||height<=0)throw new IOException("Colab · CENSOR_VIDEO_FORMAT");
   File video=File.createTempFile("madar_censor_window_",".mp4",context.getCacheDir());if(!video.delete())throw new IOException("تعذر تجهيز جزء الفيديو");
   HandlerThread thread=new HandlerThread("madar-censor-video");thread.start();Handler handler=new Handler(thread.getLooper());CountDownLatch done=new CountDownLatch(1);AtomicReference<Exception> error=new AtomicReference<>();AtomicReference<Transformer> current=new AtomicReference<>();boolean complete=false;
@@ -30,12 +39,17 @@ final class CensorVideoWindow {
     ColabProbe.check(cancel);DefaultMediaSourceFactory sources=new DefaultMediaSourceFactory(input.http.factory(context),new androidx.media3.extractor.DefaultExtractorsFactory().setTsExtractorFlags(androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS|androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES));
     ExoPlayerAssetLoader.Factory loader=new ExoPlayerAssetLoader.Factory(context,new DefaultDecoderFactory.Builder(context).build(),Clock.DEFAULT,sources);
     DefaultEncoderFactory encoder=new DefaultEncoderFactory.Builder(context).setRequestedVideoEncoderSettings(new VideoEncoderSettings.Builder().setBitrate(sound?450000:900000).build()).setEnableFallback(true).build();
-    Transformer transformer=new Transformer.Builder(context).setAssetLoaderFactory(loader).setEncoderFactory(encoder)
+    Transformer.Builder builder=new Transformer.Builder(context).setAssetLoaderFactory(loader).setEncoderFactory(encoder);
+    if(retry)builder.setMaxDelayBetweenMuxerSamplesMs(90000);
+    Transformer transformer=builder
      .setTransformationRequest(new TransformationRequest.Builder().setVideoMimeType(MimeTypes.VIDEO_H264).setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL).build())
      .addListener(new Transformer.Listener(){@Override public void onCompleted(Composition composition,ExportResult result){done.countDown();}@Override public void onError(Composition composition,ExportResult result,ExportException failure){error.set(new IOException("تعذر تجهيز صورة الفيديو · "+failure.errorCode,failure));done.countDown();}}).build();current.set(transformer);
     MediaItem.Builder media=new MediaItem.Builder().setUri(input.uri).setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(startMs).setEndPositionMs(endMs).build());if(input.mime!=null)media.setMimeType(input.mime);
     int target=Math.max(2,(int)Math.round(Math.min(height,(sound?352.0:640.0)*height/Math.max(width,height))));target-=target%2;
-    EditedMediaItem edited=new EditedMediaItem.Builder(media.build()).setRemoveAudio(true).setEffects(new Effects(Collections.emptyList(),Collections.singletonList(Presentation.createForHeight(target)))).build();
+    List<Effect> effects=new ArrayList<>();
+    if(sound)effects.add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(8));
+    effects.add(Presentation.createForHeight(target));
+    EditedMediaItem edited=new EditedMediaItem.Builder(media.build()).setRemoveAudio(true).setEffects(new Effects(Collections.emptyList(),effects)).build();
     transformer.start(edited,video.getPath());
    }catch(Exception failure){error.set(failure);done.countDown();}});
    long began=SystemClock.elapsedRealtime();while(!done.await(200,TimeUnit.MILLISECONDS)){ColabProbe.check(cancel);if(SystemClock.elapsedRealtime()-began>10*60000L)throw new IOException("Colab · CENSOR_VIDEO_TIMEOUT");}

@@ -2,10 +2,14 @@ package com.madar.files;
 
 /** A measured production budget, in media seconds. No device/server speed is assumed. */
 final class WatchBuffer {
- private final double duration;private final boolean waitForCycle,progressive;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;private double plannedGap;
+ private final double duration;private final double initialReserve;private final boolean waitForCycle,progressive;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;private double plannedGap;
  WatchBuffer(double duration){this(duration,false);}
  WatchBuffer(double duration,boolean waitForCycle){this(duration,waitForCycle,false);}
- WatchBuffer(double duration,boolean waitForCycle,boolean progressive){this.duration=Math.max(0,duration);this.waitForCycle=waitForCycle;this.progressive=progressive;}
+ WatchBuffer(double duration,boolean waitForCycle,boolean progressive){this(duration,waitForCycle,progressive,0);}
+ WatchBuffer(double duration,boolean waitForCycle,boolean progressive,double initialReserve){this.duration=Math.max(0,duration);this.waitForCycle=waitForCycle;this.progressive=progressive;this.initialReserve=initialReserve;}
+ synchronized double startupRequired(double played,double playbackSpeed,long now){
+  return Math.min(Math.max(0,duration-played),Math.max(required(played,playbackSpeed,now),initialReserve));
+ }
  synchronized void planGap(double seconds){plannedGap=Double.isFinite(seconds)?Math.max(0,seconds):0;}
  synchronized void completeCycle(double seconds,double elapsed){if(seconds>0&&elapsed>0)cycleRatio=cycleRatio==0?elapsed/seconds:.6*cycleRatio+.4*elapsed/seconds;}
  synchronized void commit(double ready,long now){
@@ -45,7 +49,11 @@ final class WatchBuffer {
   // from measured production, without applying that margin a second time.
   return (long)Math.ceil(Math.max(0,required(played,playbackSpeed,now)-(ready-played))/(rate/.8));
  }
- synchronized String describe(double played,double ready,double playbackSpeed,long now){
+ synchronized String describe(double played,double ready,double playbackSpeed,long now,boolean starting){
+  if(starting&&initialReserve>0){
+   double target=startupRequired(played,playbackSpeed,now);
+   return "احتياطي المشاهدة "+format(Math.max(0,ready-played))+" / "+format(target);
+  }
   double rate=speed(now);if(rate==0)return "قياس سرعة الفصل · تجهيز احتياطي للمشاهدة";
   long wait=waitSeconds(played,ready,playbackSpeed,now);
   return "سرعة الفصل "+String.format(java.util.Locale.US,"%.2f",rate/.8)+"× · الاحتياطي "+format(Math.max(0,ready-played))+" · انتظار مقدّر "+format(wait);

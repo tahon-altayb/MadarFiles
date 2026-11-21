@@ -20,6 +20,9 @@ final class RemoteWatchAudio {
   return decode(c,new MediaHttp.Session(uri,headers),mime,startUs,endUs,cancel);
  }
  static AudioPipeline.Decoded decode(Context c,MediaHttp.Session session,String mime,long startUs,long endUs,AtomicBoolean cancel)throws Exception{
+  return decode(c,session,mime,startUs,endUs,cancel,()->{});
+ }
+ static AudioPipeline.Decoded decode(Context c,MediaHttp.Session session,String mime,long startUs,long endUs,AtomicBoolean cancel,Runnable retry)throws Exception{
   Uri uri=session.uri;Map<String,String> headers=session.headersFor(uri);
   String path=uri.getPath()==null?"":uri.getPath().toLowerCase(java.util.Locale.ROOT);
   if(!MimeTypes.APPLICATION_M3U8.equals(mime)&&!MimeTypes.APPLICATION_MPD.equals(mime)&&!path.endsWith(".m3u8")&&!path.endsWith(".mpd")){
@@ -27,13 +30,30 @@ final class RemoteWatchAudio {
    // work in the player but reject Transformer's second export/read pattern.
    try{return AudioPipeline.decodeRemoteRange(c,uri,headers,startUs,endUs,cancel);}catch(java.util.concurrent.CancellationException cancelled){throw cancelled;}catch(Exception direct){MusicSeparator.check(cancel);}
   }
+  try{return decodeWithTransformer(c,session,mime,startUs,endUs,cancel,false);}
+  catch(IOException error){
+   if(!muxTimedOut(error))throw error;
+   MusicSeparator.check(cancel);
+   retry.run();
+   return decodeWithTransformer(c,session,mime,startUs,endUs,cancel,true);
+  }
+ }
+ static boolean muxTimedOut(Throwable error){
+  for(Throwable cause=error;cause!=null;cause=cause.getCause())
+   if(cause instanceof ExportException&&((ExportException)cause).errorCode==ExportException.ERROR_CODE_MUXING_TIMEOUT)return true;
+  return false;
+ }
+ private static AudioPipeline.Decoded decodeWithTransformer(Context c,MediaHttp.Session session,String mime,long startUs,long endUs,AtomicBoolean cancel,boolean retry)throws Exception{
+  Uri uri=session.uri;
   File audio=File.createTempFile("madar_watch_network_",".m4a",c.getCacheDir());if(!audio.delete())throw new IOException("تعذر تجهيز صوت الرابط");
   HandlerThread thread=new HandlerThread("madar-watch-network");thread.start();Handler handler=new Handler(thread.getLooper());CountDownLatch done=new CountDownLatch(1);AtomicReference<Exception> failure=new AtomicReference<>();AtomicReference<Transformer> running=new AtomicReference<>();
   try{
    handler.post(()->{try{
     MusicSeparator.check(cancel);DefaultMediaSourceFactory sources=new DefaultMediaSourceFactory(session.factory(c));
     ExoPlayerAssetLoader.Factory loader=new ExoPlayerAssetLoader.Factory(c,new DefaultDecoderFactory.Builder(c).build(),Clock.DEFAULT,sources);
-    Transformer transformer=new Transformer.Builder(c).setAssetLoaderFactory(loader).setAudioMimeType(MimeTypes.AUDIO_AAC).addListener(new Transformer.Listener(){
+    Transformer.Builder builder=new Transformer.Builder(c).setAssetLoaderFactory(loader).setAudioMimeType(MimeTypes.AUDIO_AAC);
+    if(retry)builder.setMaxDelayBetweenMuxerSamplesMs(90000);
+    Transformer transformer=builder.addListener(new Transformer.Listener(){
      @Override public void onCompleted(Composition composition,ExportResult result){done.countDown();}
      @Override public void onError(Composition composition,ExportResult result,ExportException error){failure.set(new IOException(MediaFailure.describe(error,true)+" · رمز "+error.errorCode,error));done.countDown();}
     }).build();running.set(transformer);

@@ -35,9 +35,9 @@ public class WatchMusicService extends Service {
   profile=cloud?MusicPipeline.checked(profile):MusicPipeline.LEGACY;
   if(MusicPipeline.AVCASS.equals(profile)&&(width<=0||height<=0))throw new IOException("اختر فيديو لميزة الكلام مع صوت المحيط");
   if(cloud&&!MusicGpuSession.hasAccess(c,profile))throw new IOException("اتصل بحساب Colab أولًا");
-  Job old=current;boolean inherited=old!=null&&file!=null&&old.ownsSource&&file.equals(old.source);if(inherited)old.sourceTransferred=true;if(old!=null&&!old.clean.watching)dispose(old);if(old==null){File[] orphaned=c.getCacheDir().listFiles(f->f.getName().startsWith("madar_watch_input_")||f.getName().startsWith("madar_watch_clean_"));if(orphaned!=null)for(File orphan:orphaned)orphan.delete();}
+  Job old=current;boolean inherited=old!=null&&file!=null&&old.ownsSource&&file.equals(old.source);if(inherited)old.sourceTransferred=true;if(old!=null&&!old.clean.watching)dispose(old);if(old==null){File[] orphaned=c.getCacheDir().listFiles(f->f.getName().startsWith("madar_watch_input_")||f.getName().startsWith("madar_watch_clean_")||f.getName().startsWith("madar_watch_source_"));if(orphaned!=null)for(File orphan:orphaned)orphan.delete();}
   boolean owned=file==null||inherited;File source=file==null?File.createTempFile("madar_watch_input_",".media",c.getCacheDir()):file;
-  Job job=new Job(uri,source,owned,identity,title,headers,mime,positionMs*1000,durationMs*1000,cloud);job.pipeline=profile;job.width=width;job.height=height;if(file!=null)job.sourceReady=true;if(http!=null)job.http=http;job.clean.buffer=new WatchBuffer(durationMs/1000.0,true,progressive);job.clean.waitForComplete=complete;current=job;starting=true;
+  Job job=new Job(uri,source,owned,identity,title,headers,mime,positionMs*1000,durationMs*1000,cloud);job.pipeline=profile;job.width=width;job.height=height;if(file!=null)job.sourceReady=true;if(http!=null)job.http=http;job.clean.buffer=new WatchBuffer(durationMs/1000.0,true,progressive,MusicPipeline.AVCASS.equals(profile)&&progressive?90:0);job.clean.waitForComplete=complete;current=job;starting=true;
   try{Intent intent=new Intent(c,WatchMusicService.class).putExtra("job",job.id).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("الصوت للمشاهدة",uri));c.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=old;if(inherited){old.sourceTransferred=false;job.sourceTransferred=true;}dispose(job);throw error;}
  }
  static void dispose(Job job){if(job.clean.pcm!=null)job.clean.pcm.delete();if(job.ownsSource&&!job.sourceTransferred)job.source.delete();}
@@ -60,25 +60,54 @@ public class WatchMusicService extends Service {
   catch(Exception error){starting=false;LiveSeparation.end(job.clean,error.getMessage());active=false;stopSelfResult(jobStartId);}return START_NOT_STICKY;
  }
  private void update(String text){job.stage=text;main.post(()->{if(active)notifications.notify(81,notification());});}
- private void process(){final Job job=this.job;String error=null;ColabCredentials.Grant grant=job.cloud?ColabCredentials.take():null;MusicRecovery gpu=null;
+ private void process(){final Job job=this.job;String error=null;ColabCredentials.Grant grant=job.cloud?ColabCredentials.take():null;MusicRecovery gpu=null;WatchSourceDownload download=null;
   try{
+   if(job.cloud)gpu=new MusicRecovery(this,grant,job.cancel,(p,m)->update(m),job.pipeline);
+   long sourceAt=SystemClock.elapsedRealtime();
    if(job.ownsSource&&!job.sourceReady&&!ExternalMedia.network(job.uri)){update("تجهيز نسخة خاصة من المقطع · الأصل محفوظ");try(InputStream in=getContentResolver().openInputStream(job.uri);OutputStream out=new FileOutputStream(job.source)){if(in==null)throw new IOException("تعذر قراءة المقطع");byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1){MusicSeparator.check(job.cancel);if(job.source.getUsableSpace()<16L*1024*1024)throw new IOException("المساحة لا تكفي لتجهيز المقطع");out.write(b,0,n);}}job.sourceReady=true;}
    MusicSeparator.check(job.cancel);if(!ExternalMedia.network(job.uri))try(MediaMetadataRetriever metadata=new MediaMetadataRetriever()){metadata.setDataSource(job.source.getPath());if(!"yes".equals(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)))throw new IOException("المقطع لا يحتوي على صوت");}
    File aggregate=File.createTempFile("madar_watch_clean_",".pcm",getCacheDir());LiveSeparation.attach(job.clean,aggregate,0);
-   if(job.cloud)gpu=new MusicRecovery(this,grant,job.cancel,(p,m)->update(m),job.pipeline);
+   if(job.cloud)gpu.session.diagnostic.measure("SOURCE",SystemClock.elapsedRealtime()-sourceAt,0,0);
+   boolean network=ExternalMedia.network(job.uri);
+   if(network)download=WatchSourceDownload.start(this,job.http,job.mime,gpu!=null?gpu.session.diagnostic:null);
+   boolean localSnapshotUsed=false;
    try(RandomAccessFile out=new RandomAccessFile(aggregate,"rw")){
     boolean audiovisual=MusicPipeline.AVCASS.equals(job.pipeline);
     WatchPlan plan=new WatchPlan(job.startUs,job.durationUs,job.cloud,job.clean.coverage,audiovisual);double transferSecondsPerMedia=0;byte[] previousTail=null;WatchWindows window;while((window=plan.next(job.clean.requestedFrame))!=null){
      MusicSeparator.check(job.cancel);long cycleBegan=SystemClock.elapsedRealtime();AudioPipeline.Decoded decoded=null;File processed=null,visual=null;
      try{
       if(job.clean.buffer!=null)job.clean.buffer.planGap(transferSecondsPerMedia*(window.decodeEnd-window.decodeStart)/1e6);long decodeAt=SystemClock.elapsedRealtime();
-      update("تجهيز الصوت بالترتيب من البداية · "+(window.coreStart/1000000)+" ثانية");decoded=ExternalMedia.network(job.uri)?RemoteWatchAudio.decode(this,job.http,job.mime,window.decodeStart,window.decodeEnd,job.cancel):AudioPipeline.decodeRange(this,job.source,window.decodeStart,window.decodeEnd,job.cancel,(p,m)->update(m));
+      ColabDiagnostics diagnostic=job.cloud?gpu.session.diagnostic:null;
+      Runnable retry=()->{if(diagnostic!=null)diagnostic.record("WATCH_MUX_RETRY");update("إعادة تجهيز الجزء الحالي بعد مهلة قراءة الوسائط…");};
+      update("تجهيز الصوت بالترتيب من البداية · "+(window.coreStart/1000000)+" ثانية");
+      File snapshot=download==null?null:download.completed();
+      if(snapshot!=null){
+       try{decoded=AudioPipeline.decodeRange(this,snapshot,window.decodeStart,window.decodeEnd,job.cancel,(p,m)->update(m));}
+       catch(java.util.concurrent.CancellationException cancelled){throw cancelled;}
+       catch(Exception unavailable){
+        download.close();download=null;snapshot=null;
+        if(diagnostic!=null)diagnostic.record("WATCH_SOURCE_FALLBACK");
+       }
+       if(snapshot!=null&&!localSnapshotUsed){
+        localSnapshotUsed=true;
+        if(diagnostic!=null)diagnostic.record("WATCH_SOURCE_LOCAL");
+       }
+      }
+      if(decoded==null)decoded=network?RemoteWatchAudio.decode(this,job.http,job.mime,window.decodeStart,window.decodeEnd,job.cancel,retry):AudioPipeline.decodeRange(this,job.source,window.decodeStart,window.decodeEnd,job.cancel,(p,m)->update(m));
+      if(diagnostic!=null)diagnostic.measure("DECODE",SystemClock.elapsedRealtime()-decodeAt,decoded.pcm.length(),decoded.pcm.length()/4);
       if(audiovisual){
+       long visualAt=SystemClock.elapsedRealtime();
        update("تجهيز صورة المشهد لفصل الكلام والمؤثرات");
        long visualStart=decoded.offsetUs/1000,visualEnd=(window.decodeEnd+999)/1000;
-       visual=CensorVideoWindow.extractForSound(this,PlayerInput.processing(job),visualStart,visualEnd,job.width,job.height,job.cancel);
+       PlayerInput visualInput=snapshot==null?PlayerInput.processing(job):PlayerInput.processing(snapshot);
+       try{visual=CensorVideoWindow.extractForSound(this,visualInput,visualStart,visualEnd,job.width,job.height,job.cancel,retry);}
+       catch(IOException error){
+        if(snapshot==null)throw error;
+        visual=CensorVideoWindow.extractForSound(this,PlayerInput.processing(job),visualStart,visualEnd,job.width,job.height,job.cancel,retry);
+       }
+       if(diagnostic!=null)diagnostic.measure("WATCH_VIDEO",SystemClock.elapsedRealtime()-visualAt,visual.length(),0);
       }
-      long decodeMs=SystemClock.elapsedRealtime()-decodeAt;if(job.cloud)gpu.session.diagnostic.measure("DECODE",decodeMs,decoded.pcm.length(),decoded.pcm.length()/4);
+      long decodeMs=SystemClock.elapsedRealtime()-decodeAt;
       long skip=Math.max(0,Math.round((window.coreStart-decoded.offsetUs)*44100.0/1000000)),base=WatchPlan.frame(window.coreStart),count=WatchPlan.frame(window.coreEnd)-base;long[] copied={0};
       LiveSeparation.Session part=new LiveSeparation.Session(job.source,true);
       final byte[] join=previousTail;
@@ -94,8 +123,15 @@ public class WatchMusicService extends Service {
      }finally{if(decoded!=null)decoded.pcm.delete();if(processed!=null)processed.delete();if(visual!=null)visual.delete();}
     }
    }
-  }catch(java.util.concurrent.CancellationException cancelled){error="أوقفت إزالة الموسيقى";}catch(Exception|OutOfMemoryError|UnsatisfiedLinkError failure){error="تعذر تنظيف الصوت: "+(failure.getMessage()==null?"جرّب مقطعًا آخر":failure.getMessage());}
-  finally{if(gpu!=null){if(error!=null&&gpu.session!=null)gpu.session.healthy=false;gpu.close();if(job.cancel.get())MusicGpuSession.awaitCancelled(job.cancel,(p,m)->update(m));if(gpu.session!=null)job.warning=gpu.session.warning;}LiveSeparation.end(job.clean,error);job.stage=error==null?"اكتمل تنظيف الصوت"+(job.warning.isEmpty()?"":" · "+job.warning):error;main.post(()->{main.removeCallbacksAndMessages(null);if(lock!=null&&lock.isHeld())lock.release();if(processing==job){processing=null;active=false;starting=false;}stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(jobStartId);});}
+  }catch(java.util.concurrent.CancellationException cancelled){error="أوقفت إزالة الموسيقى";}catch(Exception|OutOfMemoryError|UnsatisfiedLinkError failure){
+   boolean muxTimeout=RemoteWatchAudio.muxTimedOut(failure);
+   if(gpu!=null&&gpu.session!=null){
+    if(muxTimeout)gpu.session.diagnostic.record("WATCH_MUX_TIMEOUT");
+    gpu.session.diagnostic.record("FAILED");
+   }
+   error=muxTimeout?"انتهت مهلة قراءة الوسائط في الجزء الحالي · 7002": "تعذر تنظيف الصوت: "+(failure.getMessage()==null?"جرّب مقطعًا آخر":failure.getMessage());
+  }
+  finally{if(download!=null)download.close();if(gpu!=null){if(error!=null&&gpu.session!=null)gpu.session.healthy=false;gpu.close();if(job.cancel.get())MusicGpuSession.awaitCancelled(job.cancel,(p,m)->update(m));if(gpu.session!=null)job.warning=gpu.session.warning;}LiveSeparation.end(job.clean,error);job.stage=error==null?"اكتمل تنظيف الصوت"+(job.warning.isEmpty()?"":" · "+job.warning):error;main.post(()->{main.removeCallbacksAndMessages(null);if(lock!=null&&lock.isHeld())lock.release();if(processing==job){processing=null;active=false;starting=false;}stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(jobStartId);});}
  }
  /** Write a bounded core at its original time, then publish only bytes already written. */
  static long appendWindow(LiveSeparation.Session part,LiveSeparation.Session target,RandomAccessFile out,long start,long copied,long skip,long count)throws IOException{
