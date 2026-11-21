@@ -101,8 +101,8 @@ public class WatchMusicService extends Service {
        long visualStart=decoded.offsetUs/1000,visualEnd=(window.decodeEnd+999)/1000;
        PlayerInput visualInput=snapshot==null?PlayerInput.processing(job):PlayerInput.processing(snapshot);
        try{visual=CensorVideoWindow.extractForSound(this,visualInput,visualStart,visualEnd,job.width,job.height,job.cancel,retry);}
-       catch(IOException error){
-        if(snapshot==null)throw error;
+       catch(IOException visualFailure){
+        if(snapshot==null)throw visualFailure;
         visual=CensorVideoWindow.extractForSound(this,PlayerInput.processing(job),visualStart,visualEnd,job.width,job.height,job.cancel,retry);
        }
        if(diagnostic!=null)diagnostic.measure("WATCH_VIDEO",SystemClock.elapsedRealtime()-visualAt,visual.length(),0);
