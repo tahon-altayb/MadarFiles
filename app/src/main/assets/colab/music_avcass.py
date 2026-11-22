@@ -38,7 +38,7 @@ def pcm_packs(clean, stride):
 
 
 class Separator:
-    def __init__(self, directory, token, status, bundle_key=None):
+    def __init__(self, directory, token, status, bundle_key=None, route_by_gpu=False):
         from music_avcass_setup import setup
         import torch
         if not torch.cuda.is_available():
@@ -65,7 +65,10 @@ class Separator:
         with torch.serialization.safe_globals([Namespace]):
             self.av.load_state_dict(torch.load(checkpoint, map_location='cpu', weights_only=True)['ema'])
         self.av = self.av.to(self.device).eval()
-        self.transport = ReFlow(infer_steps=32)
+        gpu = torch.cuda.get_device_name(self.device).upper().split()
+        self.gpu_tier = 'L4' if 'L4' in gpu else 'T4' if 'T4' in gpu else 'OTHER'
+        self.av_steps = (24 if self.gpu_tier == 'L4' else 16) if route_by_gpu else 32
+        self.transport = ReFlow(infer_steps=self.av_steps)
         config = ConfigDict(yaml.load(config.read_text(), Loader=SafeLoaderWithTuple))
         self.drum_index = list(config.training.instruments).index('drums')
         self.rofo = get_model_from_config('bs_roformer', config)

@@ -97,7 +97,7 @@ public class PlayerActivity extends Activity {
   new AlertDialog.Builder(this).setTitle("إزالة الموسيقى أثناء المشاهدة").setItems(choices,(dialog,choice)->{
    if(choice==1){
     new AlertDialog.Builder(this).setTitle("الصوت البشري مع المحيط")
-     .setMessage("يعالج مدار الصوت وأجزاء قصيرة من الصورة على Colab لتحديد المؤثرات. تبدأ المشاهدة بعد تجهيز نحو دقيقة ونصف من الصوت المنظّف، ويستمر الفصل أثناء المشاهدة.")
+     .setMessage("يعالج مدار الصوت وأجزاء قصيرة من الصورة على Colab لتحديد المؤثرات. على L4 يبدأ التشغيل بعد تجهيز نحو دقيقة ونصف من الصوت بـ24 خطوة. على T4 يكتمل فصل المقطع أولًا بـ16 خطوة، ثم يبدأ التشغيل.")
      .setPositiveButton("ابدأ الفصل",(d,n)->watchSelected(true,MusicPipeline.AVCASS,true)).setNegativeButton("رجوع",null).show();
    }else watchSelected(cloud,MusicPipeline.LEGACY,true);
   }).setNegativeButton("إلغاء",null).show();
@@ -140,7 +140,7 @@ public class PlayerActivity extends Activity {
  private void showCleanStatus(String text,boolean waiting){if(!android.text.TextUtils.equals(cleanStatus.getText(),text))cleanStatus.setText(text);view.setKeepScreenOn(clean!=null&&clean.wanted());if(!cleanStatusActive){cleanStatusActive=true;revealCleanStatus();}else updateCleanStatusVisibility();}
  private void watchError(String text){playback.waitForClean();playback.status=text==null?"تعذر بدء الفصل":text;playback.waiting=true;syncPlayback();new AlertDialog.Builder(this).setTitle("تعذر إزالة الموسيقى").setMessage(text).setPositiveButton("البقاء مكتومًا",null).setNegativeButton("تشغيل الصوت الأصلي",(d,n)->originalAudio()).show();}
  private void originalAudio(){if(equalizer!=null){equalizer.release();equalizer=null;}playback.original();syncPlayback();}
- private void bufferMode(){new AlertDialog.Builder(this).setTitle("الانتظار قبل المشاهدة").setSingleChoiceItems(new String[]{"تلقائي · احتياطي محسوب من السرعة الفعلية", "اكتمال الفصل · المشاهدة بعد تجهيز الصوت كاملًا"},(cleanSession!=null?cleanSession.waitForComplete:getSharedPreferences("player",0).getBoolean("watch_complete",false))?1:0,(d,n)->{getSharedPreferences("player",0).edit().putBoolean("watch_complete",n==1).apply();if(cleanSession!=null)cleanSession.waitForComplete=n==1;d.dismiss();}).setNegativeButton("رجوع",null).show();}
+ private void bufferMode(){new AlertDialog.Builder(this).setTitle("الانتظار قبل المشاهدة").setSingleChoiceItems(new String[]{"تلقائي · احتياطي محسوب من السرعة الفعلية", "اكتمال الفصل · المشاهدة بعد تجهيز الصوت كاملًا"},(cleanSession!=null?cleanSession.waitsForComplete():getSharedPreferences("player",0).getBoolean("watch_complete",false))?1:0,(d,n)->{getSharedPreferences("player",0).edit().putBoolean("watch_complete",n==1).apply();if(cleanSession!=null)cleanSession.waitForComplete=n==1;d.dismiss();}).setNegativeButton("رجوع",null).show();}
  private void musicMode(){
   boolean cloud=getSharedPreferences("player",0).getBoolean("watch_cloud",false);
   new AlertDialog.Builder(this).setTitle("مكان فصل الصوت البشري")

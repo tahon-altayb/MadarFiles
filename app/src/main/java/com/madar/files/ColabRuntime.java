@@ -42,7 +42,7 @@ final class ColabRuntime implements AutoCloseable {
  ColabRuntime(Context c,ColabCredentials.Grant g,AtomicBoolean stop,CloudTransport t,GrantRenewal renewal){context=c;grant=g;cancel=stop;transport=t;grantRenewal=renewal;}
  JSONObject cloud(String method,String path,JSONObject data,AtomicBoolean stop)throws Exception{
   ColabProbe.check(stop);
-  if(!path.matches("v1beta/(runtimespecs|runtimes(\\?.*)?|runtimes/madar-[a-z0-9-]+(\\?.*)?)|v1/operations/[A-Za-z0-9_./-]+"))throw new IOException("مسار Colab غير صالح");
+  if(!path.matches("v1beta/(subscription|runtimespecs|runtimes(\\?.*)?|runtimes/madar-[a-z0-9-]+(\\?.*)?)|v1/operations/[A-Za-z0-9_./-]+"))throw new IOException("مسار Colab غير صالح");
   for(int attempt=0;;attempt++){
    ColabCredentials.Grant access=grant;
    try{if(transport!=null)return transport.call(method,path,data,stop);return request(new Request.Builder().url("https://colaboratory.googleapis.com/"+path).header("Authorization","Bearer "+access.token).header("X-Goog-User-Project",access.project),method,data,stop,2*1024*1024,20000);}
@@ -139,12 +139,25 @@ final class ColabRuntime implements AutoCloseable {
  void create(MusicSeparator.Progress progress)throws Exception {create(progress,false);}
  /** Generation jobs ask for specific GPUs in order (SDXL: T4 first; Wan video: L4 or A100 only). */
  String[] allowed;
+ boolean avcassGpuRouting;
+ private boolean avcassFreeTier;
+ private boolean readFreeTier()throws Exception{
+  try{return "SUBSCRIPTION_TIER_FREE".equals(cloud("GET","v1beta/subscription",null,cancel).optString("tier"));}
+  catch(HttpFailure|NetworkFailure|JSONException unavailable){ColabProbe.check(cancel);return false;}
+ }
+ static List<JSONObject> avcassCandidates(JSONObject available,boolean free)throws Exception{
+  List<JSONObject> specs=candidates(available);
+  specs.removeIf(v->!v.optString("accelerator").equals("T4")&&(free||!v.optString("accelerator").equals("L4")));
+  return specs;
+ }
  void create(MusicSeparator.Progress progress,String[] gpus)throws Exception{allowed=gpus;try{create(progress,false);}finally{allowed=null;}}
  void create(MusicSeparator.Progress progress,boolean music)throws Exception {
   ColabProbe.check(cancel);MotionGpuSession.beforeRuntime(this);MusicGpuSession.beforeRuntime(this);// Each step is named in the report, so a refusal says where it came: an earlier report read only «RUNTIME_CREATE, HTTP_403».
+  if(music&&avcassGpuRouting)avcassFreeTier=readFreeTier();
   authEvents.accept("RUNTIME_STEP_RESUME");if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");authEvents.accept("RUNTIME_STEP_CLEANUP");cleanupPrevious();authEvents.accept("RUNTIME_STEP_SPECS");JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
   android.content.SharedPreferences settings=context.getSharedPreferences("colab_connection",0);
-  List<JSONObject> specs=music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);
+  List<JSONObject> specs=music&&avcassGpuRouting?avcassCandidates(available,avcassFreeTier):
+    music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);
   if(allowed!=null){final List<String> order=Arrays.asList(allowed);specs.removeIf(v->!order.contains(v.optString("accelerator")));specs.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));if(specs.isEmpty())throw new IOException("هذا التوليد يحتاج كرت "+String.join(" أو ",allowed)+"، وحساب Colab ما يتيحه الحين؛ جرّب لاحقًا");}
   if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
   for(int i=0;i<Math.min(2,specs.size());i++){
@@ -154,7 +167,7 @@ final class ColabRuntime implements AutoCloseable {
    progress.update(12,"طلب GPU · "+spec.getString("accelerator")+"؛ قد يستغرق بدء الجلسة دقائق");
    JSONObject operation;
    try{operation=cloud("POST","v1beta/runtimes?runtimeId="+id+"&requestId="+journal().getString("requestId",""),new JSONObject().put("runtimeSpec",spec),cancel);}
-   catch(ColabAllocation.Failure failure){journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
+   catch(ColabAllocation.Failure failure){journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);if(music&&avcassGpuRouting&&failure.canTryAnotherGpu()&&i+1<Math.min(2,specs.size())){allocationEvents.accept(failure);progress.update(12,"تعذر تخصيص L4؛ تجربة T4");continue;}allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
    String name=operation.optString("name");if(!name.isEmpty())journal().edit().putString("operation",name).commit();long began=System.nanoTime(),deadline=began+TimeUnit.MINUTES.toNanos(5);
    // Cancellation leaves the journal intact; background cleanup resolves the same operation.
    while(!operation.optBoolean("done")){
@@ -176,6 +189,7 @@ final class ColabRuntime implements AutoCloseable {
   if(!ownName(name)||!grant.project.equals(journal().getString("project",""))||!operation.matches("operations/[A-Za-z0-9_./-]+"))return false;
   JSONObject spec;try{spec=new JSONObject(journal().getString("spec",""));}catch(JSONException invalid){return false;}
   if(!spec.optString("variant").equals("VARIANT_GPU")||!spec.optString("shape").equals("SHAPE_STANDARD")||!Arrays.asList("T4","L4","A100").contains(spec.optString("accelerator")))return false;
+  if(avcassGpuRouting&&!spec.optString("accelerator").equals("T4")&&(avcassFreeTier||!spec.optString("accelerator").equals("L4")))return false;
   JSONObject state=cloud("GET","v1/"+operation,null,cancel);if(state.optBoolean("done"))return false;
   runtime=name;long began=System.nanoTime(),deadline=began+TimeUnit.MINUTES.toNanos(5);
   do{

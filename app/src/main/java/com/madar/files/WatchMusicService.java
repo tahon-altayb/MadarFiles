@@ -37,7 +37,7 @@ public class WatchMusicService extends Service {
   if(cloud&&!MusicGpuSession.hasAccess(c,profile))throw new IOException("اتصل بحساب Colab أولًا");
   Job old=current;boolean inherited=old!=null&&file!=null&&old.ownsSource&&file.equals(old.source);if(inherited)old.sourceTransferred=true;if(old!=null&&!old.clean.watching)dispose(old);if(old==null){File[] orphaned=c.getCacheDir().listFiles(f->f.getName().startsWith("madar_watch_input_")||f.getName().startsWith("madar_watch_clean_")||f.getName().startsWith("madar_watch_source_"));if(orphaned!=null)for(File orphan:orphaned)orphan.delete();}
   boolean owned=file==null||inherited;File source=file==null?File.createTempFile("madar_watch_input_",".media",c.getCacheDir()):file;
-  Job job=new Job(uri,source,owned,identity,title,headers,mime,positionMs*1000,durationMs*1000,cloud);job.pipeline=profile;job.width=width;job.height=height;if(file!=null)job.sourceReady=true;if(http!=null)job.http=http;job.clean.buffer=new WatchBuffer(durationMs/1000.0,true,progressive,MusicPipeline.AVCASS.equals(profile)&&progressive?90:0);job.clean.waitForComplete=complete;current=job;starting=true;
+  Job job=new Job(uri,source,owned,identity,title,headers,mime,positionMs*1000,durationMs*1000,cloud);job.pipeline=profile;job.width=width;job.height=height;if(file!=null)job.sourceReady=true;if(http!=null)job.http=http;job.clean.buffer=new WatchBuffer(durationMs/1000.0,true,progressive,MusicPipeline.AVCASS.equals(profile)&&progressive?90:0);job.clean.waitForComplete=complete;job.clean.forceWaitForComplete=MusicPipeline.AVCASS.equals(profile);current=job;starting=true;
   try{Intent intent=new Intent(c,WatchMusicService.class).putExtra("job",job.id).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);intent.setClipData(ClipData.newRawUri("الصوت للمشاهدة",uri));c.startForegroundService(intent);return job;}catch(RuntimeException error){starting=false;current=old;if(inherited){old.sourceTransferred=false;job.sourceTransferred=true;}dispose(job);throw error;}
  }
  static void dispose(Job job){if(job.clean.pcm!=null)job.clean.pcm.delete();if(job.ownsSource&&!job.sourceTransferred)job.source.delete();}
@@ -112,7 +112,7 @@ public class WatchMusicService extends Service {
       LiveSeparation.Session part=new LiveSeparation.Session(job.source,true);
       final byte[] join=previousTail;
       MusicSeparator.Progress progress=(p,m)->{try{copied[0]=appendWindow(part,job.clean,out,base,copied[0],skip,count,join);update(m);}catch(IOException e){throw new java.io.UncheckedIOException(e);}};
-      if(job.cloud){ColabMusic.Result result=gpu.run(decoded,visual,progress,part);processed=result.pcm;}else processed=MusicSeparator.separate(this,decoded,job.cancel,progress,part);
+      if(job.cloud){ColabMusic.Result result=gpu.run(decoded,visual,progress,part,audiovisual?live->job.clean.forceWaitForComplete=!live:null);processed=result.pcm;}else processed=MusicSeparator.separate(this,decoded,job.cancel,progress,part);
       copied[0]=appendWindow(part,job.clean,out,base,copied[0],skip,count,join);MusicSeparator.check(job.cancel);
       if(audiovisual)previousTail=tailForJoin(part,skip+count);
       if(copied[0]<count){if(WatchPlan.frame(window.coreEnd)<WatchPlan.frame(job.durationUs))throw new IOException("جزء الصوت غير مكتمل");plan.trimEnd(base+copied[0]);}

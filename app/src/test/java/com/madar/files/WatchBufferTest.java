@@ -2,6 +2,14 @@ package com.madar.files;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class WatchBufferTest {
+ @org.junit.Test public void gpuRequiredPlaybackGateCannotBeOverriddenByUserPreference(){
+  LiveSeparation.Session session=new LiveSeparation.Session(null,true);
+  session.forceWaitForComplete=true;
+  session.waitForComplete=false;
+  org.junit.Assert.assertTrue(session.waitsForComplete());
+  session.forceWaitForComplete=false;
+  org.junit.Assert.assertFalse(session.waitsForComplete());
+ }
  @Test public void oneSampleContextTailsNeverPoisonThroughputOrInventYearsOfWaiting(){WatchBuffer b=new WatchBuffer(1500,true);b.commit(4,0);b.commit(8,1000);b.commit(12,2000);b.completeCycle(24,12);double before=b.speed(2000);b.commit(12+1.0/44100,4000);b.commit(16,5000);b.commit(20,6000);assertTrue(b.speed(6000)>.5);assertTrue(b.waitSeconds(0,20,1,6000)<3600);assertTrue(before>1);}
  @Test public void measuredSlowProductionReservesTheDeficitWithinTheRemainingEpisode(){
   for(double duration:new double[]{24,600,1500,7200})for(double speed:new double[]{.5,1,2}){

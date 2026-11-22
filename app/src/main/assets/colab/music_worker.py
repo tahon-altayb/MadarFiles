@@ -230,12 +230,13 @@ def prepare():
             bundle_source=bundle_source, native_cache=NATIVE_CACHE, bundle_timings=timings.values if CACHE is not None else {}))
 
 
-def prepare_avcass(root):
+def prepare_avcass(root, route_by_gpu=False):
     global _AVCASS
     from music_avcass import Separator
 
     load_private_cudnn()
-    _AVCASS = Separator(root.parent / 'madar_avcass_cache', DRIVE_TOKEN, status, BUNDLE_KEY)
+    _AVCASS = Separator(root.parent / 'madar_avcass_cache', DRIVE_TOKEN, status, BUNDLE_KEY, route_by_gpu)
+    _AVCASS.cache.update(gpu_tier=_AVCASS.gpu_tier, av_steps=_AVCASS.av_steps)
     _AVCASS.cache['native_cache'] = NATIVE_CACHE
     _AVCASS.cache['bundle_timings'].update(BUNDLE_TIMINGS)
     status('ready', 38, extra=_AVCASS.cache)
@@ -596,7 +597,7 @@ def serve(root):
         sys.stdin.close()
         if DRIVE_TOKEN and not re.fullmatch(r'[A-Za-z0-9._~+/\-]{10,8190}={0,2}', DRIVE_TOKEN):
             raise ValueError('MUSIC_DRIVE_AUTH')
-    if profile == AVCASS_PIPELINE: prepare_avcass(root)
+    if profile == AVCASS_PIPELINE: prepare_avcass(root, config.get('route_by_gpu') is True)
     elif profile == 'voc_ft': prepare()
     else: raise ValueError('MUSIC_PIPELINE')
     with _STATUS_LOCK:

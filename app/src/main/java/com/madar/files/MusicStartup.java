@@ -9,7 +9,7 @@ import org.json.JSONObject;
 final class MusicStartup {
  interface Reader {JSONObject read()throws Exception;}
  private final Reader reader;private final AtomicBoolean cancel;private final MusicSeparator.Progress progress;private final ColabDiagnostics diagnostic;private final LongSupplier now;
- private final long began;private final ColabDiagnostics.Watch watch;private boolean seen,ready,cacheMissing;
+ private final long began;private final ColabDiagnostics.Watch watch;private boolean seen,ready,cacheMissing;private boolean liveAvcass;
  MusicStartup(ColabRuntime runtime,String root,AtomicBoolean cancel,MusicSeparator.Progress progress,ColabDiagnostics diagnostic){
   this(()->ColabRuntime.parseJson(runtime.getText(root+"/progress.json",65536,20000)),cancel,progress,diagnostic,android.os.SystemClock::elapsedRealtime);
  }
@@ -25,6 +25,7 @@ final class MusicStartup {
   long bytes=state.optLong("bytes",0),total=state.optLong("total_bytes",0);
   if(bytes>0&&total>=bytes)message+=" · "+bytes/1000000+" / "+total/1000000+" ميجابايت";
   progress.update(Math.max(27,Math.min(38,state.optInt("progress",27))),message+" · مضى "+Math.max(0,(at-began)/1000)+" ثانية");ready=stage.equals("ready");if(ready){
+   liveAvcass="L4".equals(state.optString("gpu_tier"))&&state.optInt("av_steps")==24;
    String source=state.optString("cache_source");String bundle=state.optString("bundle_source"),nativeCache=state.optString("native_cache");
    cacheMissing="download_unsaved".equals(source)||"unsaved".equals(bundle)||"no_drive".equals(bundle)||"unsaved".equals(nativeCache);
    if(diagnostic!=null){
@@ -40,6 +41,7 @@ final class MusicStartup {
   }
   return ready;
  }
+ boolean liveAvcass(){return liveAvcass;}
  boolean cacheMissing(){return cacheMissing;}
  static String workerError(String code){
   switch(code){case "ModuleNotFoundError":return "PY_MODULE_MISSING";case "ImportError":return "PY_IMPORT";case "CalledProcessError":return "PY_WORKER_EXIT";case "TimeoutExpired":return "MUSIC_TIMEOUT";case "FileNotFoundError":return "PY_FILE_NOT_FOUND";default:return ColabDiagnostics.safe(code)?code:"MUSIC_PROCESS_EXIT";}

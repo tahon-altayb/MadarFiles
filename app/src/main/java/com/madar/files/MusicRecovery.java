@@ -29,8 +29,16 @@ final class MusicRecovery implements AutoCloseable {
 
  ColabMusic.Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress report,
                        LiveSeparation.Session part)throws Exception{
+  return run(audio,video,report,part,null);
+ }
+
+ ColabMusic.Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress report,
+                       LiveSeparation.Session part,java.util.function.Consumer<Boolean> watchMode)throws Exception{
   for(int replacements=0;;replacements++){
-   try{return session.run(audio,video,report,part);}
+   try{
+    if(watchMode!=null){session.awaitReady();watchMode.accept(session.liveAvcass);}
+    return session.run(audio,video,report,part);
+   }
    catch(IOException failure){
     ColabProbe.check(cancel);
     if(replacements==2||!MusicMailbox.recoverable(failure))throw failure;

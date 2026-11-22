@@ -9,11 +9,27 @@ import com.google.android.gms.common.api.Scope;
 import java.util.Collections;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ColabAccountTest {
+ @Test public void avcassRequestsT4ForFreeAndPrefersEligibleL4Otherwise()throws Exception{
+  JSONArray list=new JSONArray();
+  for(String gpu:new String[]{"A100","T4","L4"})list.put(new JSONObject().put("eligible",true)
+    .put("key",new JSONObject().put("variant","VARIANT_GPU").put("shape","SHAPE_STANDARD").put("accelerator",gpu)));
+  JSONObject response=new JSONObject().put("runtimeSpecs",list);
+  java.util.List<JSONObject> free=ColabRuntime.avcassCandidates(response,true),other=ColabRuntime.avcassCandidates(response,false);
+  assertEquals(1,free.size());
+  assertEquals("T4",free.get(0).getString("accelerator"));
+  assertEquals(2,other.size());
+  assertEquals("L4",other.get(0).getString("accelerator"));
+  assertEquals("T4",other.get(1).getString("accelerator"));
+  list.getJSONObject(2).put("eligible",false);
+  assertEquals("T4",ColabRuntime.avcassCandidates(response,false).get(0).getString("accelerator"));
+ }
     @Test public void accountPickerBindsBothPermissionsWithoutIdentityInOAuthResponse() {
         Intent result = new Intent()
                 .putExtra(AccountManager.KEY_ACCOUNT_NAME, "madar-test@example.com")

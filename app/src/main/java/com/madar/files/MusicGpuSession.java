@@ -52,7 +52,7 @@ final class MusicGpuSession {
   synchronized(MusicGpuSession.class){
    if(busy())throw new IOException(closing()?"جارٍ إيقاف جلسة GPU السابقة بأمان؛ تابع حالتها من إشعار مدار":"توجد عملية GPU أخرى؛ أوقفها أو انتظر اكتمالها");
    s=idle;
-   if(s!=null&&!profile.equals(s.pipeline)){
+   if(s!=null&&(!profile.equals(s.pipeline)||grant!=null&&!java.util.Objects.equals(s.runtime.grant.account,grant.account))){
     if(s!=null&&grant!=null&&!s.runtime.grant.project.equals(grant.project))throw new IOException("أغلق جلسة حساب Colab السابقة قبل تبديل الحساب");
     if(s!=null){previous=s;idle=null;retireLocked(s);}
    }
