@@ -28,6 +28,13 @@ public class ColabAccountTest {
   list.getJSONObject(2).put("eligible",false);
   assertTrue(ColabRuntime.avcassCandidates(response,false).isEmpty());
  }
+ @Test public void onlyMissingL4IsWorthWaitingFor(){
+  assertTrue(ColabRuntime.gpuUnavailable(new ColabAllocation.Failure(9,0,"NO_RUNTIMES")));
+  assertTrue(ColabRuntime.gpuUnavailable(new java.io.IOException("wrapped",new ColabRuntime.GpuUnavailable("no L4"))));
+  assertFalse(ColabRuntime.gpuUnavailable(new ColabAllocation.Failure(9,0,"TOO_MANY_ACTIVE_RUNTIMES")));
+  assertFalse(ColabRuntime.gpuUnavailable(new java.io.IOException(ColabRuntime.AVCASS_FREE_TIER)));
+  assertFalse(ColabRuntime.gpuUnavailable(new java.io.IOException("Colab · MUSIC_RUNTIME_LOST")));
+ }
  @Test public void highRamL4IsRequestedWhenItIsTheOnlyEligibleL4()throws Exception{
   JSONArray list=new JSONArray()
     .put(new JSONObject().put("eligible",true).put("key",new JSONObject().put("variant","VARIANT_GPU").put("shape","SHAPE_STANDARD").put("accelerator","T4")))

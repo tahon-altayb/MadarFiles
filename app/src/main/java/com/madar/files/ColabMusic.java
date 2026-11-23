@@ -89,6 +89,58 @@ final class ColabMusic {
    liveAvcass=startup.liveAvcass();gpuTier=startup.gpuTier();avSteps=startup.avSteps();
    if(startup.cacheMissing())warning="لم تكتمل نسخة تجهيز الفصل في Drive؛ راجع إذن التخزين ومساحته.";
    initialized=true;channel.close();channel=null;
+   keeperCheckedAt=android.os.SystemClock.elapsedRealtime();
+   Thread keeper=new Thread(()->startKeeper(false),"madar-colab-keeper");keeper.setDaemon(true);keeper.start();
+  }
+  private String keeperKernel;private volatile long keeperCheckedAt;private final Object keeperLock=new Object();
+  /**
+   * The worker runs as a subprocess that Android reaches through files, so to Colab the runtime looked idle
+   * and could be reclaimed mid-separation. A second kernel runs one cell that keeps executing while batches
+   * arrive (it ends by itself after ten quiet minutes). Never fatal: separation goes on without it.
+   */
+  private void startKeeper(boolean restart){
+   synchronized(keeperLock){
+   if(closed)return;
+   try{
+    ColabProbe.check(cancel);
+    if(keeperKernel==null){
+     String id=runtime.jupyter("POST","api/kernels",new JSONObject().put("name","python3").put("path",root),1024*1024).getString("id");
+     if(!id.matches("[a-zA-Z0-9-]{1,100}"))throw new IOException("Colab · KEEPER_KERNEL");
+     keeperKernel=id;
+    }
+    try(ColabKernel.Session keeper=runtime.openKernel(keeperKernel,code->{})){
+     keeper.submit("SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+asset(context,"music_keeper.py"));
+     long until=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+     while(System.nanoTime()<until){
+      ColabProbe.check(cancel);
+      if(keeper.finished()!=null)break;
+      if("running".equals(keeperState())&&keeperBeat>=0){keeperCheckedAt=android.os.SystemClock.elapsedRealtime();diagnostic.record(restart?"MUSIC_KEEPER_RESTARTED":"MUSIC_KEEPER_ACTIVE");return;}
+      Thread.sleep(1000);
+     }
+    }
+    diagnostic.record("MUSIC_KEEPER_UNCONFIRMED");
+   }catch(java.util.concurrent.CancellationException stopped){return;}
+   catch(InterruptedException stopped){Thread.currentThread().interrupt();return;}
+   catch(Exception unavailable){diagnostic.record("MUSIC_KEEPER_UNCONFIRMED");}
+   keeperCheckedAt=android.os.SystemClock.elapsedRealtime();
+   }
+  }
+  private long keeperBeat=-1;
+  /** "running" only while the cell is alive: its beat must have moved since the previous look. */
+  private String keeperState(){
+   try{
+    JSONObject state=new JSONObject(runtime.getText(root+"/keeper.json",4096,10000));
+    long beat=state.optLong("beat",-1),previous=keeperBeat;keeperBeat=beat;
+    String value=state.optString("state");
+    return "running".equals(value)&&beat==previous&&previous>=0?"stalled":value;
+   }catch(Exception missing){return "";}
+  }
+  /** Before a batch: restart the keeper if it ended (quiet pause, or a reused session). Checked at most every two minutes. */
+  private void ensureKeeper(){
+   if(!initialized||closed||visionOnly&&!musicReady)return;
+   if(android.os.SystemClock.elapsedRealtime()-keeperCheckedAt<120000)return;
+   keeperCheckedAt=android.os.SystemClock.elapsedRealtime();
+   if(!"running".equals(keeperState()))startKeeper(true);
   }
 
   void awaitStorage()throws Exception{
@@ -111,7 +163,7 @@ final class ColabMusic {
    return run(audio,null,progress,live,null);
   }
   Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live,java.util.function.Consumer<Boolean> watchMode)throws Exception{
-   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,video,progress,live,watchMode);healthy=true;return result;}
+   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();ensureKeeper();Result result=MusicCloudJob.run(this,audio,video,progress,live,watchMode);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
   String visionStoragePrefix(){return "MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n";}

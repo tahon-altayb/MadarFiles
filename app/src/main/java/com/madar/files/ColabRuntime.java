@@ -20,6 +20,15 @@ final class ColabRuntime implements AutoCloseable {
  private String runtime="",proxyToken="";private HttpUrl base;private long refreshAt;
  static final class NetworkFailure extends IOException {final String code;NetworkFailure(IOException e){super("Colab · "+(e instanceof javax.net.ssl.SSLException?"IO_TLS":e instanceof java.net.UnknownHostException?"IO_DNS":e instanceof java.net.SocketTimeoutException?"IO_TIMEOUT":"IO_NETWORK"));code=getMessage().substring(8);}}
  static final class ProtocolFailure extends IOException {ProtocolFailure(String message){super(message);}}
+ /** Google has no L4 for this account right now (not eligible, or the request was never fulfilled). Worth asking again later. */
+ static final class GpuUnavailable extends IOException {GpuUnavailable(String message){super(message);}}
+ static boolean gpuUnavailable(Throwable error){
+  for(Throwable cause=error;cause!=null;cause=cause.getCause()){
+   if(cause instanceof GpuUnavailable)return true;
+   if(cause instanceof ColabAllocation.Failure){ColabAllocation.Failure f=(ColabAllocation.Failure)cause;return f.reason.equals("NO_RUNTIMES")||f.canTryAnotherGpu();}
+  }
+  return false;
+ }
  static final class HttpFailure extends IOException {
   final int status;final ColabAllocation.Failure allocation;
   /** null for a refusal of the session itself (its files, its kernel); otherwise Google's reason for refusing the account or project ("" when it gave none). */
@@ -176,7 +185,7 @@ final class ColabRuntime implements AutoCloseable {
   List<JSONObject> specs=avRouting?avcassCandidates(available,false):
     music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);
   if(allowed!=null){final List<String> order=Arrays.asList(allowed);specs.removeIf(v->!order.contains(v.optString("accelerator")));specs.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));if(specs.isEmpty())throw new IOException("هذا التوليد يحتاج كرت "+String.join(" أو ",allowed)+"، وحساب Colab ما يتيحه الحين؛ جرّب لاحقًا");}
-  if(specs.isEmpty())throw new IOException(avRouting?AVCASS_NO_L4:"لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
+  if(specs.isEmpty()){if(avRouting)throw new GpuUnavailable(AVCASS_NO_L4);throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");}
   for(int i=0;i<Math.min(2,specs.size());i++){
    ColabProbe.check(cancel);JSONObject spec=specs.get(i);String id="madar-"+UUID.randomUUID();runtime="runtimes/"+id;
    if(!journal().edit().putString("name",runtime).putString("project",grant.project).putString("requestId",UUID.randomUUID().toString()).putString("spec",spec.toString()).remove("operation").commit())throw new IOException("تعذر حفظ حالة جلسة Colab");
@@ -188,7 +197,7 @@ final class ColabRuntime implements AutoCloseable {
    String name=operation.optString("name");if(!name.isEmpty())journal().edit().putString("operation",name).commit();long began=System.nanoTime(),deadline=began+TimeUnit.MINUTES.toNanos(5);
    // Cancellation leaves the journal intact; background cleanup resolves the same operation.
    while(!operation.optBoolean("done")){
-    ColabProbe.check(cancel);if(!name.matches("operations/[A-Za-z0-9_./-]+")||System.nanoTime()>deadline){authEvents.accept("RUNTIME_PENDING_TIMEOUT");boolean dropped=dropPending(runtime);if(dropped)runtime="";throw new IOException(avRouting?"Google ما وفّر كرت L4 خلال خمس دقايق، والفصل ما بدأ"+(dropped?"، وألغى مدار الطلب":"")+". جرّب بعد شوي أو استخدم ميزة «الصوت البشري».":"لم يوفّر Colab مورد GPU خلال خمس دقائق؛ لم يبدأ فصل الصوت. غيّر مورد GPU من إعدادات Colab بعد انتهاء إغلاق الجلسة");}
+    ColabProbe.check(cancel);if(!name.matches("operations/[A-Za-z0-9_./-]+")||System.nanoTime()>deadline){authEvents.accept("RUNTIME_PENDING_TIMEOUT");boolean dropped=dropPending(runtime);if(dropped)runtime="";if(avRouting)throw new GpuUnavailable("Google ما وفّر كرت L4 خلال خمس دقايق"+(dropped?"، وألغى مدار الطلب":"")+". جرّب بعد شوي أو استخدم ميزة «الصوت البشري».");throw new IOException("لم يوفّر Colab مورد GPU خلال خمس دقائق؛ لم يبدأ فصل الصوت. غيّر مورد GPU من إعدادات Colab بعد انتهاء إغلاق الجلسة");}
     long elapsed=TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()-began);progress.update(12,"انتظار مورد GPU · "+spec.getString("accelerator")+" · مضى "+elapsed+" ثانية؛ الفصل لم يبدأ بعد");
     long pause=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(System.nanoTime()<pause){ColabProbe.check(cancel);Thread.sleep(50);}operation=cloud("GET","v1/"+name,null,cancel);
    }

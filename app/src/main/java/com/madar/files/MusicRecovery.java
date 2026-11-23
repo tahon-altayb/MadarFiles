@@ -13,6 +13,7 @@ final class MusicRecovery implements AutoCloseable {
  private final String profile;
  private final ColabDiagnostics operation;
  ColabMusic.Session session;
+ static final long GPU_RETRY_MS=60_000,GPU_WAIT_MS=30*60_000L;
 
  MusicRecovery(Context context,ColabCredentials.Grant grant,AtomicBoolean cancel,
                MusicSeparator.Progress progress,String profile)throws Exception{
@@ -36,14 +37,32 @@ final class MusicRecovery implements AutoCloseable {
 
  ColabMusic.Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress report,
                        LiveSeparation.Session part,java.util.function.Consumer<Boolean> watchMode)throws Exception{
-  for(int replacements=0;;replacements++){
+  long waitingSince=0;int gpuAttempts=0;
+  for(int replacements=0;;){
    try{
     return session.run(audio,video,report,part,watchMode);
    }
    catch(IOException failure){
     ColabProbe.check(cancel);
-    if(replacements==2||!MusicMailbox.recoverable(failure))throw failure;
-    report.update(-1,"تجديد جلسة Colab · إعادة محاولة الدفعة الحالية مع حفظ الدفعات المكتملة");
+    boolean noGpu=MusicPipeline.AVCASS.equals(profile)&&ColabRuntime.gpuUnavailable(failure);
+    if(noGpu){
+     // Google had no L4 (or took the session back and has none free). The finished windows stay on the phone:
+     // ask again every minute instead of ending the whole job with an error.
+     long now=android.os.SystemClock.elapsedRealtime();if(waitingSince==0)waitingSince=now;
+     if(now-waitingSince>=GPU_WAIT_MS)throw new IOException("انتظر مدار كرت L4 "+GPU_WAIT_MS/60000+" دقيقة وما توفر عند Google. الجزء اللي انفصل يبقى للمشاهدة؛ جرّب بعد شوي أو استخدم ميزة «الصوت البشري».",failure);
+     gpuAttempts++;
+     if(session!=null&&session.diagnostic!=null)session.diagnostic.record("MUSIC_L4_WAIT");
+     for(long left=GPU_RETRY_MS;left>0;left-=1000){
+      ColabProbe.check(cancel);
+      report.update(-1,"كرت L4 غير متوفر الحين · المفصول محفوظ · إعادة الطلب بعد "+(left/1000)+" ثانية · المحاولة "+(gpuAttempts+1));
+      Thread.sleep(1000);
+     }
+    }
+    else{
+     if(replacements==2||!MusicMailbox.recoverable(failure))throw failure;
+     replacements++;
+    }
+    report.update(-1,noGpu?"طلب كرت L4 من جديد · المفصول محفوظ":"تجديد جلسة Colab · إعادة محاولة الدفعة الحالية مع حفظ الدفعات المكتملة");
     ColabMusic.Session previous=session;
     previous.diagnostic.record("MUSIC_WINDOW_RECOVERY");
     previous.healthy=false;

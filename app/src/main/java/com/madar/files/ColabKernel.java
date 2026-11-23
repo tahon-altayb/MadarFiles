@@ -79,6 +79,16 @@ final class ColabKernel {
    if(!executed||!completed)throw new IOException("Colab · EXECUTION_ALREADY_SENT");
    executed=false;completed=false;execute(code,poll);
   }
+  /** Send code without waiting for its reply (a long-running cell). Keep the session open until its effect is seen. */
+  void submit(String code)throws Exception{
+   ColabProbe.check(cancel);if(executed)throw new IOException("Colab · EXECUTION_ALREADY_SENT");
+   if(active==null||!active.transport.get().isEmpty()){if(active!=null)abandon(active);connect();}
+   Attempt a=active;String nextId=UUID.randomUUID().toString();String payload=message(nextId,UUID.randomUUID().toString(),code).toString();synchronized(this){executionId=nextId;result.set(null);}
+   synchronized(a){if(closed||a.abandoned||!a.transport.get().isEmpty())throw new IOException("Colab · WS_LOST_BEFORE_EXECUTION");executed=true;if(!a.socket.send(payload))throw new IOException("Colab · WS_SEND");}
+   events.record("EXECUTION_QUEUED");
+  }
+  /** The reply of a submitted cell, if it already finished ("OK" or an error code). */
+  String finished(){return result.get();}
   void execute(String code,Poll poll)throws Exception{
    ColabProbe.check(cancel);if(executed)throw new IOException("Colab · EXECUTION_ALREADY_SENT");
    if(active==null||!active.transport.get().isEmpty()){if(active!=null)abandon(active);connect();}
