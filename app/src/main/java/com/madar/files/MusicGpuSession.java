@@ -47,6 +47,9 @@ final class MusicGpuSession {
   return session;
  }
  static ColabMusic.Session acquire(Context c,ColabCredentials.Grant grant,AtomicBoolean stop,MusicSeparator.Progress progress,String profile)throws Exception{
+  return acquire(c,grant,stop,progress,profile,null);
+ }
+ static ColabMusic.Session acquire(Context c,ColabCredentials.Grant grant,AtomicBoolean stop,MusicSeparator.Progress progress,String profile,ColabDiagnostics operation)throws Exception{
   profile=MusicPipeline.checked(profile);
   ColabMusic.Session s,previous=null;
   synchronized(MusicGpuSession.class){
@@ -58,7 +61,7 @@ final class MusicGpuSession {
    }
    if(previous==null&&s!=null&&(remainingIdle()<=0||grant!=null&&!s.runtime.grant.project.equals(grant.project))){idle=null;retireLocked(s);s=null;throw new IOException("انتهت صلاحية جلسة GPU؛ جارٍ إغلاقها قبل اتصال جديد");}
    if(previous==null){
-    if(s==null)s=new ColabMusic.Session(c.getApplicationContext(),grant,stop,progress);else s.bind(stop,progress,profile);
+    if(s==null)s=new ColabMusic.Session(c.getApplicationContext(),grant,stop,progress,operation);else s.bind(stop,progress,profile,operation);
     s.pipeline=profile;idle=null;active=s;busy=true;generation++;
    }
   }
@@ -66,7 +69,7 @@ final class MusicGpuSession {
    progress.update(12,"إغلاق جلسة GPU السابقة قبل تشغيل نموذج الفصل…");
    while(retiring==previous){ColabProbe.check(stop);Thread.sleep(100);}
    ColabProbe.check(stop);
-   return acquire(c,grant,stop,progress,profile);
+   return acquire(c,grant,stop,progress,profile,operation);
   }
   try{if(s.initialized)progress.update(12,"إعادة استخدام جلسة GPU والنموذج المحمّل");notifyState(c);return s;}
   catch(RuntimeException denied){s.healthy=false;release(s);throw new IOException("تعذر بدء خدمة GPU في الخلفية؛ افتح مدار وأعد المحاولة",denied);}

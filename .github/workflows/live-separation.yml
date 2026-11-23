@@ -182,8 +182,8 @@ jobs:
       - name: Verify original update certificate and version
         run: |
           if [ "${GITHUB_REF_NAME}" = "fixes/avcass-recovery-20261121" ]; then
-            version=1.9.84
-            code=119
+            version=1.9.85
+            code=120
           elif [ "${GITHUB_REF_NAME}" = "features/live-avcass-roformer-20261120" ]; then
             version=1.9.81
             code=116

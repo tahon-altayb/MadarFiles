@@ -12,6 +12,7 @@ final class ColabCredentials {
   final String token,project;final Account account;private String modelStorageToken;
   Grant(String t,String p){this(t,p,null,null);}
   Grant(String t,String p,String modelStorage,Account owner){token=t;project=p;modelStorageToken=modelStorage;account=owner;}
+  boolean hasModelStorage(){return modelStorageToken!=null&&!modelStorageToken.isEmpty();}
   String takeModelStorage(){String value=modelStorageToken;modelStorageToken=null;return value;}
   String modelStoragePrefix(){return "MADAR_MODEL_STORAGE_GRANT = "+org.json.JSONObject.quote(modelStorageToken)+"\n";}
  }

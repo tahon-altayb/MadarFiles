@@ -77,7 +77,15 @@ class BundleCache:
     def restore(self, name, target, status, timings, component="RUNTIME"):
         lookup = time.monotonic()
         try:
-            hit = self.find(name)
+            for attempt in range(3):
+                try:
+                    hit = self.find(name)
+                    break
+                except (drive.requests.ConnectionError, drive.requests.Timeout, drive.requests.HTTPError) as error:
+                    response = error.response
+                    if attempt == 2 or (response is not None and response.status_code not in (408, 429, 500, 502, 503, 504)):
+                        raise
+                    time.sleep(1 + attempt)
         except (OSError, ValueError, TypeError, drive.requests.RequestException):
             return False
         finally:

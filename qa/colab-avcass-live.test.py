@@ -110,6 +110,17 @@ class DriveCacheTest(unittest.TestCase):
                 self.assertTrue(cache.store(file, spec, {'Authorization': 'Bearer local'}, lambda *a, **k: None))
         self.assertEqual(sent, [('bytes 0-9/10', data), ('bytes */10', b''), ('bytes 4-9/10', data[4:])])
 
+    def test_restore_retries_transient_drive_lookup_before_installing(self):
+        from music_drive_bundle import cache_context, drive, Timings
+        cache = cache_context('fixture', 'a' * 64)
+        response = drive.requests.Response()
+        response.status_code = 503
+        failure = drive.requests.HTTPError(response=response)
+        with patch.object(cache, 'find', side_effect=[failure, None]) as find, patch(
+                'music_drive_bundle.time.sleep'):
+            self.assertFalse(cache.restore('missing', ROOT, lambda *args: None, Timings()))
+            self.assertEqual(find.call_count, 2)
+
     def test_bundle_identity_binds_content_and_installation(self):
         from music_drive_bundle import cache_context
         a, b = [cache_context('fixture', key * 64) for key in ('a', 'b')]

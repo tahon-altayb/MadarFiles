@@ -49,8 +49,14 @@ final class MusicExport {
   LiveSeparation.attach(target,result.pcm,0);
   MusicRecovery lease=null;
   boolean success=false;
+  long started=MusicCloudJob.now(),total=WatchPlan.frame(endUs);
+  java.util.concurrent.atomic.AtomicLong completeFrames=new java.util.concurrent.atomic.AtomicLong();
+  MusicSeparator.Progress overall=(p,message)->{
+   long completed=completeFrames.get();
+   progress.update((int)Math.min(97,completed*97.0/total),MusicRecovery.status(message,completed,total,MusicCloudJob.now()-started));
+  };
   try(RandomAccessFile out=new RandomAccessFile(result.pcm,"rw")){
-   lease=new MusicRecovery(c,ColabCredentials.take(),cancel,progress,MusicPipeline.AVCASS);
+   lease=new MusicRecovery(c,ColabCredentials.take(),cancel,overall,MusicPipeline.AVCASS);
    WatchPlan plan=new WatchPlan(0,endUs,true,target.coverage,true);
    PlayerInput visual=PlayerInput.processing(input);
    WatchWindows window;
@@ -61,19 +67,21 @@ final class MusicExport {
     AudioPipeline.Decoded decoded=null;
     File video=null,clean=null;
     try{
-     decoded=AudioPipeline.decodeRange(c,input,window.decodeStart,window.decodeEnd,cancel,progress);
+     decoded=AudioPipeline.decodeRange(c,input,window.decodeStart,window.decodeEnd,cancel,overall);
      video=CensorVideoWindow.extractForSound(c,visual,decoded.offsetUs/1000,(window.decodeEnd+999)/1000,width,height,cancel);
      long base=WatchPlan.frame(window.coreStart);
      long count=WatchPlan.frame(window.coreEnd)-base;
      long skip=WatchPlan.frame(Math.max(0,window.coreStart-decoded.offsetUs));
      LiveSeparation.Session part=new LiveSeparation.Session(input,true);
-     final long from=window.coreStart,to=window.coreEnd;
-     clean=lease.run(decoded,video,(p,m)->progress.update(p<0?p:(int)Math.min(97,(from+(to-from)*(p/100.0))*100/endUs),m),part).pcm;
+     clean=lease.run(decoded,video,overall,part).pcm;
      MusicSeparator.check(cancel);
      long written=WatchMusicService.appendWindow(part,target,out,base,0,skip,count,tail);
      tail=WatchMusicService.tailForJoin(part,skip+count);
      if(written==0||written<count&&window.coreEnd<endUs)throw new IOException("جزء الصوت المفصول غير مكتمل");
      if(written<count)plan.trimEnd(base+written);
+     completeFrames.set(base+written);
+     lease.committed(written,total);
+     overall.update(0,"حُفظت الدفعة المفصولة");
      target.buffer.completeCycle(written/44100.0,Math.max(1,MusicCloudJob.now()-began)/1000.0);
     }finally{if(decoded!=null)decoded.pcm.delete();if(video!=null)video.delete();if(clean!=null)clean.delete();}
    }

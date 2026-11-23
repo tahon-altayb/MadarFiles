@@ -30,6 +30,32 @@ public class ColabAccountTest {
   list.getJSONObject(2).put("eligible",false);
   assertEquals("T4",ColabRuntime.avcassCandidates(response,false).get(0).getString("accelerator"));
  }
+    @Test public void separationReportKeepsCommittedWindowsAcrossRuntimes() {
+        android.content.Context context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext();
+        ColabDiagnostics report = new ColabDiagnostics(context);
+        report.musicSession();
+        report.musicGpu("L4", 24);
+        report.musicWindow(44100, 88200);
+        report.record("MUSIC_WINDOW_RECOVERY");
+        report.musicSession();
+        report.musicGpu("T4", 16);
+        report.musicWindow(44100, 88200);
+        String saved = ColabDiagnostics.last(context);
+        assertTrue(saved.contains("MUSIC_SESSION_1"));
+        assertTrue(saved.contains("MUSIC_SESSION_2"));
+        assertTrue(saved.contains("AV-CASS · L4 · 24 steps"));
+        assertTrue(saved.contains("AV-CASS · T4 · 16 steps"));
+        assertTrue(saved.contains("MUSIC_WINDOW_COMMITTED · 2 · 88200 / 88200 frames"));
+        assertTrue(MusicRecovery.status("انتظار GPU · مضى 2 ثانية", 44100, 88200, 63000)
+                .endsWith("انتظار GPU · المفصول 0:01 / 0:02 · مضى إجمالًا 1:03"));
+
+        ColabDiagnostics next = new ColabDiagnostics(context);
+        next.record("MUSIC_PROFILE_AVCASS");
+        report.record("CLEANUP_OK");
+        assertTrue(ColabDiagnostics.last(context).contains("MUSIC_PROFILE_AVCASS"));
+        assertFalse(ColabDiagnostics.last(context).contains("CLEANUP_OK"));
+    }
+
     @Test public void accountPickerBindsBothPermissionsWithoutIdentityInOAuthResponse() {
         Intent result = new Intent()
                 .putExtra(AccountManager.KEY_ACCOUNT_NAME, "madar-test@example.com")

@@ -14,6 +14,7 @@ public class WatchMusicService extends Service {
  static volatile boolean active,starting;static volatile Job current;private static volatile Job processing;
  static final class Job {
   final String id=java.util.UUID.randomUUID().toString(),identity,title;final Uri uri;final File source;final boolean ownsSource,cloud;final java.util.Map<String,String> headers;final String mime;String pipeline=MusicPipeline.LEGACY;int width,height;final long startUs,durationUs;
+  final long began=SystemClock.elapsedRealtime();volatile long committedFrames;
   MediaHttp.Session http;final AtomicBoolean cancel=new AtomicBoolean();final LiveSeparation.Session clean;volatile String stage="تجهيز الصوت المنظّف",warning="";volatile boolean sourceReady,sourceTransferred;
   Job(Uri uri,File source,boolean owns,String identity,String title,java.util.Map<String,String> headers,String mime,long start,long duration,boolean cloud){this.uri=uri;this.source=source;ownsSource=owns;this.identity=identity;this.title=title;this.headers=headers;this.mime=mime;http=new MediaHttp.Session(uri,headers);startUs=start;durationUs=duration;this.cloud=cloud;sourceReady=!owns;clean=new LiveSeparation.Session(source,true);clean.coverage=new PcmRanges();}
   boolean usable(){return !cancel.get()&&!clean.failed&&(!sourceReady||source.isFile())&&(clean.frames==0||clean.pcm!=null&&clean.pcm.isFile());}
@@ -59,7 +60,7 @@ public class WatchMusicService extends Service {
   try{if(Build.VERSION.SDK_INT>=35)startForeground(81,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING);else startForeground(81,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);active=true;processing=job;starting=false;lock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:WatchMusic");lock.acquire(5L*60*60*1000);new Thread(this::process,"madar-watch-music").start();}
   catch(Exception error){starting=false;LiveSeparation.end(job.clean,error.getMessage());active=false;stopSelfResult(jobStartId);}return START_NOT_STICKY;
  }
- private void update(String text){job.stage=text;main.post(()->{if(active)notifications.notify(81,notification());});}
+ private void update(String text){job.stage=MusicPipeline.AVCASS.equals(job.pipeline)?MusicRecovery.status(text,job.committedFrames,WatchPlan.frame(job.durationUs),SystemClock.elapsedRealtime()-job.began):text;main.post(()->{if(active)notifications.notify(81,notification());});}
  private void process(){final Job job=this.job;String error=null;ColabCredentials.Grant grant=job.cloud?ColabCredentials.take():null;MusicRecovery gpu=null;WatchSourceDownload download=null;
   try{
    if(job.cloud)gpu=new MusicRecovery(this,grant,job.cancel,(p,m)->update(m),job.pipeline);
@@ -119,6 +120,7 @@ public class WatchMusicService extends Service {
       if(copied[0]==0&&job.clean.coverage.total()==0)throw new IOException("لم يُنتج الفصل صوتًا قابلًا للمشاهدة");
       long cycleMs=SystemClock.elapsedRealtime()-cycleBegan-(job.cloud?gpu.session.lastColdStartMs:0);
       if(job.cloud){cycleMs=Math.max(cycleMs,decodeMs+gpu.session.lastUploadMs+gpu.session.lastProcessMs);transferSecondsPerMedia=(decodeMs+gpu.session.lastUploadMs)/1000.0/((window.decodeEnd-window.decodeStart)/1e6);}
+      if(audiovisual&&copied[0]>0){job.committedFrames+=copied[0];gpu.committed(copied[0],WatchPlan.frame(job.durationUs));update("حُفظت الدفعة المفصولة");}
       if(job.clean.buffer!=null)job.clean.buffer.completeCycle(copied[0]/44100.0,Math.max(1,cycleMs)/1000.0);
      }finally{if(decoded!=null)decoded.pcm.delete();if(processed!=null)processed.delete();if(visual!=null)visual.delete();}
     }
