@@ -158,6 +158,9 @@ def prepare():
             if not marker.is_file() and bundle and bundle.restore(key, vault, status, timings):
                 bundle_source = 'drive'
             if not marker.is_file() or marker.read_text() != version:
+                if bundle_source == 'drive':
+                    bundle.discard(key)
+                    bundle_source = 'session'
                 status('install', 28)
                 if vault.exists():
                     shutil.rmtree(vault)

@@ -16,22 +16,31 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ColabAccountTest {
- @Test public void avcassRequestsT4ForFreeAndPrefersEligibleL4Otherwise()throws Exception{
+ @Test public void avcassRequestsOnlyL4AndNeverFallsBackToT4()throws Exception{
   JSONArray list=new JSONArray();
   for(String gpu:new String[]{"A100","T4","L4"})list.put(new JSONObject().put("eligible",true)
     .put("key",new JSONObject().put("variant","VARIANT_GPU").put("shape","SHAPE_STANDARD").put("accelerator",gpu)));
   JSONObject response=new JSONObject().put("runtimeSpecs",list);
-  java.util.List<JSONObject> free=ColabRuntime.avcassCandidates(response,true),other=ColabRuntime.avcassCandidates(response,false);
-  assertEquals(1,free.size());
-  assertEquals("T4",free.get(0).getString("accelerator"));
-  assertEquals(2,other.size());
-  assertEquals("L4",other.get(0).getString("accelerator"));
-  java.util.List<JSONObject> afterRejection=ColabRuntime.avcassCandidates(response,false,true);
-  assertEquals("T4",afterRejection.get(0).getString("accelerator"));
-  assertEquals("L4",afterRejection.get(1).getString("accelerator"));
-  assertEquals("T4",other.get(1).getString("accelerator"));
+  assertTrue(ColabRuntime.avcassCandidates(response,true).isEmpty());
+  java.util.List<JSONObject> pro=ColabRuntime.avcassCandidates(response,false);
+  assertEquals(1,pro.size());
+  assertEquals("L4",pro.get(0).getString("accelerator"));
   list.getJSONObject(2).put("eligible",false);
-  assertEquals("T4",ColabRuntime.avcassCandidates(response,false).get(0).getString("accelerator"));
+  assertTrue(ColabRuntime.avcassCandidates(response,false).isEmpty());
+ }
+ @Test public void highRamL4IsRequestedWhenItIsTheOnlyEligibleL4()throws Exception{
+  JSONArray list=new JSONArray()
+    .put(new JSONObject().put("eligible",true).put("key",new JSONObject().put("variant","VARIANT_GPU").put("shape","SHAPE_STANDARD").put("accelerator","T4")))
+    .put(new JSONObject().put("eligible",false).put("key",new JSONObject().put("variant","VARIANT_GPU").put("shape","SHAPE_STANDARD").put("accelerator","L4")))
+    .put(new JSONObject().put("eligible",true).put("key",new JSONObject().put("variant","VARIANT_GPU").put("shape","SHAPE_HIGHMEM").put("accelerator","L4")));
+  JSONObject response=new JSONObject().put("runtimeSpecs",list);
+  java.util.List<JSONObject> pro=ColabRuntime.avcassCandidates(response,false);
+  assertEquals(1,pro.size());
+  assertEquals("SHAPE_HIGHMEM",pro.get(0).getString("shape"));
+  java.util.List<JSONObject> all=ColabRuntime.candidates(response);
+  assertEquals(2,all.size());
+  assertEquals("L4",all.get(0).getString("accelerator"));
+  assertEquals("SHAPE_STANDARD",all.get(1).getString("shape"));
  }
     @Test public void separationReportKeepsCommittedWindowsAcrossRuntimes() {
         android.content.Context context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext();

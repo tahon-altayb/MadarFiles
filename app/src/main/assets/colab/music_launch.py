@@ -70,6 +70,9 @@ def launch(root):
                 if bundle_cache.restore(key,cache,worker.status,bundle_timings,component="CUDNN"):
                     native_cache = "drive"
             if not all((libs/name).is_file() for name in required):
+                if native_cache == "drive":
+                    bundle_cache.discard(key)
+                    native_cache = "session"
                 staging = root.parent/('madar_cudnn_stage_'+uuid.uuid4().hex)
                 try:
                     import time

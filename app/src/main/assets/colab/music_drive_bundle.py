@@ -48,13 +48,65 @@ class BundleCache:
     def __init__(self, token, key):
         self.auth = {'Authorization': 'Bearer '+token}
         self.key = bytes.fromhex(key)
+        self.kinds = {}
 
     def name(self, kind, identity):
         compatibility = dict(implementation=platform.python_implementation(),
                              python=platform.python_version(), arch=platform.machine(),
                              libc=platform.libc_ver(), system=platform.system())
         identity = json.dumps([1, kind, compatibility, identity], sort_keys=True).encode()
-        return 'madar-music-runtime-' + hmac.new(self.key, identity, 'sha256').hexdigest()
+        name = 'madar-music-runtime-' + hmac.new(self.key, identity, 'sha256').hexdigest()
+        self.kinds[name] = kind
+        return name
+
+    def label(self, kind):
+        # Drive appProperties values are short strings; the label never reveals the identity.
+        return hmac.new(self.key, ('kind:' + kind).encode(), 'sha256').hexdigest()[:32]
+
+    def listed(self, query):
+        files, token = [], None
+        for _ in range(10):
+            params = {'spaces': 'appDataFolder', 'q': query + " and trashed = false",
+                      'fields': 'nextPageToken,files(id,name)', 'pageSize': 100}
+            if token:
+                params['pageToken'] = token
+            with drive.requests.get(drive.FILES, headers=self.auth, params=params,
+                                    timeout=(10, 15), allow_redirects=False) as response:
+                response.raise_for_status()
+                body = response.json()
+            files += [item for item in body.get('files', [])
+                      if re.fullmatch(r'[A-Za-z0-9_-]{8,160}', item.get('id', ''))]
+            token = body.get('nextPageToken')
+            if not token:
+                break
+        return files
+
+    def delete(self, file_id):
+        with drive.requests.delete(f'{drive.FILES}/{file_id}', headers=self.auth,
+                                   timeout=(10, 15), allow_redirects=False) as response:
+            return response.status_code in (204, 404)
+
+    def discard(self, name):
+        """Remove a stored snapshot that restored but failed validation, so it is not restored again."""
+        try:
+            for item in self.listed(f"name = '{name}'"):
+                self.delete(item['id'])
+        except (OSError, ValueError, drive.requests.RequestException):
+            pass
+
+    def prune(self, name, keep):
+        """Keep one snapshot per name and per kind: older identities (Colab updates) only fill the user's Drive."""
+        kind = self.kinds.get(name)
+        try:
+            stale = [item for item in self.listed(f"name = '{name}'") if item['id'] != keep]
+            if kind:
+                label = self.label(kind)
+                stale += [item for item in self.listed(
+                    f"appProperties has {{ key='kind' and value='{label}' }}") if item.get('name') != name]
+            for item in stale:
+                self.delete(item['id'])
+        except (OSError, ValueError, drive.requests.RequestException):
+            pass
 
     def signature(self, name, digest, size):
         return hmac.new(self.key, f'{name}:{digest}:{size}'.encode(), 'sha256').hexdigest()
@@ -145,9 +197,16 @@ class BundleCache:
                 started=time.monotonic()
                 saved = False
                 try:
+                    properties = {'signature': self.signature(name, digest, size)}
+                    if self.kinds.get(name):
+                        properties['kind'] = self.label(self.kinds[name])
                     saved = drive.store(archive,SimpleNamespace(sha256=digest,size=size),self.auth,status,
-                        dict(name=name,appProperties={'signature':self.signature(name,digest,size)}))
-                    return saved
+                        dict(name=name,appProperties=properties))
+                    if saved:
+                        hit = self.find(name)
+                        if hit:
+                            self.prune(name, hit[0])
+                    return bool(saved)
                 finally:
                     timings.add(f'MUSIC_DRIVE_{component}_PUT',started,size if saved else 0)
             except (OSError, ValueError, TypeError, tarfile.TarError, drive.requests.RequestException):

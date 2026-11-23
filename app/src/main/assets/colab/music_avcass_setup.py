@@ -151,6 +151,10 @@ def setup(ROOT, token, status, bundle_key=None):
     env = {**os.environ, 'PYTHONPATH': os.pathsep.join(map(str, paths))}
     if (not marker.is_file() or marker.read_text() != source or subprocess.run(
             [sys.executable, '-c', PROBE+'; '+ROFO_PROBE], env=env, timeout=90).returncode):
+        if bundle_source == 'drive':
+            # The Drive copy restored but does not work here: remove it so it is not restored on every session.
+            cache.discard(key)
+            bundle_source = 'session'
         if destination.exists():
             shutil.rmtree(destination)
         install_runtime(destination, status)

@@ -41,6 +41,10 @@ def transfer(url, stage, partial, spec, status, headers=None):
                     if reply.status_code == 429 or reply.status_code >= 500:
                         raise requests.RequestException()
                     return False
+                if 'text/html' in reply.headers.get('Content-Type', '').lower():
+                    # A public Google Drive link past its daily download quota answers with a web page,
+                    # not the weights. Writing it would only corrupt the partial file.
+                    return False
                 if reply.status_code == 206:
                     match = re.fullmatch(r'bytes (\d+)-(\d+)/(\d+)', reply.headers.get('Content-Range', ''))
                     if not match or int(match[1]) != offset or int(match[3]) != spec.size:
@@ -122,7 +126,11 @@ def store(path, spec, auth, status, metadata=None):
                         timeout=(15, 60), allow_redirects=False) as reply:
                     if reply.status_code in (200, 201):
                         result = reply.json()
-                        return result.get('size') == str(spec.size) and result.get('sha256Checksum') == spec.sha256
+                        if result.get('size') == str(spec.size) and result.get('sha256Checksum') == spec.sha256:
+                            return True
+                        # Drive can finish the upload before it publishes the checksum; read it back
+                        # instead of reporting a stored file as unsaved (and uploading it again next time).
+                        return confirm_checksum(result.get('id', ''), spec, auth)
                     if reply.status_code == 308:
                         received = reply.headers.get('Range')
                         match = re.fullmatch(r'bytes=0-(\d+)', received) if received else None
@@ -149,6 +157,25 @@ def store(path, spec, auth, status, metadata=None):
                 break
             probe = True
             time.sleep(min(8, 2 ** (retries - 1)))
+    return False
+
+
+def confirm_checksum(file_id, spec, auth):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{8,160}', file_id or ''):
+        return False
+    for attempt in range(4):
+        try:
+            with requests.get(f'{FILES}/{file_id}', headers=auth, params={'fields': 'size,sha256Checksum'},
+                              timeout=(10, 15), allow_redirects=False) as reply:
+                if reply.status_code == 200:
+                    item = reply.json()
+                    if item.get('size') == str(spec.size) and item.get('sha256Checksum') == spec.sha256:
+                        return True
+                    if item.get('sha256Checksum'):
+                        return False
+        except (OSError, ValueError, requests.RequestException):
+            pass
+        time.sleep(1 + attempt)
     return False
 
 
