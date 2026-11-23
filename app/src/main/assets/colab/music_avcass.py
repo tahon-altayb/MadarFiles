@@ -45,6 +45,8 @@ class Separator:
             raise ValueError('MUSIC_GPU_REQUIRED')
         load_start = time.monotonic()
         checkpoint, cavp, weights, config, cache, bundle, timings = setup(directory, token, status, bundle_key)
+        cache_ms = round((time.monotonic() - load_start) * 1000)
+        load_start = time.monotonic()
         status('model_load', 37)
         # Import after the isolated dependencies are available.
         import yaml
@@ -74,7 +76,8 @@ class Separator:
         self.rofo = get_model_from_config('bs_roformer', config)
         self.rofo.load_state_dict(load_checkpoint_state(weights))
         self.rofo = self.rofo.to(self.device).eval()
-        self.cache = dict(cache_source=cache, bundle_source=bundle, bundle_timings=timings, cache_ms=round((time.monotonic() - load_start) * 1000))
+        timings['MUSIC_MODEL_LOAD'] = [round((time.monotonic() - load_start) * 1000), 0]
+        self.cache = dict(cache_source=cache, bundle_source=bundle, bundle_timings=timings, cache_ms=cache_ms)
 
     def av_mix(self, samples, frames):
         import numpy as np

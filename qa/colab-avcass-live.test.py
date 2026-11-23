@@ -121,6 +121,28 @@ class DriveCacheTest(unittest.TestCase):
             self.assertFalse(cache.restore('missing', ROOT, lambda *args: None, Timings()))
             self.assertEqual(find.call_count, 2)
 
+    def test_independent_weights_restore_concurrently_and_count_all_bytes(self):
+        import threading
+        from types import SimpleNamespace
+        import drive_model_cache as cache
+        from music_drive_bundle import Timings
+        specs = [SimpleNamespace(size=n) for n in (10, 20, 30)]
+        barrier = threading.Barrier(3, timeout=5)
+        observed = []
+
+        def materialize(folder, spec, token, status):
+            status('model_restore', 34, dict(bytes=spec.size//2))
+            barrier.wait()
+            return folder / str(spec.size), 'drive'
+
+        with patch.object(cache, 'materialize', side_effect=materialize):
+            timings = Timings()
+            result = cache.materialize_group(
+                ROOT, specs, 'test', lambda stage, percent, extra: observed.append(extra), timings)
+        self.assertEqual([path.name for path, _ in result], ['10', '20', '30'])
+        self.assertEqual(observed[-1], dict(bytes=60, total_bytes=60))
+        self.assertEqual(sum(row[1] for row in timings.values.values()), 60)
+
     def test_bundle_identity_binds_content_and_installation(self):
         from music_drive_bundle import cache_context
         a, b = [cache_context('fixture', key * 64) for key in ('a', 'b')]

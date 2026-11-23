@@ -108,10 +108,10 @@ final class ColabMusic {
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
   Result run(AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
-   return run(audio,null,progress,live);
+   return run(audio,null,progress,live,null);
   }
-  Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
-   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,video,progress,live);healthy=true;return result;}
+  Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live,java.util.function.Consumer<Boolean> watchMode)throws Exception{
+   healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();Result result=MusicCloudJob.run(this,audio,video,progress,live,watchMode);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
   String visionStoragePrefix(){return "MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n";}

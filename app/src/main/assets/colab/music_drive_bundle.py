@@ -100,7 +100,10 @@ class BundleCache:
             try:
                 started=time.monotonic()
                 try:
-                    ok = drive.transfer(f'{drive.FILES}/{file_id}?alt=media','model_restore',archive,spec,status,self.auth)
+                    def bundle_status(stage, percent, extra):
+                        status(stage, percent, extra=dict(extra, artifact=component.lower()))
+                    ok = drive.transfer(f'{drive.FILES}/{file_id}?alt=media', 'model_restore',
+                                        archive, spec, bundle_status, self.auth)
                 finally:
                     timings.add(f'MUSIC_DRIVE_{component}_GET',started,archive.stat().st_size if archive.is_file() else 0)
                 if not ok:

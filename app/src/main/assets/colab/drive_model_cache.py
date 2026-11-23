@@ -182,6 +182,44 @@ def materialize(folder, spec, token, status):
     return target, 'download_unsaved'
 
 
+
+def materialize_group(folder, specs, token, status, timings):
+    """Restore independent pinned weights concurrently and report aggregate byte progress."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Lock
+
+    lock = Lock()
+    done_bytes = [0] * len(specs)
+    sources = [None] * len(specs)
+    total = sum(spec.size for spec in specs)
+
+    def publish():
+        active = 'model_download' if 'model_download' in sources else 'model_restore'
+        status(active, 34, extra=dict(bytes=sum(done_bytes), total_bytes=total))
+
+    def restore(index, spec):
+        def progress(stage, percent, extra):
+            if stage == 'model_save':
+                return
+            with lock:
+                sources[index] = stage
+                done_bytes[index] = min(spec.size, extra.get('bytes', 0))
+                publish()
+
+        started = time.monotonic()
+        result = materialize(folder, spec, token, progress)
+        with lock:
+            sources[index] = None
+            done_bytes[index] = spec.size
+            timings.add('MUSIC_WEIGHT_' + str(index + 1), started, spec.size)
+            publish()
+        return result
+
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix='madar-weights') as pool:
+        jobs = [pool.submit(restore, index, spec) for index, spec in enumerate(specs)]
+        return [job.result() for job in jobs]
+
+
 def restore_pinned(target, sha256, maximum, token, status, timings=None):
     """Restore a model whose official size can vary by packaging but whose bytes are pinned."""
     from types import SimpleNamespace

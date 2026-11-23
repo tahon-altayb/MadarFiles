@@ -38,8 +38,7 @@ final class MusicRecovery implements AutoCloseable {
                        LiveSeparation.Session part,java.util.function.Consumer<Boolean> watchMode)throws Exception{
   for(int replacements=0;;replacements++){
    try{
-    if(watchMode!=null){session.awaitReady();watchMode.accept(session.liveAvcass);}
-    return session.run(audio,video,report,part);
+    return session.run(audio,video,report,part,watchMode);
    }
    catch(IOException failure){
     ColabProbe.check(cancel);

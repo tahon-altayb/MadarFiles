@@ -141,13 +141,32 @@ final class ColabRuntime implements AutoCloseable {
  String[] allowed;
  boolean avcassGpuRouting;
  private boolean avcassFreeTier;
+ private static android.accounts.Account l4UnavailableAccount;
+ private static String l4UnavailableProject;
+ private static long l4UnavailableUntil;
+
+ private static synchronized boolean recentlyUnavailable(ColabCredentials.Grant grant){
+  return grant.account!=null&&grant.account.equals(l4UnavailableAccount)&&grant.project.equals(l4UnavailableProject)
+    &&android.os.SystemClock.elapsedRealtime()<l4UnavailableUntil;
+ }
+
+ private static synchronized void rememberUnavailable(ColabCredentials.Grant grant,ColabAllocation.Failure failure){
+  if(grant.account==null||!failure.gpu.equals("L4")||!failure.reason.equals("NO_RUNTIMES"))return;
+  l4UnavailableAccount=grant.account;
+  l4UnavailableProject=grant.project;
+  l4UnavailableUntil=android.os.SystemClock.elapsedRealtime()+java.util.concurrent.TimeUnit.MINUTES.toMillis(5);
+ }
  private boolean readFreeTier()throws Exception{
   try{return "SUBSCRIPTION_TIER_FREE".equals(cloud("GET","v1beta/subscription",null,cancel).optString("tier"));}
   catch(HttpFailure|NetworkFailure|JSONException unavailable){ColabProbe.check(cancel);return false;}
  }
  static List<JSONObject> avcassCandidates(JSONObject available,boolean free)throws Exception{
+  return avcassCandidates(available,free,false);
+ }
+ static List<JSONObject> avcassCandidates(JSONObject available,boolean free,boolean t4First)throws Exception{
   List<JSONObject> specs=candidates(available);
   specs.removeIf(v->!v.optString("accelerator").equals("T4")&&(free||!v.optString("accelerator").equals("L4")));
+  if(t4First)specs.sort(Comparator.comparingInt(v->v.optString("accelerator").equals("T4")?0:1));
   return specs;
  }
  void create(MusicSeparator.Progress progress,String[] gpus)throws Exception{allowed=gpus;try{create(progress,false);}finally{allowed=null;}}
@@ -156,10 +175,13 @@ final class ColabRuntime implements AutoCloseable {
   if(music&&avcassGpuRouting)avcassFreeTier=readFreeTier();
   authEvents.accept("RUNTIME_STEP_RESUME");if(music&&resumePendingMusic(progress))return;if(journal().contains("name"))progress.update(11,"التحقق من إنهاء جلسة مدار السابقة قبل طلب GPU");authEvents.accept("RUNTIME_STEP_CLEANUP");cleanupPrevious();authEvents.accept("RUNTIME_STEP_SPECS");JSONObject available=cloud("GET","v1beta/runtimespecs",null,cancel);
   android.content.SharedPreferences settings=context.getSharedPreferences("colab_connection",0);
-  List<JSONObject> specs=music&&avcassGpuRouting?avcassCandidates(available,avcassFreeTier):
+  boolean avRouting=music&&avcassGpuRouting;
+  boolean t4First=avRouting&&!avcassFreeTier&&recentlyUnavailable(grant);
+  List<JSONObject> specs=avRouting?avcassCandidates(available,avcassFreeTier,t4First):
     music?musicCandidates(available,settings.getString("music_gpu","auto"),settings.getString("music_gpu_last","")):candidates(available);
   if(allowed!=null){final List<String> order=Arrays.asList(allowed);specs.removeIf(v->!order.contains(v.optString("accelerator")));specs.sort(Comparator.comparingInt(v->order.indexOf(v.optString("accelerator"))));if(specs.isEmpty())throw new IOException("هذا التوليد يحتاج كرت "+String.join(" أو ",allowed)+"، وحساب Colab ما يتيحه الحين؛ جرّب لاحقًا");}
   if(specs.isEmpty())throw new IOException("لا يوجد GPU مناسب مؤهل حاليًا؛ أعد المحاولة لاحقًا");
+  if(t4First&&specs.size()>1){authEvents.accept("MUSIC_L4_COOLDOWN");progress.update(12,"تجربة T4 أولًا بعد رفض L4 في المحاولة السابقة");}
   for(int i=0;i<Math.min(2,specs.size());i++){
    ColabProbe.check(cancel);JSONObject spec=specs.get(i);String id="madar-"+UUID.randomUUID();runtime="runtimes/"+id;
    if(!journal().edit().putString("name",runtime).putString("project",grant.project).putString("requestId",UUID.randomUUID().toString()).putString("spec",spec.toString()).remove("operation").commit())throw new IOException("تعذر حفظ حالة جلسة Colab");
@@ -167,7 +189,7 @@ final class ColabRuntime implements AutoCloseable {
    progress.update(12,"طلب GPU · "+spec.getString("accelerator")+"؛ قد يستغرق بدء الجلسة دقائق");
    JSONObject operation;
    try{operation=cloud("POST","v1beta/runtimes?runtimeId="+id+"&requestId="+journal().getString("requestId",""),new JSONObject().put("runtimeSpec",spec),cancel);}
-   catch(ColabAllocation.Failure failure){journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);if(music&&avcassGpuRouting&&failure.canTryAnotherGpu()&&i+1<Math.min(2,specs.size())){allocationEvents.accept(failure);progress.update(12,"تعذر تخصيص L4؛ تجربة T4");continue;}allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
+   catch(ColabAllocation.Failure failure){journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);if(avRouting)rememberUnavailable(grant,failure);if(avRouting&&failure.canTryAnotherGpu()&&i+1<Math.min(2,specs.size())){allocationEvents.accept(failure);progress.update(12,"تعذر تخصيص "+failure.gpu+"؛ تجربة "+allocationGpu(specs.get(i+1)));continue;}allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
    String name=operation.optString("name");if(!name.isEmpty())journal().edit().putString("operation",name).commit();long began=System.nanoTime(),deadline=began+TimeUnit.MINUTES.toNanos(5);
    // Cancellation leaves the journal intact; background cleanup resolves the same operation.
    while(!operation.optBoolean("done")){
@@ -175,7 +197,7 @@ final class ColabRuntime implements AutoCloseable {
     long elapsed=TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()-began);progress.update(12,"انتظار مورد GPU · "+spec.getString("accelerator")+" · مضى "+elapsed+" ثانية؛ الفصل لم يبدأ بعد");
     long pause=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);while(System.nanoTime()<pause){ColabProbe.check(cancel);Thread.sleep(50);}operation=cloud("GET","v1/"+name,null,cancel);
    }
-   JSONObject error=operation.optJSONObject("error");if(error!=null){ColabAllocation.Failure failure=ColabAllocation.failure(error,0);journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);if(failure.canTryAnotherGpu()&&i+1<Math.min(2,specs.size())){allocationEvents.accept(failure);progress.update(12,"المورد غير متاح؛ تجربة GPU بديل مرة واحدة");continue;}allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
+   JSONObject error=operation.optJSONObject("error");if(error!=null){ColabAllocation.Failure failure=ColabAllocation.failure(error,0);journal().edit().clear().commit();runtime="";failure.gpu=allocationGpu(spec);if(avRouting)rememberUnavailable(grant,failure);if(failure.canTryAnotherGpu()&&i+1<Math.min(2,specs.size())){allocationEvents.accept(failure);progress.update(12,"المورد غير متاح؛ تجربة GPU بديل مرة واحدة");continue;}allocationSnapshot(failure);allocationEvents.accept(failure);throw failure;}
    ColabProbe.check(cancel);progress.update(13,"تم تخصيص GPU · قراءة بيانات اتصال المحرك");refresh();if(music)settings.edit().putString("music_gpu_last",spec.getString("accelerator")).apply();return;
   }
  }

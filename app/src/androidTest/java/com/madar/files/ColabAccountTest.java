@@ -26,6 +26,9 @@ public class ColabAccountTest {
   assertEquals("T4",free.get(0).getString("accelerator"));
   assertEquals(2,other.size());
   assertEquals("L4",other.get(0).getString("accelerator"));
+  java.util.List<JSONObject> afterRejection=ColabRuntime.avcassCandidates(response,false,true);
+  assertEquals("T4",afterRejection.get(0).getString("accelerator"));
+  assertEquals("L4",afterRejection.get(1).getString("accelerator"));
   assertEquals("T4",other.get(1).getString("accelerator"));
   list.getJSONObject(2).put("eligible",false);
   assertEquals("T4",ColabRuntime.avcassCandidates(response,false).get(0).getString("accelerator"));

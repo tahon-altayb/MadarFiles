@@ -70,7 +70,8 @@ public class WatchMusicService extends Service {
    File aggregate=File.createTempFile("madar_watch_clean_",".pcm",getCacheDir());LiveSeparation.attach(job.clean,aggregate,0);
    if(job.cloud)gpu.session.diagnostic.measure("SOURCE",SystemClock.elapsedRealtime()-sourceAt,0,0);
    boolean network=ExternalMedia.network(job.uri);
-   if(network)download=WatchSourceDownload.start(this,job.http,job.mime,gpu!=null?gpu.session.diagnostic:null);
+   boolean prefetchStarted=network&&!MusicPipeline.AVCASS.equals(job.pipeline);
+   if(prefetchStarted)download=WatchSourceDownload.start(this,job.http,job.mime,gpu!=null?gpu.session.diagnostic:null);
    boolean localSnapshotUsed=false;
    try(RandomAccessFile out=new RandomAccessFile(aggregate,"rw")){
     boolean audiovisual=MusicPipeline.AVCASS.equals(job.pipeline);
@@ -120,7 +121,12 @@ public class WatchMusicService extends Service {
       if(copied[0]==0&&job.clean.coverage.total()==0)throw new IOException("لم يُنتج الفصل صوتًا قابلًا للمشاهدة");
       long cycleMs=SystemClock.elapsedRealtime()-cycleBegan-(job.cloud?gpu.session.lastColdStartMs:0);
       if(job.cloud){cycleMs=Math.max(cycleMs,decodeMs+gpu.session.lastUploadMs+gpu.session.lastProcessMs);transferSecondsPerMedia=(decodeMs+gpu.session.lastUploadMs)/1000.0/((window.decodeEnd-window.decodeStart)/1e6);}
-      if(audiovisual&&copied[0]>0){job.committedFrames+=copied[0];gpu.committed(copied[0],WatchPlan.frame(job.durationUs));update("حُفظت الدفعة المفصولة");}
+      if(audiovisual&&copied[0]>0){job.committedFrames+=copied[0];gpu.committed(copied[0],WatchPlan.frame(job.durationUs));update("حُفظت الدفعة المفصولة");
+       if(network&&!prefetchStarted){
+        prefetchStarted=true;
+        download=WatchSourceDownload.start(this,job.http,job.mime,gpu.session.diagnostic);
+       }
+      }
       if(job.clean.buffer!=null)job.clean.buffer.completeCycle(copied[0]/44100.0,Math.max(1,cycleMs)/1000.0);
      }finally{if(decoded!=null)decoded.pcm.delete();if(processed!=null)processed.delete();if(visual!=null)visual.delete();}
     }

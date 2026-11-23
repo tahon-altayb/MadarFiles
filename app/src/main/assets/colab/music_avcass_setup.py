@@ -8,7 +8,6 @@ import sys
 import tempfile
 from types import SimpleNamespace
 
-from drive_model_cache import materialize
 from music_drive_bundle import cache_context, runtime_identity, Timings
 
 ROFO = 'https://huggingface.co/enerjazzer/BS-ROFO-SW-Fixed/resolve/main/'
@@ -135,7 +134,11 @@ def setup(ROOT, token, status, bundle_key=None):
     ROOT.mkdir(parents=True, exist_ok=True)
     cache = cache_context(token, bundle_key)
     timings = Timings()
-    source = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    # Transfer changes do not invalidate the existing dependency archive.
+    recipe = Path(__file__).read_bytes().split(b'\ndef setup(', 1)[0]
+    source = hashlib.sha256(recipe).hexdigest()
+    if source == '6f29e6961028cde8c2587607b21633aa9d26e8894624d3f0348f418fb6760a9a':
+        source = '4b329aacf2cce854f2069d65cf6cf2b1c511cbd58332c18203244e1826a30ddd'
     identity = dict(source=source, abi=runtime_identity('torch','torchvision','numpy','opencv-python','librosa','scipy'))
     destination = ROOT / 'runtime'
     marker = destination / '.ready'
@@ -143,6 +146,7 @@ def setup(ROOT, token, status, bundle_key=None):
     bundle_source = 'session'
     if not marker.is_file() and cache and cache.restore(key, destination, status, timings):
         bundle_source = 'drive'
+    status('gpu_dependencies', 32, extra=dict(runtime_validate=True))
     paths = runtime_paths(destination)
     env = {**os.environ, 'PYTHONPATH': os.pathsep.join(map(str, paths))}
     if (not marker.is_file() or marker.read_text() != source or subprocess.run(
@@ -167,12 +171,11 @@ def setup(ROOT, token, status, bundle_key=None):
     cfg = SimpleNamespace(url=ROFO+'BS-Rofo-SW-Fixed.yaml', size=4613,
         sha256='f9fada9f94e5ba2d2e4600196299459294bc5f532b314c209cc156ac63e4329b')
     try:
-        checkpoint_av, av_cache = materialize(ROOT, av_spec, token, status)
-        cavp, cavp_cache = materialize(ROOT, cavp_spec, token, status)
-        weights, model_cache = materialize(ROOT, rofo, token, status)
-        config, config_cache = materialize(ROOT, cfg, token, status)
+        from drive_model_cache import materialize_group
+        (checkpoint_av, av_cache), (cavp, cavp_cache), (weights, model_cache), (config, config_cache) = materialize_group(
+            ROOT, (av_spec, cavp_spec, rofo, cfg), token, status, timings)
     except ValueError as error:
         raise ValueError('MUSIC_AVCASS_WEIGHTS') from error
-    if "download_unsaved" in (av_cache, cavp_cache, config_cache):
-        model_cache = "download_unsaved"
+    sources = (av_cache, cavp_cache, model_cache, config_cache)
+    model_cache = next(source for source in ('download_unsaved', 'download_saved', 'drive', 'local') if source in sources)
     return checkpoint_av, cavp, weights, config, model_cache, bundle_source, timings.values

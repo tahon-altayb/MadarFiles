@@ -17,9 +17,9 @@ final class MusicCloudJob {
   if(state.optInt("protocol")!=2||!folder.equals(state.optString("job"))||state.optLong("frames",-1)!=frames||state.optInt("sample_rate")!=44100||state.optInt("channels")!=2||state.optInt("output_frames")!=OUTPUT_FRAMES||!MusicPipeline.fingerprint(profile).equals(state.optString("model_sha256"))||!MusicPipeline.checked(profile).equals(state.optString("pipeline",MusicPipeline.LEGACY)))throw new IOException("Colab · MUSIC_RESULT_SCHEMA");
  }
  static ColabMusic.Result run(ColabMusic.Session session,AudioPipeline.Decoded audio,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
-  return run(session,audio,null,progress,live);
+  return run(session,audio,null,progress,live,null);
  }
- static ColabMusic.Result run(ColabMusic.Session session,AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live)throws Exception{
+ static ColabMusic.Result run(ColabMusic.Session session,AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live,java.util.function.Consumer<Boolean> watchMode)throws Exception{
   if(MusicPipeline.AVCASS.equals(session.pipeline)!=(video!=null))throw new IOException("Colab · MUSIC_AVCASS_VIDEO");
   long sourceFrames=audio.pcm.length()/4,frames=Math.round(sourceFrames*44100.0/audio.sampleRate);if(frames<=0)throw new IOException("Colab · MUSIC_DURATION");
   ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean cold=session.batch==0,voice=MusicPipeline.LEGACY.equals(session.pipeline);long began=now();
@@ -53,7 +53,7 @@ final class MusicCloudJob {
    runtime.put(folder+"/request.json",request.toString(),"text");
    session.lastUploadMs=now()-uploadAt;diagnostic.record("UPLOAD_COMPLETE");diagnostic.measure("UPLOAD",session.lastUploadMs,wireBytes,frames);uploaded=true;
   }finally{if(!uploaded)output.delete();}
-  return collect(session,folder,new long[]{frames},0,progress,live,output,cold,began);
+  return collect(session,folder,new long[]{frames},0,progress,live,output,cold,began,watchMode);
  }
  /** The job answered that it could not read the compressed audio: the caller sends the decoded audio instead, in the same session. */
  static final class SourceRejected extends IOException {SourceRejected(String code){super("Colab · "+code);}}
@@ -82,7 +82,7 @@ final class MusicCloudJob {
   long expected=Math.round(Math.min(endUs>0?Math.max(0,endUs-audio.offsetUs):Long.MAX_VALUE,audio.durationUs+50000)/1e6*44100);
   // He listens while it separates (the music tool always offers it): the clean sound plays from the clip's own audio start.
   File output=File.createTempFile("madar_cloud_vocals_",".pcm",session.context.getCacheDir());if(live!=null)LiveSeparation.attach(live,output,audio.offsetUs);
-  return collect(session,folder,new long[]{0},expected,progress,live,output,cold,began);
+  return collect(session,folder,new long[]{0},expected,progress,live,output,cold,began,null);
  }
  private static void uploadPart(ColabRuntime runtime,String path,byte[] data,boolean shortTransfer)throws Exception{
   String encoded=Base64.encodeToString(data,Base64.NO_WRAP);
@@ -90,10 +90,11 @@ final class MusicCloudJob {
   else runtime.put(path,encoded,"base64");
  }
  /** Waits for the job, fetches its packs as they are made and checks the whole result. total[0] is the length in frames (0: learned from the job, within two seconds of `near`). */
- private static ColabMusic.Result collect(ColabMusic.Session session,String folder,final long[] total,final long near,MusicSeparator.Progress progress,LiveSeparation.Session live,final File output,boolean cold,long began)throws Exception{
+ private static ColabMusic.Result collect(ColabMusic.Session session,String folder,final long[] total,final long near,MusicSeparator.Progress progress,LiveSeparation.Session live,final File output,boolean cold,long began,java.util.function.Consumer<Boolean> watchMode)throws Exception{
   ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean complete=false;ColabMusic.Result result=new ColabMusic.Result();result.pcm=output;
   try{
    long readyAt=now();session.awaitReady();session.lastColdStartMs=cold?Math.max(0,now()-began):0;diagnostic.measure("PREPARE",now()-readyAt,0,0);
+   if(watchMode!=null)watchMode.accept(session.liveAvcass);
    MusicMailbox.submit(runtime,session.root,folder);diagnostic.record("MUSIC_SUBMITTED");
    final long[] fetched={0},fetchMs={0},gpuMs={0};long processAt=now();
    progress.update(39,"فصل الصوت على GPU · بانتظار أول جزء");

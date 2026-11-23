@@ -11,7 +11,7 @@ final class ColabAllocation {
   Failure(int code,int httpStatus,String reason){super("Colab · RUNTIME_ALLOCATION_REJECTED");this.code=code;this.httpStatus=httpStatus;this.reason=reason;}
   @Override public String getMessage(){return description()+" · RUNTIME_ALLOCATION_REJECTED";}
   String description(){
-   String action=reason.equals("TOO_MANY_ACTIVE_RUNTIMES")?"بلغ الحساب حد الجلسات النشطة وفق رد Google. أنهِ جلسة غير مستخدمة من إدارة جلسات Colab ثم أعد المحاولة.":"رفض Colab تخصيص جلسة المعالجة. يتضمن تقرير هذه المحاولة سبب الرفض الوارد من Google وعدد الجلسات التي أعادتها الخدمة.";
+   String action=reason.equals("TOO_MANY_ACTIVE_RUNTIMES")?"بلغ الحساب حد الجلسات النشطة وفق رد Google. أنهِ جلسة غير مستخدمة من إدارة جلسات Colab ثم أعد المحاولة.":reason.equals("NO_RUNTIMES")?"Colab ما وفّر كرت "+gpu+" حاليًا. أعد المحاولة بعد قليل.":"رفض Colab تخصيص جلسة المعالجة. يتضمن تقرير هذه المحاولة سبب الرفض الوارد من Google وعدد الجلسات التي أعادتها الخدمة.";
    return action+"\nرمز الخدمة: "+(code<0?"غير محدد":code)+(httpStatus>0?" · HTTP "+httpStatus:"")+"\nسبب Google: "+(reason.isEmpty()?"لم تتضمن الاستجابة سببًا تفصيليًا":reason);
   }
   String report(){return "Requested GPU: "+gpu+"\nAllocation code: "+code+(httpStatus>0?"\nAllocation HTTP: "+httpStatus:"")+"\nGoogle ErrorInfo reason: "+(reason.isEmpty()?"NOT_PROVIDED":reason)+"\nAssigned runtimes: "+(assigned<0?"UNAVAILABLE":assigned)+"\nAssigned GPU runtimes: "+(assignedGpu<0?"UNAVAILABLE":assignedGpu)+"\n";}

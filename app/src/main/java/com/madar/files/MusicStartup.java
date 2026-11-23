@@ -22,8 +22,14 @@ final class MusicStartup {
   if(!java.util.Arrays.asList("bootstrap","gpu_dependencies","gpu_inference_check","gpu_check","install","model_download","model_restore","model_save","model_load","ready").contains(stage))throw new IOException("Colab · RESPONSE_SCHEMA");
   watch.update(state,at);seen=true;if(diagnostic!=null)diagnostic.record("STAGE_"+stage.toUpperCase(java.util.Locale.ROOT));
   String message;switch(stage){case "gpu_dependencies":message="فحص cuDNN المتوافق مع GPU وذاكرته المحفوظة";break;case "gpu_inference_check":message="اختبار الفصل الفعلي على GPU قبل رفع الصوت";break;case "gpu_check":message="التحقق من توفر CUDA على GPU";break;case "install":message="تثبيت محرك الفصل المسرّع على جلسة GPU";break;case "model_download":message="تنزيل الأوزان من المصدر";break;case "model_restore":message="استرجاع الأوزان من Google Drive";break;case "model_save":message="حفظ الأوزان في Google Drive للمرة القادمة";break;case "model_load":message="تحميل النموذج على GPU";break;case "ready":message="GPU ونموذج الفصل جاهزان";break;default:message="بدء محرك الفصل على GPU";}
+  String artifact=state.optString("artifact");
+  if(stage.equals("model_restore")){
+   if(artifact.equals("runtime"))message="استرجاع مكتبات الفصل من Google Drive";
+   else if(artifact.equals("cudnn"))message="استرجاع cuDNN من Google Drive";
+  }
+  if(state.optBoolean("runtime_validate")&&stage.equals("gpu_dependencies"))message="التحقق من مكتبات الفصل على الجلسة";
   long bytes=state.optLong("bytes",0),total=state.optLong("total_bytes",0);
-  if(bytes>0&&total>=bytes)message+=" · "+bytes/1000000+" / "+total/1000000+" ميجابايت";
+  if(bytes>0&&total>=bytes)message+=" · "+bytes/1000000+" / "+total/1000000+" ميجابايت ("+((int)(100.0*bytes/total))+"٪)";
   progress.update(Math.max(27,Math.min(38,state.optInt("progress",27))),message+" · مضى "+Math.max(0,(at-began)/1000)+" ثانية");ready=stage.equals("ready");if(ready){
    gpuTier=state.optString("gpu_tier");avSteps=state.optInt("av_steps");liveAvcass="L4".equals(gpuTier)&&avSteps==24;
    String source=state.optString("cache_source");String bundle=state.optString("bundle_source"),nativeCache=state.optString("native_cache");
