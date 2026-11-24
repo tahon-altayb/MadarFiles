@@ -45,7 +45,7 @@ final class MusicRecovery implements AutoCloseable {
   */
  MusicCloudJob.Staged stage(AudioPipeline.Decoded audio,File video,ColabMusic.Session expect,MusicSeparator.Progress progress){
   ColabMusic.Session current=session;
-  if(current==null||current.closed||expect!=null&&current!=expect)return null;
+  if(current==null||current.closed||!current.initialized||!current.musicReady||expect!=null&&current!=expect)return null;
   try{return current.stage(audio,video,progress);}
   catch(java.util.concurrent.CancellationException stopped){return null;}
   catch(Exception unavailable){current.diagnostic.record("MUSIC_STAGE_SKIPPED");return null;}
