@@ -15,5 +15,15 @@ final class WatchPlan {
   long[] gap=ready.firstGap(0,end);
   return gap==null?null:window(gap,forwardIndex++);
  }
+ /**
+  * The window next() will return once `current` is committed in order (same sizes, same index), so it can be
+  * prepared while `current` separates. Null at the end. The caller must still compare it with next().
+  */
+ WatchWindows following(WatchWindows current){
+  long start=frame(current.coreEnd);
+  if(start>=end)return null;
+  return window(new long[]{start,end},forwardIndex);
+ }
+ static boolean same(WatchWindows a,WatchWindows b){return a!=null&&b!=null&&a.coreStart==b.coreStart&&a.coreEnd==b.coreEnd&&a.decodeStart==b.decodeStart&&a.decodeEnd==b.decodeEnd;}
  private WatchWindows window(long[] gap,int index){return WatchWindows.contextFor(audiovisual?WatchWindows.audiovisual(micros(gap[0]),micros(gap[1]),index):WatchWindows.forWatch(micros(gap[0]),micros(gap[1]),cloud,index),micros(end));}
 }

@@ -12,7 +12,7 @@ final class MusicRecovery implements AutoCloseable {
  private final MusicSeparator.Progress progress;
  private final String profile;
  private final ColabDiagnostics operation;
- ColabMusic.Session session;
+ volatile ColabMusic.Session session;
  static final long GPU_RETRY_MS=60_000,GPU_WAIT_MS=30*60_000L;
 
  MusicRecovery(Context context,ColabCredentials.Grant grant,AtomicBoolean cancel,
@@ -37,9 +37,33 @@ final class MusicRecovery implements AutoCloseable {
 
  ColabMusic.Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress report,
                        LiveSeparation.Session part,java.util.function.Consumer<Boolean> watchMode)throws Exception{
+  return run(audio,video,report,part,watchMode,null);
+ }
+ /**
+  * Upload a later window on the current session while this one separates. Null when there is no ready session
+  * (the window is then simply run the normal way when its turn comes).
+  */
+ MusicCloudJob.Staged stage(AudioPipeline.Decoded audio,File video,ColabMusic.Session expect,MusicSeparator.Progress progress){
+  ColabMusic.Session current=session;
+  if(current==null||current.closed||expect!=null&&current!=expect)return null;
+  try{return current.stage(audio,video,progress);}
+  catch(java.util.concurrent.CancellationException stopped){return null;}
+  catch(Exception unavailable){current.diagnostic.record("MUSIC_STAGE_SKIPPED");return null;}
+ }
+ /** A staged window the plan no longer needs: close its batch so the worker is not left waiting for it. */
+ void discard(MusicCloudJob.Staged staged){
+  if(staged==null)return;
+  staged.output.delete();
+  if(staged.session.closed)return;
+  if(!MusicCloudJob.abandon(staged.session.runtime,staged.session,staged.folder))staged.session.healthy=false;
+ }
+ ColabMusic.Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress report,
+                       LiveSeparation.Session part,java.util.function.Consumer<Boolean> watchMode,MusicCloudJob.Staged staged)throws Exception{
   long waitingSince=0;int gpuAttempts=0;
+  if(staged!=null&&staged.session!=session){discard(staged);staged=null;}
   for(int replacements=0;;){
    try{
+    if(staged!=null){MusicCloudJob.Staged ready=staged;staged=null;return session.collect(ready,report,part,watchMode);}
     return session.run(audio,video,report,part,watchMode);
    }
    catch(IOException failure){

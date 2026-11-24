@@ -31,7 +31,7 @@ final class CensorVideoWindow {
   }
  }
  private static File extract(Context context,PlayerInput input,long startMs,long endMs,int width,int height,AtomicBoolean cancel,boolean sound,boolean retry)throws Exception{
-  if(startMs<0||endMs<=startMs||endMs-startMs>(sound?25000:16000)||width<=0||height<=0)throw new IOException("Colab · CENSOR_VIDEO_FORMAT");
+  if(startMs<0||endMs<=startMs||endMs-startMs>(sound?66000:16000)||width<=0||height<=0)throw new IOException("Colab · CENSOR_VIDEO_FORMAT");
   File video=File.createTempFile("madar_censor_window_",".mp4",context.getCacheDir());if(!video.delete())throw new IOException("تعذر تجهيز جزء الفيديو");
   HandlerThread thread=new HandlerThread("madar-censor-video");thread.start();Handler handler=new Handler(thread.getLooper());CountDownLatch done=new CountDownLatch(1);AtomicReference<Exception> error=new AtomicReference<>();AtomicReference<Transformer> current=new AtomicReference<>();boolean complete=false;
   try{

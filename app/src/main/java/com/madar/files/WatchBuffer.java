@@ -35,6 +35,9 @@ final class WatchBuffer {
   if(progressive){
    // Start with a usable prefix and replenish at a bounded target if GPU or upload is slower.
    double target=rate==0?6*s:Math.max(6*s,Math.min(18*s,gap*s));
+   // Separation measured slower than playback: wait once for enough to reach the end without stopping again,
+   // instead of a short refill that runs dry a minute later (stop, wait, stop, wait).
+   if(rate>0&&rate<s)target=Math.max(target,remaining*(1-rate/s)+target);
    return Math.min(limit,target);
   }
   // For the legacy policy, budget the total predicted production deficit.

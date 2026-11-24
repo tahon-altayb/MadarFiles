@@ -33,4 +33,10 @@ public class WatchBufferTest {
  @Test public void slowAndFastProductionBothMakeProgressWithBoundedAutomaticResumes(){
   for(double rate:new double[]{.25,.5,1,2,4}){WatchBuffer b=new WatchBuffer(600);double ready=0,played=0;boolean playing=false;int resumes=0,stalls=0;for(long second=0;played<600&&second<10000;second++){double next=Math.min(600,Math.floor(second*rate/4)*4);if(next>ready){ready=next;b.commit(ready,second*1000);}if(!playing&&(ready>=600||ready-played>=b.required(played,1,second*1000))){playing=true;resumes++;}if(playing){if(ready-played>=1)played++;else {playing=false;stalls++;}}}assertTrue(resumes>0);assertTrue("Should avoid repeated exhaustion at producer rate="+rate+", stalls="+stalls,stalls<=1);assertEquals("producer rate="+rate,600,played,0);}
  }
+ @Test public void slowerThanPlaybackWaitsOnceForTheWholeDeficitButFastKeepsAShortRefill(){
+  WatchBuffer fast=new WatchBuffer(1380,true,true,120);fast.commit(16,0);fast.commit(40,20000);fast.commit(80,40000);fast.completeCycle(40,20);
+  assertEquals(120,fast.startupRequired(0,1,40000),0);assertTrue(fast.required(80,1,40000)<=18);
+  WatchBuffer slow=new WatchBuffer(1380,true,true,120);slow.commit(16,0);slow.commit(40,40000);slow.commit(80,106000);slow.completeCycle(40,66);
+  assertTrue(slow.required(80,1,106000)>600);assertTrue(slow.required(80,1,106000)<=1300);
+ }
 }

@@ -13,6 +13,12 @@ import zlib
 import threading
 
 AVCASS_PIPELINE = "avcass_roformer_sw"
+# Watch windows: up to 56 s of new sound plus 4 s of context on each side (the phone checks the same limits).
+AVCASS_MAX_SECONDS = 66
+AVCASS_MAX_VIDEO_BYTES = 16_000_000
+# The phone queues the next batch while this one runs and still reads this one's packs afterwards,
+# so finished batches are kept until two newer ones have started.
+KEEP_FINISHED_JOBS = 2
 _AVCASS = None
 
 _STATUS_LOCK = threading.RLock()
@@ -487,10 +493,10 @@ def run_v2(req):
             raise ValueError('MUSIC_MANIFEST')
     video = None
     if pipeline == AVCASS_PIPELINE:
-        if _AVCASS is None or compressed is not None or type(frames) is not int or frames > 25 * RATE:
+        if _AVCASS is None or compressed is not None or type(frames) is not int or frames > AVCASS_MAX_SECONDS * RATE:
             raise ValueError('MUSIC_AVCASS_REQUEST')
         meta = req.get('video')
-        if not isinstance(meta, dict) or type(meta.get('bytes')) is not int or not 0 < meta['bytes'] <= 5_000_000:
+        if not isinstance(meta, dict) or type(meta.get('bytes')) is not int or not 0 < meta['bytes'] <= AVCASS_MAX_VIDEO_BYTES:
             raise ValueError('MUSIC_AVCASS_VIDEO')
         video = Path('visual.mp4')
         uploaded = Path('visual.bin')
@@ -605,7 +611,7 @@ def serve(root):
     else: raise ValueError('MUSIC_PIPELINE')
     with _STATUS_LOCK:
         service_state()
-    previous = None
+    finished = []
     while True:
         job = root.parent / (root.name + '_b' + str(_NEXT_BATCH))
         marker = job / 'submit.json'
@@ -626,6 +632,11 @@ def serve(root):
             if terminal.get('stage') in ('done', 'failed'):
                 _NEXT_BATCH += 1
                 continue
+            if (job / 'cancel.json').is_file():
+                # The phone no longer needs this batch (it was staged ahead and the plan changed).
+                _NEXT_BATCH += 1
+                shutil.rmtree(job, ignore_errors=True)
+                continue
             write_json(job / 'accepted.json', dict(job=job.name, protocol=2))
             _NEXT_BATCH += 1
         elif legacy.is_file():
@@ -637,8 +648,10 @@ def serve(root):
             continue
         if job.parent != root.parent or not re.fullmatch(re.escape(root.name) + r'_b[0-9]+', job.name):
             raise ValueError('MUSIC_JOB_PATH')
-        if previous is not None and previous != job:
-            shutil.rmtree(previous, ignore_errors=True)
+        while len(finished) > KEEP_FINISHED_JOBS - 1:
+            old = finished.pop(0)
+            if old != job:
+                shutil.rmtree(old, ignore_errors=True)
         _ACTIVE_JOB = job.name
         with _STATUS_LOCK:
             service_state()
@@ -646,7 +659,8 @@ def serve(root):
         _ACTIVE_JOB = ''
         with _STATUS_LOCK:
             service_state()
-        previous = job
+        if job not in finished:
+            finished.append(job)
 
 
 if __name__ == '__main__':

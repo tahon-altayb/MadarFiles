@@ -6,7 +6,9 @@ final class WatchWindows {
  static final int[] CLOUD_SECONDS={40,60,90,150,240,360,540,600};
  final long coreStart,coreEnd,decodeStart,decodeEnd;
  WatchWindows(long next,long end,boolean cloud){this(next,end,cloud?120:52);}
- static WatchWindows audiovisual(long next,long end,int index){return new WatchWindows(next,end,index==0?8:16);}
+ /** Voice + ambience: a short first window, then up to 56 s of new sound per batch (4 s of context each side), so most of the GPU time goes to new sound. */
+ static final int[] AUDIOVISUAL_SECONDS={8,24,40,56};
+ static WatchWindows audiovisual(long next,long end,int index){return new WatchWindows(next,end,AUDIOVISUAL_SECONDS[Math.min(Math.max(index,0),AUDIOVISUAL_SECONDS.length-1)]);}
  static WatchWindows forWatch(long next,long end,boolean cloud,int index){return new WatchWindows(next,end,cloud?CLOUD_SECONDS[Math.min(Math.max(index,0),CLOUD_SECONDS.length-1)]:52);}
  // Compatibility for old callers/tests; production tracks the ordinal, independent of reserve.
  static WatchWindows forWatch(long next,long end,boolean cloud,boolean first,double reserve){return forWatch(next,end,cloud,first?0:1);}

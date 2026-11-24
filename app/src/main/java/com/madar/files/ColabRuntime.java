@@ -80,10 +80,18 @@ final class ColabRuntime implements AutoCloseable {
   if(previous.account!=null){
    try{
     com.google.android.gms.auth.api.identity.AuthorizationClient client=com.google.android.gms.auth.api.identity.Identity.getAuthorizationClient(context);
-    com.google.android.gms.auth.api.identity.AuthorizationResult result=awaitAuthorization(
-     client.authorize(ColabCredentials.authorizationRequest(ColabCredentials.MODEL_STORAGE_SCOPE,previous.account)),stop);
-    if(!result.hasResolution()&&ColabCredentials.validStorageToken(result.getAccessToken())&&
-       ColabCredentials.storageScopes(result.getGrantedScopes()))storage=result.getAccessToken();
+    for(int attempt=0;attempt<2&&storage==null;attempt++){
+     com.google.android.gms.auth.api.identity.AuthorizationResult result=awaitAuthorization(
+      client.authorize(ColabCredentials.authorizationRequest(ColabCredentials.MODEL_STORAGE_SCOPE,previous.account)),stop);
+     String token=result.getAccessToken();
+     if(result.hasResolution()||!ColabCredentials.validStorageToken(token))break;
+     if(ColabCredentials.storageScopes(result.getGrantedScopes())){storage=token;break;}
+     // Same check as the sign-in screen: Play Services may list merged scopes; ask Google what the token holds.
+     int verdict=ColabCredentials.storageVerdict(token);
+     if(verdict==ColabCredentials.STORAGE_OK){storage=token;break;}
+     if(verdict!=ColabCredentials.STORAGE_BROAD)break;
+     awaitAuthorization(client.clearToken(com.google.android.gms.auth.api.identity.ClearTokenRequest.builder().setToken(token).build()),stop);
+    }
    }catch(IOException unavailable){ColabProbe.check(stop);}
   }
   return new ColabCredentials.Grant(previous.token,previous.project,storage,previous.account);

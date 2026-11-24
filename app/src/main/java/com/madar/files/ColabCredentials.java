@@ -27,6 +27,32 @@ final class ColabCredentials {
   for(String s:scopes)if(!MODEL_STORAGE_SCOPE.equals(s)&&!"https://www.googleapis.com/auth/drive.appfolder".equals(s))return false;
   return true;
  }
+ static final int STORAGE_OK=0,STORAGE_BROAD=1,STORAGE_MISSING=2,STORAGE_NETWORK=3;
+ /**
+  * What the token itself carries, checked at Google. BROAD: Drive app data is there but so are other scopes
+  * (Play Services merged an earlier grant into it); the token is sent to Colab, so it is never used as is.
+  */
+ static int storageVerdict(String token){
+  if(!validStorageToken(token))return STORAGE_MISSING;
+  okhttp3.HttpUrl endpoint=okhttp3.HttpUrl.get("https://oauth2.googleapis.com/tokeninfo").newBuilder()
+   .addQueryParameter("access_token",token).build();
+  okhttp3.OkHttpClient http=new okhttp3.OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
+   .callTimeout(12,java.util.concurrent.TimeUnit.SECONDS).build();
+  for(int attempt=0;;attempt++){
+   try(okhttp3.Response response=http.newCall(new okhttp3.Request.Builder().url(endpoint).build()).execute()){
+    if(response.code()>=500&&attempt==0){Thread.sleep(1500);continue;}
+    if(!response.isSuccessful()||response.body()==null)return STORAGE_MISSING;
+    String scope=new org.json.JSONObject(response.body().string()).optString("scope").trim();
+    java.util.List<String> scopes=java.util.Arrays.asList(scope.split("\\s+"));
+    if(storageScopes(scopes))return STORAGE_OK;
+    return scopes.contains(MODEL_STORAGE_SCOPE)||scopes.contains("https://www.googleapis.com/auth/drive.appfolder")?STORAGE_BROAD:STORAGE_MISSING;
+   }catch(java.io.IOException network){
+    if(attempt==0){try{Thread.sleep(1500);}catch(InterruptedException stopped){Thread.currentThread().interrupt();return STORAGE_NETWORK;}continue;}
+    return STORAGE_NETWORK;
+   }catch(InterruptedException stopped){Thread.currentThread().interrupt();return STORAGE_NETWORK;}
+   catch(Exception unreadable){return STORAGE_MISSING;}
+  }
+ }
  static boolean verifyStorageToken(String token){
   if(!validStorageToken(token))return false;
   okhttp3.HttpUrl endpoint=okhttp3.HttpUrl.get("https://oauth2.googleapis.com/tokeninfo").newBuilder()

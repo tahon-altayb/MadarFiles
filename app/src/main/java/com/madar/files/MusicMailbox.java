@@ -56,7 +56,15 @@ final class MusicMailbox {
      }else{
      JSONObject service=read(runtime,cancel,events,"SERVICE",()->ColabRuntime.parseJson(runtime.getText(root+"/service.json",65536,10000)));
      if(service.optString("stage").equals("failed"))throw new IOException("Colab · "+MusicStartup.workerError(service.optString("error")));
-     long beat=service.optLong("heartbeat",-1);if(beat!=lastBeat){lastBeat=beat;lastBeatAt=now;}
+     long beat=service.optLong("heartbeat",-1);
+     String active=service.optString("active_job");
+     if(!active.isEmpty()&&!active.equals(folder)&&active.matches(java.util.regex.Pattern.quote(root)+"_b[0-9]+")){
+      // Still busy with an earlier batch (one queued ahead of this one): its own heartbeat shows it is alive.
+      try{beat=ColabRuntime.parseJson(runtime.getText(active+"/progress.json",65536,10000)).optLong("heartbeat",beat);}
+      catch(IOException unreadable){}
+      began=now;
+     }
+     if(beat!=lastBeat){lastBeat=beat;lastBeatAt=now;}
      if(now-lastBeatAt>30000)throw new IOException("Colab · WORKER_HEARTBEAT_TIMEOUT");
      if(now-began>30000)throw new IOException("Colab · WORKER_NOT_STARTED");
      state=null;

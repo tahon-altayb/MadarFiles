@@ -139,16 +139,29 @@ public final class ColabActivity extends Activity {
   if(ColabCredentials.storageScopes(result.getGrantedScopes())){finishStorage(token);return;}
   // Play Services can report earlier grants as well. Check the token itself at Google's fixed endpoint.
   status.setText("جارٍ التحقق من صلاحية تخزين الأوزان…");
-  worker.execute(()->{boolean allowed=ColabCredentials.verifyStorageToken(token);runOnUiThread(()->{
-   if(!current(ticket))return;if(allowed)finishStorage(token);else offerWithoutStorage();
+  worker.execute(()->{int verdict=ColabCredentials.storageVerdict(token);runOnUiThread(()->{
+   if(!current(ticket))return;
+   if(verdict==ColabCredentials.STORAGE_OK){finishStorage(token);return;}
+   if(verdict==ColabCredentials.STORAGE_BROAD&&!storageRetried){
+    // Play Services handed back a token that also carries the Colab permission (granted moments earlier in the
+    // same flow). That token is never sent to Colab. Drop it from the cache and ask again for Drive app data alone.
+    storageRetried=true;status.setText("جارٍ طلب إذن مساحة مدار الخاصة في Drive من جديد…");
+    Identity.getAuthorizationClient(this).clearToken(ClearTokenRequest.builder().setToken(token).build())
+     .addOnCompleteListener(this,done->{if(current(ticket))authorize(ticket,MODEL_STORAGE);});
+    return;
+   }
+   storageFailure=verdict;offerWithoutStorage();
   });});
  }
+ private boolean storageRetried;private int storageFailure=-1;
  private void offerWithoutStorage(){
   if(pendingModelGrant==null){complete("أعد اختيار حساب Google للمتابعة.");return;}
+  int reason=storageFailure;storageFailure=-1;
+  String why=reason==ColabCredentials.STORAGE_NETWORK?"تعذر الوصول إلى Google للتحقق من إذن Drive (الشبكة).":reason==ColabCredentials.STORAGE_BROAD?"أعاد Google إذنًا أوسع من مساحة مدار الخاصة في Drive، ومدار لا يرسله إلى Colab.":"لم يكتمل إذن مساحة مدار الخاصة في Drive.";
   new AlertDialog.Builder(this).setTitle("إذن حفظ الأوزان")
-   .setMessage("تعذر التحقق من إذن مساحة مدار الخاصة في Drive. يمكنك تشغيل المعالجة الآن وتنزيل الأوزان عند الحاجة، أو إعادة المحاولة لإكمال الربط.")
-   .setPositiveButton("متابعة المعالجة",(dialog,which)->finishStorage(null))
-   .setNegativeButton("إعادة المحاولة",(dialog,which)->complete("اضغط إعادة الاتصال لاختيار الحساب وإعادة طلب إذن Drive."))
+   .setMessage(why+" بدونه يشتغل الفصل لكن ينزّل الأوزان ويثبّت المكتبات من جديد في كل جلسة (أبطأ بدقيقتين تقريبًا).")
+   .setPositiveButton("متابعة بدون Drive",(dialog,which)->finishStorage(null))
+   .setNegativeButton("إعادة المحاولة",(dialog,which)->{storageRetried=false;if(current(generation)&&storageAccount!=null)authorize(generation,MODEL_STORAGE);else complete("اضغط إعادة الاتصال لاختيار الحساب وإعادة طلب إذن Drive.");})
    .setOnCancelListener(dialog->complete("أُلغي طلب إذن Drive.")).show();
  }
  private void finishStorage(String token){

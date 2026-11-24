@@ -51,8 +51,8 @@ final class ColabMusic {
  }
  /** One owned runtime, kernel and GPU model for all windows in this viewing session. */
  static final class Session implements AutoCloseable {
-  final Context context;final AtomicBoolean cancel=new AtomicBoolean();volatile AtomicBoolean callerCancel;volatile MusicSeparator.Progress status;final long createdAt=android.os.SystemClock.elapsedRealtime();boolean healthy,leased=true;private Thread cancelWatcher;private long cancelGeneration;final ColabRuntime runtime;ColabDiagnostics diagnostic;
-  final String root="madar_"+UUID.randomUUID().toString().replace("-","");String pipeline=MusicPipeline.LEGACY;String kernel;ColabKernel.Session channel;boolean initialized,closed;boolean liveAvcass;String gpuTier="";int avSteps,batch;long lastColdStartMs,lastUploadMs,lastProcessMs;final java.util.concurrent.CountDownLatch storageReady=new java.util.concurrent.CountDownLatch(1);volatile String warning="";private String modelStorageToken;private java.util.concurrent.FutureTask<Void> initializer;
+  final Context context;final AtomicBoolean cancel=new AtomicBoolean();volatile AtomicBoolean callerCancel;volatile MusicSeparator.Progress status;final long createdAt=android.os.SystemClock.elapsedRealtime();volatile boolean healthy;boolean leased=true;private Thread cancelWatcher;private long cancelGeneration;final ColabRuntime runtime;ColabDiagnostics diagnostic;
+  final String root="madar_"+UUID.randomUUID().toString().replace("-","");String pipeline=MusicPipeline.LEGACY;String kernel;ColabKernel.Session channel;volatile boolean initialized,closed;boolean liveAvcass;String gpuTier="";int avSteps,batch;long lastColdStartMs,lastUploadMs,lastProcessMs;final java.util.concurrent.CountDownLatch storageReady=new java.util.concurrent.CountDownLatch(1);volatile String warning="";private String modelStorageToken;private java.util.concurrent.FutureTask<Void> initializer;
   boolean visionOnly,visionReady,musicReady=true;String visionRoot;int visionBatch;
   Session(Context c,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress)throws IOException{this(c,grant,cancel,progress,null);}
   Session(Context c,ColabCredentials.Grant grant,AtomicBoolean cancel,MusicSeparator.Progress progress,ColabDiagnostics operation)throws IOException{if(grant==null)throw new IOException("أعد الاتصال بحساب Colab للفصل السحابي");context=c.getApplicationContext();status=progress;modelStorageToken=grant.takeModelStorage();runtime=new ColabRuntime(context,grant,this.cancel);bind(cancel,progress,operation);}
@@ -164,6 +164,16 @@ final class ColabMusic {
   }
   Result run(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress,LiveSeparation.Session live,java.util.function.Consumer<Boolean> watchMode)throws Exception{
    healthy=false;try{if(initialized&&!musicReady)prepareMusicAfterVision();ensureKeeper();Result result=MusicCloudJob.run(this,audio,video,progress,live,watchMode);healthy=true;return result;}
+   catch(Exception error){diagnostic.failed(error);throw error;}
+  }
+  /** Upload the next watch window while the current one separates (no state change if it fails: the caller runs it normally). */
+  MusicCloudJob.Staged stage(AudioPipeline.Decoded audio,File video,MusicSeparator.Progress progress)throws Exception{
+   if(closed||!initialized||!musicReady)throw new IOException("Colab · MUSIC_NOT_READY");
+   return MusicCloudJob.stage(this,audio,video,progress);
+  }
+  Result collect(MusicCloudJob.Staged staged,MusicSeparator.Progress progress,LiveSeparation.Session live,java.util.function.Consumer<Boolean> watchMode)throws Exception{
+   if(staged.session!=this)throw new IOException("Colab · MUSIC_JOB_PATH");
+   healthy=false;try{ensureKeeper();Result result=MusicCloudJob.collect(staged,progress,live,watchMode);healthy=true;return result;}
    catch(Exception error){diagnostic.failed(error);throw error;}
   }
   String visionStoragePrefix(){return "MADAR_MODEL_STORAGE_GRANT = "+JSONObject.quote(modelStorageToken)+"\n";}

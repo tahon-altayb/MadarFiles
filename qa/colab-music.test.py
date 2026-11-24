@@ -192,6 +192,47 @@ def run():
                 w.ENGINE = None
                 w.GPU_VERIFIED = False
 
+    def test_queued_batches_run_in_order_and_cancelled_ones_are_skipped(self):
+        worker = (ROOT/'app/src/main/assets/colab/music_worker.py').read_text()
+        injection = '''
+def prepare():
+    write_json("warm.json",dict(pid=os.getpid()))
+def run():
+    write_json('result.json', dict(pid=os.getpid(), at=time.time()))
+    status('done', 97)
+'''
+        worker = worker.replace("if __name__ == '__main__':",injection+"\nif __name__ == '__main__':")
+        previous=Path.cwd()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/('madar_'+'b'*32)
+            root.mkdir();(root/'music_worker.py').write_text(worker)
+            os.chdir(root)
+            state={'SERVICE_FOLDER':root.name}
+            try:
+                exec((ROOT/'app/src/main/assets/colab/music_warmup.py').read_text(),state)
+                deadline=time.monotonic()+5
+                while not (root/'warm.json').exists() and time.monotonic()<deadline:time.sleep(.02)
+                def batch(i,cancel=False):
+                    job=root.parent/(root.name+'_b'+str(i));job.mkdir();(job/'request.json').write_text('{}')
+                    if cancel:(job/'cancel.json').write_text('{}')
+                    (job/'submit.json').write_text(json.dumps(dict(protocol=2,service=root.name,job=job.name)))
+                    return job
+                # b0 runs, b1 was staged ahead and then dropped, b2 and b3 are queued back to back.
+                jobs=[batch(0),batch(1,cancel=True),batch(2),batch(3)]
+                deadline=time.monotonic()+10
+                while not (jobs[3]/'result.json').exists() and time.monotonic()<deadline:time.sleep(.02)
+                self.assertTrue((jobs[3]/'result.json').exists())
+                self.assertFalse(jobs[1].exists())
+                self.assertFalse(jobs[0].exists())
+                self.assertTrue(jobs[2].exists())
+                first=json.loads((jobs[2]/'result.json').read_text())['at']
+                self.assertLessEqual(first,json.loads((jobs[3]/'result.json').read_text())['at'])
+            finally:
+                process=state.get('_madar_music_service')
+                if process is not None:process.terminate();process.wait(timeout=5)
+                if '_madar_music_log' in state:state['_madar_music_log'].close()
+                os.chdir(previous)
+
     def test_persistent_child_reuses_process_and_releases_previous_window(self):
         bootstrap = (ROOT/'app/src/main/assets/colab/music_bootstrap.py').read_text()
         # Exercise the production serve loop and bootstrap, substituting only inference.
@@ -216,14 +257,19 @@ def run():
                 while not (root/'warm.json').exists() and time.monotonic()<deadline:time.sleep(.02)
                 warmed=json.loads((root/'warm.json').read_text())['pid']
                 pids=[]
-                for i in range(2):
+                for i in range(3):
                     job=root.parent/(root.name+'_b'+str(i));job.mkdir();(job/'request.json').write_text('{}')
                     state['JOB_FOLDER']=job.name
                     exec(bootstrap,state)
                     pids.append(json.loads((job/'result.json').read_text())['pid'])
+                    if i==1:
+                        # The phone may still be reading b0 while b1 runs (b1 was queued ahead).
+                        self.assertTrue((root.parent/(root.name+'_b0')).exists())
                 self.assertEqual(pids[0],pids[1])
+                self.assertEqual(pids[1],pids[2])
                 self.assertEqual(pids[0],warmed)
                 self.assertFalse((root.parent/(root.name+'_b0')).exists())
+                self.assertTrue((root.parent/(root.name+'_b1')).exists())
             finally:
                 process=state.get('_madar_music_service')
                 if process is not None:process.terminate();process.wait(timeout=5)

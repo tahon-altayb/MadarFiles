@@ -14,4 +14,18 @@ public class WatchPlanTest {
  @Test public void arbitrarySeekAndRoundTripSampleBoundariesHaveNoGapsOrDuplicateFrames(){for(long origin:new long[]{0,1000,54001000,632500000}){PcmRanges r=new PcmRanges();long end=origin+123456789;WatchPlan p=new WatchPlan(origin,end,true,r);int n=0;WatchWindows w;while((w=p.next(n%3==0?WatchPlan.frame(origin/2):-1))!=null){long a=WatchPlan.frame(w.coreStart),b=WatchPlan.frame(w.coreEnd);assertEquals(a,WatchPlan.frame(WatchPlan.micros(a)));assertEquals(b,WatchPlan.frame(WatchPlan.micros(b)));assertArrayEquals(new long[]{a,b},r.firstGap(a,b));commit(r,w);assertTrue(++n<50);}assertNull(r.firstGap(0,WatchPlan.frame(end)));assertEquals(WatchPlan.frame(end),r.total());}}
  @Test public void shortAudioTailCanFinishWithoutAnInfiniteFinalWindow(){PcmRanges r=new PcmRanges();WatchPlan p=new WatchPlan(54000000,65000000,true,r);commit(r,p.next(-1));WatchWindows w=p.next(-1);assertEquals(65000000,w.coreEnd);r.add(WatchPlan.frame(w.coreStart),frame(64.97));p.trimEnd(frame(64.97));assertNull(p.next(-1));assertEquals(frame(64.97),r.total());}
  @Test public void prefixKeepsFutureContextAcrossAlreadyPreparedBoundary(){PcmRanges r=new PcmRanges();r.add(frame(54),frame(94));WatchPlan p=new WatchPlan(54000000,362000000,true,r);commit(r,p.next(-1));WatchWindows bridge=p.next(frame(54));assertEquals(40000000,bridge.coreStart);assertEquals(54000000,bridge.coreEnd);assertEquals(36000000,bridge.decodeStart);assertEquals(58000000,bridge.decodeEnd);}
+ @Test public void audiovisualLookaheadIsExactlyTheNextWindowAndCoversTheEpisodeOnce(){
+  for(long duration:new long[]{1380000000L,9000000L,64000000L,100000001L}){
+   PcmRanges ready=new PcmRanges();WatchPlan plan=new WatchPlan(0,duration,true,ready,true);WatchWindows window,ahead=null;int windows=0;
+   while((window=plan.next(-1))!=null){
+    if(ahead!=null)assertTrue(WatchPlan.same(ahead,window));
+    assertTrue(window.decodeEnd-window.decodeStart<=64000000L);
+    ahead=plan.following(window);windows++;
+    ready.add(WatchPlan.frame(window.coreStart),WatchPlan.frame(window.coreEnd));
+   }
+   assertNull(ahead);
+   assertEquals(WatchPlan.frame(duration),ready.total());
+   if(duration==1380000000L)assertTrue(windows<=27);
+  }
+ }
 }
