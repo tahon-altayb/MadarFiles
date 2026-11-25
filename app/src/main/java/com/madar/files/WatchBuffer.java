@@ -2,7 +2,7 @@ package com.madar.files;
 
 /** A measured production budget, in media seconds. No device/server speed is assumed. */
 final class WatchBuffer {
- private final double duration;private final double initialReserve;private final boolean waitForCycle,progressive;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;private double plannedGap;
+ private final double duration;private final double initialReserve;private final boolean waitForCycle,progressive;private long firstAt=-1,lastAt;private double lastReady,media,wall,slowRatio,gap=0,cycleRatio;private int samples;private double plannedGap,recentRatio;
  WatchBuffer(double duration){this(duration,false);}
  WatchBuffer(double duration,boolean waitForCycle){this(duration,waitForCycle,false);}
  WatchBuffer(double duration,boolean waitForCycle,boolean progressive){this(duration,waitForCycle,progressive,0);}
@@ -20,6 +20,7 @@ final class WatchBuffer {
   if(produced<3.999||seconds<=0)return;
   media+=produced;wall+=seconds;double ratio=seconds/produced;
   slowRatio=samples++==0?ratio:Math.max(ratio,slowRatio*.85+ratio*.15);
+  recentRatio=recentRatio==0?ratio:.5*recentRatio+.5*ratio;
   gap=Math.max(gap,seconds);lastAt=now;lastReady=ready;
  }
  synchronized double speed(long now){
@@ -37,7 +38,10 @@ final class WatchBuffer {
    double target=rate==0?6*s:Math.max(6*s,Math.min(18*s,gap*s));
    // Separation measured slower than playback: wait once for enough to reach the end without stopping again,
    // instead of a short refill that runs dry a minute later (stop, wait, stop, wait).
-   if(rate>0&&rate<s)target=Math.max(target,remaining*(1-rate/s)+target);
+   // Judged on the recent batches only: the first small windows and the cold start are always slow, and the
+   // pessimistic long-run figure asked for 8:52 while separation was in fact ahead of playback.
+   double recent=samples>=3&&recentRatio>0?.9/recentRatio:0;
+   if(recent>0&&recent<s)target=Math.max(target,remaining*(1-recent/s)+target);
    return Math.min(limit,target);
   }
   // For the legacy policy, budget the total predicted production deficit.

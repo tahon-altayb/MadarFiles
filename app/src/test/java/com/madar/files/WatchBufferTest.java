@@ -36,7 +36,13 @@ public class WatchBufferTest {
  @Test public void slowerThanPlaybackWaitsOnceForTheWholeDeficitButFastKeepsAShortRefill(){
   WatchBuffer fast=new WatchBuffer(1380,true,true,120);fast.commit(16,0);fast.commit(40,20000);fast.commit(80,40000);fast.completeCycle(40,20);
   assertEquals(120,fast.startupRequired(0,1,40000),0);assertTrue(fast.required(80,1,40000)<=18);
-  WatchBuffer slow=new WatchBuffer(1380,true,true,120);slow.commit(16,0);slow.commit(40,40000);slow.commit(80,106000);slow.completeCycle(40,66);
-  assertTrue(slow.required(80,1,106000)>600);assertTrue(slow.required(80,1,106000)<=1300);
+  WatchBuffer slow=new WatchBuffer(1380,true,true,120);slow.commit(16,0);slow.commit(40,40000);slow.commit(80,106000);slow.commit(120,172000);slow.completeCycle(40,66);
+  assertTrue(slow.required(120,1,172000)>500);assertTrue(slow.required(120,1,172000)<=1260);
+ }
+ @Test public void slowFirstWindowsDoNotHoldBackPlaybackOnceBatchesAreAhead(){
+  // Report 1.9.90: ready 3:04 while the screen asked for 8:52 (first windows and the cold start measured slow).
+  WatchBuffer buffer=new WatchBuffer(1430,true,true,120);
+  double[][] commits={{8,109},{32,135},{72,186},{128,216},{184,256}};
+  for(double[] c:commits){buffer.commit(c[0],(long)(c[1]*1000));assertEquals(120,buffer.startupRequired(0,1,(long)(c[1]*1000)),0);}
  }
 }
