@@ -61,19 +61,37 @@ final class MusicExport {
    PlayerInput visual=PlayerInput.processing(input);
    WatchWindows window;
    byte[] tail=null;
+   WindowLookahead ahead=null;
+   try{
    while((window=plan.next(-1))!=null){
     MusicSeparator.check(cancel);
     long began=MusicCloudJob.now();
     AudioPipeline.Decoded decoded=null;
     File video=null,clean=null;
+    MusicCloudJob.Staged staged=null;WindowLookahead mine=null;
+    if(ahead!=null){
+     // The next window was prepared and uploaded while the previous one separated.
+     ahead.finish(cancel);
+     if(ahead.usable(window))mine=ahead;else{if(lease.session!=null)lease.session.diagnostic.record("MUSIC_LOOKAHEAD_DROPPED");ahead.release(lease);}
+     ahead=null;
+    }
     try{
-     decoded=AudioPipeline.decodeRange(c,input,window.decodeStart,window.decodeEnd,cancel,overall);
-     video=CensorVideoWindow.extractForSound(c,visual,decoded.offsetUs/1000,(window.decodeEnd+999)/1000,width,height,cancel);
+     if(mine!=null){
+      decoded=mine.decoded;video=mine.visual;staged=mine.staged;mine.decoded=null;mine.visual=null;mine.staged=null;
+      if(lease.session!=null)lease.session.diagnostic.record("MUSIC_LOOKAHEAD_USED");
+     }else{
+      decoded=AudioPipeline.decodeRange(c,input,window.decodeStart,window.decodeEnd,cancel,overall);
+      video=CensorVideoWindow.extractForSound(c,visual,decoded.offsetUs/1000,(window.decodeEnd+999)/1000,width,height,cancel);
+     }
+     if(staged==null)staged=lease.stage(decoded,video,null,overall);
      long base=WatchPlan.frame(window.coreStart);
      long count=WatchPlan.frame(window.coreEnd)-base;
      long skip=WatchPlan.frame(Math.max(0,window.coreStart-decoded.offsetUs));
      LiveSeparation.Session part=new LiveSeparation.Session(input,true);
-     clean=lease.run(decoded,video,overall,part).pcm;
+     WatchWindows following=plan.following(window);
+     if(following!=null)ahead=WindowLookahead.start(lease,following,staged!=null,cancel,source(c,input,width,height,following));
+     try{clean=lease.run(decoded,video,overall,part,null,staged).pcm;}
+     finally{staged=null;if(ahead!=null)ahead.allowStage();}
      MusicSeparator.check(cancel);
      long written=WatchMusicService.appendWindow(part,target,out,base,0,skip,count,tail);
      tail=WatchMusicService.tailForJoin(part,skip+count);
@@ -83,8 +101,9 @@ final class MusicExport {
      lease.committed(written,total);
      overall.update(0,"حُفظت الدفعة المفصولة");
      target.buffer.completeCycle(written/44100.0,Math.max(1,MusicCloudJob.now()-began)/1000.0);
-    }finally{if(decoded!=null)decoded.pcm.delete();if(video!=null)video.delete();if(clean!=null)clean.delete();}
+    }finally{if(decoded!=null)decoded.pcm.delete();if(video!=null)video.delete();if(clean!=null)clean.delete();if(staged!=null)lease.discard(staged);if(mine!=null)mine.release(lease);}
    }
+   }finally{if(ahead!=null){ahead.stop();ahead.finish(null);ahead.release(lease);}}
    result.diagnostic=lease.session.diagnostic;
    success=true;
    return result;
@@ -96,6 +115,14 @@ final class MusicExport {
    }
    if(!success&&!LiveSeparation.retain(result.pcm))result.pcm.delete();
   }
+ }
+ private static WindowLookahead.Source source(Context c,File input,int width,int height,WatchWindows window){
+  return new WindowLookahead.Source(){
+   public AudioPipeline.Decoded audio(AtomicBoolean cancel)throws Exception{return AudioPipeline.decodeRange(c,input,window.decodeStart,window.decodeEnd,cancel,(p,m)->{});}
+   public File scene(AudioPipeline.Decoded audio,AtomicBoolean cancel)throws Exception{
+    return CensorVideoWindow.extractForSound(c,PlayerInput.processing(input),audio.offsetUs/1000,(window.decodeEnd+999)/1000,width,height,cancel);
+   }
+  };
  }
  private static int dimension(android.media.MediaMetadataRetriever reader,int key){
   String value=reader.extractMetadata(key);

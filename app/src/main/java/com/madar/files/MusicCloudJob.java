@@ -48,7 +48,7 @@ final class MusicCloudJob {
   if(MusicPipeline.AVCASS.equals(session.pipeline)!=(video!=null))throw new IOException("Colab · MUSIC_AVCASS_VIDEO");
   long sourceFrames=audio.pcm.length()/4,frames=Math.round(sourceFrames*44100.0/audio.sampleRate);if(frames<=0)throw new IOException("Colab · MUSIC_DURATION");
   ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;boolean cold=session.batch==0,voice=MusicPipeline.LEGACY.equals(session.pipeline);long began=now();
-  int inputFrames=voice?VOICE_INPUT_FRAMES:INPUT_FRAMES;
+  int inputFrames=voice?VOICE_INPUT_FRAMES:INPUT_FRAMES;boolean mono=video!=null;
   session.awaitStorage();String folder;synchronized(session){folder=session.root+"_b"+(session.batch++);}
   boolean uploaded=false;File output=null;
   try{
@@ -57,8 +57,15 @@ final class MusicCloudJob {
    long uploadAt=now(),wireBytes=0;JSONArray inputs=new JSONArray();diagnostic.record("UPLOAD_AUDIO");
    try(RandomAccessFile input=new RandomAccessFile(audio.pcm,"r")){
     for(long start=0;start<frames;start+=inputFrames){ColabProbe.check(session.cancel);session.checkInitialization();int keep=(int)Math.min(inputFrames,frames-start);
-     float[] samples=MusicSeparator.readResampled(input,audio.sampleRate,start,keep,sourceFrames);byte[] data=new byte[keep*4];
-     for(int i=0;i<samples.length;i++){int n=Math.max(-32768,Math.min(32767,Math.round(samples[i]*32768)));data[2*i]=(byte)n;data[2*i+1]=(byte)(n>>8);}
+     float[] samples=MusicSeparator.readResampled(input,audio.sampleRate,start,keep,sourceFrames);byte[] data;
+     if(mono){
+      // Voice + ambience separates one channel (Colab averaged L and R anyway): send that average, half the upload.
+      data=new byte[keep*2];
+      for(int i=0;i<keep;i++){int n=Math.max(-32768,Math.min(32767,Math.round((samples[2*i]+samples[2*i+1])*16384)));data[2*i]=(byte)n;data[2*i+1]=(byte)(n>>8);}
+     }else{
+      data=new byte[keep*4];
+      for(int i=0;i<samples.length;i++){int n=Math.max(-32768,Math.min(32767,Math.round(samples[i]*32768)));data[2*i]=(byte)n;data[2*i+1]=(byte)(n>>8);}
+     }
      MusicWire.Packed pack=MusicWire.encode(data);int index=inputs.length();inputs.put(pack.metadata);wireBytes+=pack.data.length;
      uploadPart(runtime,folder+"/input_"+index+".pcm"+(pack.compressed?".zlib":""),pack.data,voice);
      progress.update(17+(int)(9*(start+keep)/frames),"رفع الصوت دون فقد · "+((start+keep)/44100)+" / "+(frames/44100)+" ثانية");
@@ -66,6 +73,7 @@ final class MusicCloudJob {
    }
    JSONObject request=new JSONObject().put("protocol",2).put("pipeline",session.pipeline).put("frames",frames).put("inputs",inputs);
    if(voice)request.put("input_frames",inputFrames);
+   if(mono)request.put("input_channels",1);
    if(video!=null){
     ColabProbe.check(session.cancel);
     long size=video.length();

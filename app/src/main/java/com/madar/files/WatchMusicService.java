@@ -75,10 +75,10 @@ public class WatchMusicService extends Service {
    boolean localSnapshotUsed=false;
    try(RandomAccessFile out=new RandomAccessFile(aggregate,"rw")){
     boolean audiovisual=MusicPipeline.AVCASS.equals(job.pipeline);
-    WatchPlan plan=new WatchPlan(job.startUs,job.durationUs,job.cloud,job.clean.coverage,audiovisual);double transferSecondsPerMedia=0;byte[] previousTail=null;WatchWindows window;Lookahead ahead=null;
+    WatchPlan plan=new WatchPlan(job.startUs,job.durationUs,job.cloud,job.clean.coverage,audiovisual);double transferSecondsPerMedia=0;byte[] previousTail=null;WatchWindows window;WindowLookahead ahead=null;
     try{
     while((window=plan.next(job.clean.requestedFrame))!=null){
-     MusicSeparator.check(job.cancel);long cycleBegan=SystemClock.elapsedRealtime();AudioPipeline.Decoded decoded=null;File processed=null,visual=null;MusicCloudJob.Staged staged=null;Lookahead mine=null;
+     MusicSeparator.check(job.cancel);long cycleBegan=SystemClock.elapsedRealtime();AudioPipeline.Decoded decoded=null;File processed=null,visual=null;MusicCloudJob.Staged staged=null;WindowLookahead mine=null;
      if(ahead!=null){
       // The next window was prepared (and uploaded) while the previous one separated. Use it only if the plan agrees.
       ahead.finish(job.cancel);
@@ -127,7 +127,10 @@ public class WatchMusicService extends Service {
       MusicSeparator.Progress progress=(p,m)->{try{copied[0]=appendWindow(part,job.clean,out,base,copied[0],skip,count,join);update(m);}catch(IOException e){throw new java.io.UncheckedIOException(e);}};
       if(job.cloud&&audiovisual){
        WatchWindows following=plan.following(window);
-       if(following!=null)ahead=Lookahead.start(this,job,gpu,following,network,download==null?null:download.completed(),staged!=null);
+       if(following!=null){
+        File aheadSnapshot=download==null?null:download.completed();
+        ahead=WindowLookahead.start(gpu,following,staged!=null,job.cancel,watchSource(job,network,aheadSnapshot,following));
+       }
       }
       try{
        if(job.cloud){ColabMusic.Result result=gpu.run(decoded,visual,progress,part,audiovisual?live->job.clean.forceWaitForComplete=!live:null,staged);staged=null;processed=result.pcm;}else processed=MusicSeparator.separate(this,decoded,job.cancel,progress,part);
@@ -177,72 +180,23 @@ public class WatchMusicService extends Service {
    return CensorVideoWindow.extractForSound(context,PlayerInput.processing(job),visualStart,visualEnd,job.width,job.height,cancel,retry);
   }
  }
- private File soundVisual(Job job,File snapshot,AudioPipeline.Decoded decoded,WatchWindows window,AtomicBoolean cancel,Runnable retry)throws Exception{return soundVisual(this,job,snapshot,decoded,window,cancel,retry);}
- /**
-  * Voice + ambience: prepares the next window (audio, scene video, upload, queue) while the current one separates,
-  * so the GPU goes from one batch to the next without waiting for the phone. Only order-safe steps run early:
-  * the upload waits until the current window's batch exists, because Colab runs batches strictly by number.
-  */
- static final class Lookahead {
-  final WatchWindows window;final AtomicBoolean cancel=new AtomicBoolean();final java.util.concurrent.CountDownLatch mayStage=new java.util.concurrent.CountDownLatch(1);
-  volatile AudioPipeline.Decoded decoded;volatile File visual;volatile MusicCloudJob.Staged staged;volatile long decodeMs;private Thread thread;
-  /** When the current window was already queued early: the session that holds it. Staging on any other session could jump ahead of it. */
-  private ColabMusic.Session expect;
-  private Lookahead(WatchWindows window){this.window=window;}
-  static Lookahead start(WatchMusicService context,Job job,MusicRecovery gpu,WatchWindows window,boolean network,File snapshot,boolean currentQueued){
-   Lookahead ahead=new Lookahead(window);
-   if(currentQueued){ahead.expect=gpu.session;ahead.mayStage.countDown();}
-   ahead.thread=new Thread(()->ahead.prepare(context,job,gpu,network,snapshot),"madar-watch-lookahead");ahead.thread.setDaemon(true);ahead.thread.start();
-   return ahead;
-  }
-  void allowStage(){mayStage.countDown();}
-  void stop(){cancel.set(true);mayStage.countDown();}
-  private void prepare(WatchMusicService context,Job job,MusicRecovery gpu,boolean network,File snapshot){
-   ColabDiagnostics diagnostic=gpu.session==null?null:gpu.session.diagnostic;
-   try{
-    long at=SystemClock.elapsedRealtime();AudioPipeline.Decoded audio=null;File scene=null;
-    try{
-     if(snapshot!=null){
-      try{audio=AudioPipeline.decodeRange(context,snapshot,window.decodeStart,window.decodeEnd,cancel,(p,m)->{});}
-      catch(java.util.concurrent.CancellationException stopped){throw stopped;}
-      catch(Exception unavailable){audio=null;snapshot=null;}
-     }
-     if(audio==null)audio=network?RemoteWatchAudio.decode(context,job.http,job.mime,window.decodeStart,window.decodeEnd,cancel,()->{}):AudioPipeline.decodeRange(context,job.source,window.decodeStart,window.decodeEnd,cancel,(p,m)->{});
-     check(job);
-     scene=soundVisual(context,job,snapshot,audio,window,cancel,()->{});
-     check(job);
-     long spent=SystemClock.elapsedRealtime()-at;
-     if(diagnostic!=null){diagnostic.measure("DECODE",spent,audio.pcm.length(),audio.pcm.length()/4);diagnostic.record("MUSIC_LOOKAHEAD_READY");}
-     // Wait until the current window holds its batch number (or the main loop gives up on this one).
-     while(!mayStage.await(200,java.util.concurrent.TimeUnit.MILLISECONDS))check(job);
-     check(job);
-     MusicCloudJob.Staged queued=gpu.stage(audio,scene,expect,(p,m)->{});
-     decodeMs=spent;decoded=audio;visual=scene;staged=queued;audio=null;scene=null;
-     if(cancel.get()&&queued!=null){staged=null;gpu.discard(queued);}
-    }finally{if(audio!=null)audio.pcm.delete();if(scene!=null)scene.delete();}
-   }catch(Throwable skipped){
-    // Not fatal: the window is prepared again the normal way when its turn comes.
-    if(diagnostic!=null&&!cancel.get()&&!job.cancel.get())diagnostic.record("MUSIC_STAGE_SKIPPED");
+ /** Where the lookahead reads the next watch window: the downloaded copy first, then the original source. */
+ private WindowLookahead.Source watchSource(Job job,boolean network,File snapshot,WatchWindows window){
+  return new WindowLookahead.Source(){
+   File local=snapshot;
+   public AudioPipeline.Decoded audio(AtomicBoolean cancel)throws Exception{
+    if(local!=null){
+     try{return AudioPipeline.decodeRange(WatchMusicService.this,local,window.decodeStart,window.decodeEnd,cancel,(p,m)->{});}
+     catch(java.util.concurrent.CancellationException stopped){throw stopped;}
+     catch(Exception unavailable){local=null;}
+    }
+    return network?RemoteWatchAudio.decode(WatchMusicService.this,job.http,job.mime,window.decodeStart,window.decodeEnd,cancel,()->{}):AudioPipeline.decodeRange(WatchMusicService.this,job.source,window.decodeStart,window.decodeEnd,cancel,(p,m)->{});
    }
-  }
-  private void check(Job job){if(cancel.get()||job.cancel.get())throw new java.util.concurrent.CancellationException();}
-  /** Wait for the preparation to end (or be stopped by cancel). */
-  void finish(AtomicBoolean jobCancel){
-   if(thread==null)return;
-   for(;;){
-    if(jobCancel!=null&&jobCancel.get())stop();
-    try{thread.join(200);}catch(InterruptedException interrupted){stop();Thread.currentThread().interrupt();try{thread.join(15000);}catch(InterruptedException ignored){}return;}
-    if(!thread.isAlive())return;
-    if(jobCancel==null){try{thread.join(15000);}catch(InterruptedException ignored){Thread.currentThread().interrupt();}return;}
-   }
-  }
-  /** Delete what was prepared and close its batch if it was queued but will not be used. */
-  void release(MusicRecovery gpu){
-   AudioPipeline.Decoded audio=decoded;File scene=visual;MusicCloudJob.Staged queued=staged;decoded=null;visual=null;staged=null;
-   if(audio!=null)audio.pcm.delete();if(scene!=null)scene.delete();
-   if(queued!=null&&gpu!=null)gpu.discard(queued);
-  }
+   public File scene(AudioPipeline.Decoded audio,AtomicBoolean cancel)throws Exception{return soundVisual(WatchMusicService.this,job,local,audio,window,cancel,()->{});}
+  };
  }
+ private File soundVisual(Job job,File snapshot,AudioPipeline.Decoded decoded,WatchWindows window,AtomicBoolean cancel,Runnable retry)throws Exception{return soundVisual(this,job,snapshot,decoded,window,cancel,retry);}
+
  static long appendWindow(LiveSeparation.Session part,LiveSeparation.Session target,RandomAccessFile out,long start,long copied,long skip,long count)throws IOException{
   return appendWindow(part,target,out,start,copied,skip,count,null);
  }

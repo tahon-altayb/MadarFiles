@@ -63,8 +63,26 @@ class AvcassLiveTest(unittest.TestCase):
                 self.assertEqual(result['model_sha256'], av.FINGERPRINT)
                 self.assertEqual(Path('pack_0.pcm').read_bytes(), audio)
                 self.assertFalse(Path('visual.mp4').exists())
+                # The phone may send the channel average only (half the upload); the engine gets one column.
+                mono = b'\1\0' * frames
+                mono_request = json.loads(json.dumps(request))
+                mono_request.update(input_channels=1, inputs=[dict(bytes=len(mono), sha256=hashlib.sha256(mono).hexdigest())])
+                shapes = []
+                class MonoEngine(Engine):
+                    def packs(self, source, stride, visual, status):
+                        shapes.append(source.shape)
+                        return super().packs(source, stride, visual, status)
+                Path('visual.bin').write_bytes(video)
+                Path('input_0.pcm').write_bytes(mono)
+                with patch.object(worker, '_AVCASS', MonoEngine()), patch.object(worker, '_PROTOCOL', 2):
+                    worker.run_v2(mono_request)
+                self.assertEqual(shapes, [(frames, 1)])
+                mono_request['pipeline'] = 'voc_ft'
+                with self.assertRaisesRegex(ValueError, 'MUSIC_'):
+                    worker.run_v2(mono_request)
                 request['video']['sha256'] = '0' * 64
                 Path('visual.bin').write_bytes(video)
+                Path('input_0.pcm').write_bytes(audio)
                 with patch.object(worker, '_AVCASS', engine), self.assertRaisesRegex(ValueError, 'MUSIC_AVCASS_VIDEO'):
                     worker.run_v2(request)
             finally:

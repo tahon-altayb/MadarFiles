@@ -251,13 +251,13 @@ def prepare_avcass(root, route_by_gpu=False):
     status('ready', 38, extra=_AVCASS.cache)
 
 
-def publish_stem_mix(frames, stride, video):
+def publish_stem_mix(frames, stride, video, channels=2):
     import numpy as np
     from music_avcass import FINGERPRINT
 
     recent = []
     with open('input.pcm', 'rb') as stream:
-        source = np.memmap(stream, dtype='<i2', mode='r', shape=(frames, 2))
+        source = np.memmap(stream, dtype='<i2', mode='r', shape=(frames, channels))
         try:
             manifest = dict(protocol=2, job=Path.cwd().name, frames=frames,
                             sample_rate=RATE, channels=2, model_sha256=FINGERPRINT,
@@ -486,6 +486,10 @@ def run_v2(req):
     output_stride = 16 * RATE
     inputs = req.get('inputs')
     compressed = req.get('source')
+    # Voice + ambience separates one channel, so the phone may send it already averaged (half the upload).
+    input_channels = req.get('input_channels', 2)
+    if type(input_channels) is not int or input_channels not in (1, 2) or (input_channels == 1 and pipeline != AVCASS_PIPELINE):
+        raise ValueError('MUSIC_MANIFEST')
     if compressed is None:
         if type(frames) is not int or frames <= 0:
             raise ValueError('MUSIC_DURATION')
@@ -519,7 +523,7 @@ def run_v2(req):
     else:
         with open('input.pcm', 'wb') as out:
             for i, part in enumerate(inputs):
-                expected = min(stride, frames - i * stride) * 4
+                expected = min(stride, frames - i * stride) * 2 * input_channels
                 if not isinstance(part, dict) or part.get('bytes') != expected:
                     raise ValueError('MUSIC_MANIFEST')
                 if shutil.disk_usage('.').free < expected + 16 * 1024 * 1024:
@@ -527,7 +531,7 @@ def run_v2(req):
                 out.write(read_wire(part, f'input_{i}.pcm', expected))
     if pipeline == AVCASS_PIPELINE:
         try:
-            return publish_stem_mix(frames, output_stride, video)
+            return publish_stem_mix(frames, output_stride, video, input_channels)
         finally:
             if video is not None:
                 video.unlink(missing_ok=True)
