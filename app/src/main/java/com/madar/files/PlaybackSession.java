@@ -109,7 +109,7 @@ final class PlaybackSession implements AutoCloseable {
   boolean permit=censorPermit();if(clean==null&&!cleanRequested){if(player.getPlaybackState()==Player.STATE_ENDED)censorWanted=false;boolean desired=censorWanted&&permit;if(player.getPlayWhenReady()!=desired)player.setPlayWhenReady(desired);}
   censorWaiting=wanted()&&!permit;
   WatchCensorService.Job job=censorJob;
-  censorStatus=job==null?"تجهيز بيانات الحجب":!job.error.isEmpty()?job.error:!job.timeline.failure.isEmpty()?job.timeline.failure:job.done?"حجب النساء · اكتمل التحليل":job.timeline.contiguousEnd(position())<=position()?job.stage:"حجب النساء · جاهز إلى "+WatchCensorService.stamp(job.timeline.contiguousEnd(position()))+(censorWaiting?" · تجهيز احتياطي للمشاهدة":"");
+  censorStatus=job==null?"تجهيز بيانات الحجب":!job.error.isEmpty()?job.error:!job.timeline.failure.isEmpty()?job.timeline.failure:job.done?("male".equals(job.target)?"حجب الرجال":"حجب النساء")+" · اكتمل التحليل":job.timeline.contiguousEnd(position())<=position()?job.stage:"حجب النساء · جاهز إلى "+WatchCensorService.stamp(job.timeline.contiguousEnd(position()))+(censorWaiting?" · تجهيز احتياطي للمشاهدة":"");
   long now=android.os.SystemClock.elapsedRealtime();if(now-censorUiAt>=250){censorUiAt=now;changed();}censorMain.postDelayed(this,30);
  }};
  private void releaseSource(){if(watchJob!=null)WatchMusicService.release(watchJob);else if(legacyClean&&cleanSession!=null)LiveSeparation.leave(cleanSession);watchJob=null;cleanSession=null;legacyClean=false;}

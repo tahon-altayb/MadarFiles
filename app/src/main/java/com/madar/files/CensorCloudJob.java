@@ -23,13 +23,15 @@ final class CensorCloudJob {
   try{session.channel.execute(session.visionStoragePrefix()+"SERVICE_FOLDER = "+JSONObject.quote(root)+"\n"+ColabMusic.asset(session.context,"censor_warmup.py"),startup::poll);startup.awaitReady();session.visionReady=true;session.diagnostic.record("CENSOR_READY");}
   finally{session.channel.close();session.channel=null;}
  }
- static byte[] run(ColabMusic.Session session,File video,String source,long decodeStartMs,long startMs,long endMs,MusicSeparator.Progress progress)throws Exception{
+ static byte[] run(ColabMusic.Session session,File video,String source,long decodeStartMs,long startMs,long endMs,MusicSeparator.Progress progress)throws Exception{return run(session,video,source,decodeStartMs,startMs,endMs,"female",progress);}
+ static byte[] run(ColabMusic.Session session,File video,String source,long decodeStartMs,long startMs,long endMs,String target,MusicSeparator.Progress progress)throws Exception{
+  if(!"female".equals(target)&&!"male".equals(target))throw new IOException("Colab · CENSOR_SCHEMA");
   ColabProbe.check(session.cancel);prepare(session,progress);ColabRuntime runtime=session.runtime;ColabDiagnostics diagnostic=session.diagnostic;
   String folder=session.visionRoot+"_b"+(session.visionBatch++);runtime.jupyter("PUT","api/contents/"+folder,new JSONObject().put("type","directory"),1024*1024);
   if(video.length()<=0||video.length()>20000000)throw new IOException("Colab · CENSOR_INPUT_LENGTH");
   byte[] bytes=Files.readAllBytes(video.toPath());long upload=android.os.SystemClock.elapsedRealtime();diagnostic.record("CENSOR_UPLOAD");
   runtime.put(folder+"/input.mp4",Base64.encodeToString(bytes,Base64.NO_WRAP),"base64");
-  runtime.put(folder+"/request.json",new JSONObject().put("protocol",1).put("fingerprint",CensorTimeline.FINGERPRINT).put("source",source).put("bytes",bytes.length).put("sha256",ColabMusic.sha(bytes)).put("decode_start_us",decodeStartMs*1000).put("core_start_us",startMs*1000).put("core_end_us",endMs*1000).toString(),"text");
+  runtime.put(folder+"/request.json",new JSONObject().put("protocol",1).put("fingerprint",CensorTimeline.FINGERPRINT).put("source",source).put("bytes",bytes.length).put("sha256",ColabMusic.sha(bytes)).put("decode_start_us",decodeStartMs*1000).put("core_start_us",startMs*1000).put("core_end_us",endMs*1000).put("target",target).toString(),"text");
   diagnostic.measure("CENSOR_UPLOAD",android.os.SystemClock.elapsedRealtime()-upload,bytes.length,0);
   MusicMailbox.submit(runtime,session.visionRoot,folder);diagnostic.record("CENSOR_SUBMITTED");
   MusicMailbox.await(runtime,session.visionRoot,folder,session.cancel,diagnostic::record,state->{String stage=state.optString("stage");if(ColabDiagnostics.stageKnown(stage))diagnostic.record("STAGE_"+stage.toUpperCase(Locale.ROOT));progress.update(state.optInt("progress",40),"تحليل المشهد وتتبع الحجب · "+startMs/1000+" — "+endMs/1000+" ثانية");});
@@ -38,6 +40,7 @@ final class CensorCloudJob {
   long fetched=android.os.SystemClock.elapsedRealtime();byte[] result=runtime.getBinary(folder+"/timeline.json",8*1024*1024);
   if(result.length!=size||!ColabMusic.sha(result).equals(manifest.optString("sha256")))throw new IOException("Colab · CENSOR_OUTPUT_HASH");
   JSONObject payload=new JSONObject(new String(result,StandardCharsets.UTF_8));CensorTimeline.parse(payload,source,startMs*1000,endMs*1000);
+  if(!target.equals(payload.optString("target","female")))throw new IOException("Colab · CENSOR_SCHEMA");
   diagnostic.measure("CENSOR_GPU",payload.optLong("gpu_ms",0),0,payload.getJSONArray("frames").length());diagnostic.measure("CENSOR_FETCH",android.os.SystemClock.elapsedRealtime()-fetched,result.length,payload.getJSONArray("frames").length());
   diagnostic.record("CENSOR_RESULT_VERIFIED");return result;
  }

@@ -2,7 +2,7 @@ name: Live separation stability and signed update
 on:
   push:
     branches: [fixes/live-separation-20261118, features/live-avcass-roformer-20261120, fixes/avcass-recovery-20261121, fixes/l4-drive-audit-20261123]
-    paths: ['app/**', 'qa/colab-avcass-live.test.py', 'qa/colab-drive-cache.test.py', 'qa/colab-keeper.test.py', '.github/workflows/live-separation.yml']
+    paths: ['app/**', 'qa/colab-avcass-live.test.py', 'qa/colab-drive-cache.test.py', 'qa/colab-keeper.test.py', 'qa/colab-censor.test.py', '.github/workflows/live-separation.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,10 +34,11 @@ jobs:
           keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -validity 10000
       - name: Check audiovisual jobs and Drive cache
         run: |
-          python3 -m pip install requests==2.32.5 numpy==2.2.6 scipy==1.15.3
+          python3 -m pip install requests==2.32.5 numpy==2.2.6 scipy==1.15.3 opencv-python-headless==4.10.0.84
           python3 qa/colab-avcass-live.test.py
           python3 qa/colab-drive-cache.test.py
           python3 qa/colab-keeper.test.py
+          python3 qa/colab-censor.test.py
       - name: Compile and unit tests
         run: gradle --no-daemon -PvalidationBuild=true :app:compileDebugAndroidTestJavaWithJavac :app:testDebugUnitTest :app:lintDebug
       - name: Prepare playback fixture
@@ -184,8 +185,8 @@ jobs:
       - name: Verify original update certificate and version
         run: |
           if [ "${GITHUB_REF_NAME}" = "fixes/l4-drive-audit-20261123" ]; then
-            version=1.9.91
-            code=126
+            version=1.9.92
+            code=127
           elif [ "${GITHUB_REF_NAME}" = "fixes/avcass-recovery-20261121" ]; then
             version=1.9.86
             code=121

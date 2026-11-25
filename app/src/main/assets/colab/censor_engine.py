@@ -87,7 +87,7 @@ class Engine:
         if not all(key.startswith(prefix) for key in state): raise ValueError('CENSOR_MODEL_HASH')
         self.classifier.load_state_dict({key[len(prefix):]:value for key,value in state.items()},strict=True)
         self.classifier=self.classifier.eval().to(device=self.device,dtype=self.dtype)
-        self.detector=YOLO(str(paths['yolov8n.pt']))
+        self.detector=YOLO(str(paths['yolov8m-seg.pt']))
         self.detector.to(self.device)
         self.faces=cv2.FaceDetectorYN.create(str(paths['yunet.onnx']),'',(320,320),.75,.3,100)
         status('gpu_inference_check',37)
@@ -137,8 +137,27 @@ class Engine:
                 crops.append(image[fy:fb,fx:fr] if fb>fy and fr>fx else None)
         return crops
 
-    def analyze(self, path, decode_start_us, core_start_us, core_end_us, status=lambda *args:None):
+    def _outline(self, result, index, w, h):
+        """Largest outline of one person's mask, simplified to <=64 points, in thousandths of the frame."""
         cv2,np=self.cv2,self.np
+        masks=getattr(result,'masks',None)
+        if masks is None: return None
+        try: polygon=masks.xyn[index]
+        except (IndexError,TypeError): return None
+        points=np.asarray(polygon,dtype=np.float32)
+        if points.ndim!=2 or len(points)<3: return None
+        points=np.clip(np.round(points*1000),0,1000).astype(np.int32).reshape(-1,1,2)
+        epsilon=2.0
+        while len(points)>64 and epsilon<64:
+            simplified=cv2.approxPolyDP(points,epsilon,True)
+            if len(simplified)>=3: points=simplified
+            epsilon*=1.6
+        if len(points)<3 or len(points)>64: return None
+        return [int(v) for v in points.reshape(-1)]
+
+    def analyze(self, path, decode_start_us, core_start_us, core_end_us, status=lambda *args:None, target='female'):
+        cv2,np=self.cv2,self.np
+        if target not in ('female','male'): raise ValueError('CENSOR_SCHEMA')
         capture=cv2.VideoCapture(str(path))
         if not capture.set(cv2.CAP_PROP_ORIENTATION_AUTO,1):
             capture.release();raise ValueError('CENSOR_VIDEO_ORIENTATION')
@@ -166,13 +185,13 @@ class Engine:
                     previous=thumb
                     raw=result.boxes.xyxy.float().cpu().tolist()
                     if len(raw)>32:
-                        tracker.active=[];observations.append((at,[(-1,[0,0,1,1])]))
+                        tracker.active=[];observations.append((at,[(-1,[0,0,1,1],None)]))
                         continue
-                    pixels=[];boxes=[]
-                    for x,y,r,b in raw:
+                    pixels=[];boxes=[];outlines=[]
+                    for k,(x,y,r,b) in enumerate(raw):
                         x,y,r,b=max(0,int(x)),max(0,int(y)),min(w,int(math.ceil(r))),min(h,int(math.ceil(b)))
                         if r<=x or b<=y: continue
-                        pixels.append([x,y,r,b]);boxes.append([x/w,y/h,r/w,b/h])
+                        pixels.append([x,y,r,b]);boxes.append([x/w,y/h,r/w,b/h]);outlines.append(self._outline(result,k,w,h))
                     assigned,coast=tracker.update(boxes,index,cut)
                     classify=[i for i,t in assigned.items() if index-t.classified_at>=8]
                     for offset in range(0,len(classify),16):
@@ -182,7 +201,7 @@ class Engine:
                         faces=self._face_crops(image,coords)
                         for i,prob in zip(selected,self._classify(faces,crops)):
                             assigned[i].vote(prob,index)
-                    observations.append((at,[(t.number,boxes[i]) for i,t in assigned.items()]+coast))
+                    observations.append((at,[(t.number,boxes[i],outlines[i]) for i,t in assigned.items()]+[(n,b,None) for n,b in coast]))
                 status('separate',min(95,40+round(50*max(0,last_us-core_start_us)/max(1,core_end_us-core_start_us))))
         finally: capture.release()
         if not observations or observations[0][0]>core_start_us+100_000 or last_us+round(1e6/fps)+100_000<core_end_us:
@@ -194,10 +213,14 @@ class Engine:
             result.append([core_start_us,observations[0][0],[[-1,0,0,1,1]]])
         for i,(at,items) in enumerate(observations):
             end=observations[i+1][0] if i+1<len(observations) else max(core_end_us,at+round(1e6/fps))
-            rects=[[number]+padded(box) for number,box in items if number<0 or tracker.all[number].covered()]
+            # A detected person carries its outline; a coasting track or a whole-frame cover keeps its box.
+            rects=[[number]+padded(box)+([outline] if outline else []) for number,box,outline in items
+                   if number<0 or tracker.all[number].covered(target)]
             result.append([at,end,rects])
-        return dict(protocol=1,fingerprint=FINGERPRINT,core_start_us=core_start_us,core_end_us=core_end_us,
+        return dict(protocol=1,fingerprint=FINGERPRINT,target=target,core_start_us=core_start_us,core_end_us=core_end_us,
                     decode_start_us=decode_start_us,provider='cuda' if self.device!='cpu' else 'cpu',frames=result,
                     female_tracks=sum(t.female for t in tracker.all.values()),
+                    male_tracks=sum(t.male for t in tracker.all.values()),
+                    covered_tracks=sum(t.covered(target) for t in tracker.all.values()),
                     uncertain_tracks=sum(not t.female and t.male_votes<2 for t in tracker.all.values()),
                     gpu_ms=round((time.monotonic()-began)*1000))

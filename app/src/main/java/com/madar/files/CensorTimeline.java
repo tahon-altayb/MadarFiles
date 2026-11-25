@@ -8,7 +8,7 @@ import org.json.*;
 
 /** Verified, media-time masks. Missing/invalid data is NEVER equivalent to an empty mask. */
 final class CensorTimeline implements AutoCloseable {
- static final String FINGERPRINT="60d4a28d268e5373b95543618a38021d54930aeef46febe42a0bf8dbc5ed3139";
+ static final String FINGERPRINT="2485e7d142f316e4ca4b99b832252f33434805076063b421c592129376d54c21";
  static final long MARGIN_US=100000;
  static final int MAX_BYTES=4000000;
  private final String source;private final File directory;
@@ -18,7 +18,10 @@ final class CensorTimeline implements AutoCloseable {
  private final Set<Long> loading=new HashSet<>();
  private final ExecutorService reader=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"madar-censor-masks");t.setDaemon(true);return t;});
  private boolean closed;volatile String failure="";
- static final class Frame {final long at,end;final double[][] boxes;Frame(long a,long e,double[][] b){at=a;end=e;boxes=b;}}
+ /** boxes[i] = {id,x,y,r,b}; outlines[i] = the person's outline (x,y pairs, 0..1) or null when only the box is known. */
+ static final class Frame {final long at,end;final double[][] boxes;final float[][] outlines;Frame(long a,long e,double[][] b,float[][] o){at=a;end=e;boxes=b;outlines=o;}Frame(long a,long e,double[][] b){this(a,e,b,new float[b.length][]);}}
+ /** What to cover for one person at a moment: the outlines seen within the motion margin, or the union box when any moment lacked one. */
+ static final class Shape {final double[] box;final java.util.List<float[]> outlines;Shape(double[] box,java.util.List<float[]> outlines){this.box=box;this.outlines=outlines;}}
  static final class Clip {final long start,end;final Frame[] frames;Clip(long s,long e,Frame[] f){start=s;end=e;frames=f;}}
  private static final class Block {final long start,end;final File path;final byte[] digest;Block(long s,long e,File p,byte[] d){start=s;end=e;path=p;digest=d;}}
  CensorTimeline(File directory,String source)throws IOException{this.directory=directory;this.source=source;if(!source.matches("[a-f0-9]{32}")||!directory.isDirectory()&&!directory.mkdirs())throw new IOException("تعذر تجهيز بيانات الحجب");}
@@ -32,12 +35,18 @@ final class CensorTimeline implements AutoCloseable {
   for(int i=0;i<input.length();i++){
    JSONArray f=input.getJSONArray(i);if(f.length()!=3)throw new IOException("Colab · CENSOR_SCHEMA");long at=integer(f,0),until=integer(f,1);
    if(at<decode||until<=at||until-at>1100000||at>expectedEnd+2000000||i>0&&at!=previous)throw new IOException("Colab · CENSOR_SCHEMA");previous=until;
-   JSONArray boxes=f.getJSONArray(2);if(boxes.length()>64)throw new IOException("Colab · CENSOR_SCHEMA");double[][] masks=new double[boxes.length()][5];Set<Long> ids=new HashSet<>();
+   JSONArray boxes=f.getJSONArray(2);if(boxes.length()>64)throw new IOException("Colab · CENSOR_SCHEMA");double[][] masks=new double[boxes.length()][5];float[][] outlines=new float[boxes.length()][];Set<Long> ids=new HashSet<>();
    for(int j=0;j<boxes.length();j++){
-    JSONArray b=boxes.getJSONArray(j);if(b.length()!=5)throw new IOException("Colab · CENSOR_SCHEMA");long id=integer(b,0);if(id< -1||id>1000000||!ids.add(id))throw new IOException("Colab · CENSOR_SCHEMA");masks[j][0]=id;
+    JSONArray b=boxes.getJSONArray(j);if(b.length()!=5&&b.length()!=6)throw new IOException("Colab · CENSOR_SCHEMA");
+    if(b.length()==6){
+     JSONArray points=b.getJSONArray(5);if(points.length()<6||points.length()>128||points.length()%2!=0)throw new IOException("Colab · CENSOR_SCHEMA");
+     float[] outline=new float[points.length()];
+     for(int k=0;k<points.length();k++){Object n=points.get(k);if(!(n instanceof Integer))throw new IOException("Colab · CENSOR_SCHEMA");int v=(Integer)n;if(v<0||v>1000)throw new IOException("Colab · CENSOR_SCHEMA");outline[k]=v/1000f;}
+     outlines[j]=outline;
+    }long id=integer(b,0);if(id< -1||id>1000000||!ids.add(id))throw new IOException("Colab · CENSOR_SCHEMA");masks[j][0]=id;
     for(int k=1;k<5;k++){Object n=b.get(k);if(!(n instanceof Number))throw new IOException("Colab · CENSOR_SCHEMA");double v=((Number)n).doubleValue();if(!Double.isFinite(v)||v<0||v>1)throw new IOException("Colab · CENSOR_SCHEMA");masks[j][k]=v;}
     if(masks[j][3]<=masks[j][1]||masks[j][4]<=masks[j][2])throw new IOException("Colab · CENSOR_SCHEMA");
-   }frames[i]=new Frame(at,until,masks);
+   }frames[i]=new Frame(at,until,masks,outlines);
   }
   if(frames[0].at>start||frames[frames.length-1].end<end)throw new IOException("Colab · CENSOR_SCHEMA");return new Clip(start,end,frames);
  }
@@ -79,6 +88,24 @@ final class CensorTimeline implements AutoCloseable {
   for(int i=index;i>=0&&frames[i].end>=timeUs-MARGIN_US;i--)merge(union,frames[i]);
   for(int i=index+1;i<frames.length&&frames[i].at<=timeUs+MARGIN_US;i++)merge(union,frames[i]);
   return union.values().toArray(new double[0][]);
+ }
+ /** Like boxesAt, with each person's outlines. Null means unknown (cover everything). */
+ synchronized Shape[] shapesAt(long timeUs){
+  if(closed)return null;Map.Entry<Long,Block> entry=blocks.floorEntry(timeUs);if(entry==null||timeUs>=entry.getValue().end)return null;
+  Block block=entry.getValue();Clip clip=cache.get(block.start);if(clip==null){request(block);return null;}
+  Map.Entry<Long,Block> next=blocks.higherEntry(block.start);if(next!=null&&next.getKey()==block.end)request(next.getValue());
+  Frame[] frames=clip.frames;int low=0,high=frames.length;
+  while(low<high){int mid=(low+high)>>>1;if(frames[mid].at<=timeUs)low=mid+1;else high=mid;}
+  int index=low-1;if(index<0||frames[index].end<=timeUs)return null;
+  Map<Long,double[]> union=new LinkedHashMap<>();Map<Long,java.util.List<float[]>> outlines=new HashMap<>();Set<Long> boxOnly=new HashSet<>();
+  for(int i=index;i>=0&&frames[i].end>=timeUs-MARGIN_US;i--){merge(union,frames[i]);collect(outlines,boxOnly,frames[i]);}
+  for(int i=index+1;i<frames.length&&frames[i].at<=timeUs+MARGIN_US;i++){merge(union,frames[i]);collect(outlines,boxOnly,frames[i]);}
+  Shape[] shapes=new Shape[union.size()];int n=0;
+  for(Map.Entry<Long,double[]> e:union.entrySet())shapes[n++]=new Shape(e.getValue(),boxOnly.contains(e.getKey())||!outlines.containsKey(e.getKey())?null:outlines.get(e.getKey()));
+  return shapes;
+ }
+ private static void collect(Map<Long,java.util.List<float[]>> outlines,Set<Long> boxOnly,Frame frame){
+  for(int j=0;j<frame.boxes.length;j++){long id=(long)frame.boxes[j][0];float[] o=frame.outlines[j];if(o==null||id<0)boxOnly.add(id);else outlines.computeIfAbsent(id,k->new ArrayList<>()).add(o);}
  }
  private static void merge(Map<Long,double[]> output,Frame frame){for(double[] b:frame.boxes){long id=(long)b[0];double[] old=output.get(id);if(old==null)output.put(id,new double[]{b[1],b[2],b[3],b[4]});else{old[0]=Math.min(old[0],b[1]);old[1]=Math.min(old[1],b[2]);old[2]=Math.max(old[2],b[3]);old[3]=Math.max(old[3],b[4]);}}}
  synchronized int loadedClips(){return cache.size();}

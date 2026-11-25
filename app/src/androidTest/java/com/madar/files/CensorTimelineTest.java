@@ -29,6 +29,27 @@ public class CensorTimelineTest {
    }
   }
  }
+ @Test public void outlinesAreCoveredAndAMissingOutlineFallsBackToTheBox()throws Exception{
+  String source="a".repeat(32);JSONObject input=data(source,0,1000,false);JSONArray frames=input.getJSONArray("frames");
+  JSONArray outline=new JSONArray().put(200).put(100).put(400).put(100).put(400).put(900).put(200).put(900);
+  for(int i=0;i<frames.length();i++)frames.getJSONArray(i).put(2,new JSONArray().put(new JSONArray().put(3).put(.1).put(.05).put(.5).put(.95).put(outline)));
+  try(CensorTimeline timeline=new CensorTimeline(directory(),source)){
+   timeline.install(input.toString().getBytes(StandardCharsets.UTF_8),0,1000000);
+   CensorTimeline.Shape[] shapes=timeline.shapesAt(500000);assertEquals(1,shapes.length);assertNotNull(shapes[0].outlines);assertEquals(.2f,shapes[0].outlines.get(0)[0],.0001f);
+   assertEquals(1,timeline.boxesAt(500000).length);
+  }
+  JSONObject mixed=data(source,0,1000,false);JSONArray f=mixed.getJSONArray("frames");
+  f.getJSONArray(4).put(2,new JSONArray().put(new JSONArray().put(3).put(.1).put(.05).put(.5).put(.95).put(outline)));
+  f.getJSONArray(5).put(2,new JSONArray().put(new JSONArray().put(3).put(.1).put(.05).put(.5).put(.95)));
+  try(CensorTimeline timeline=new CensorTimeline(directory(),source)){
+   timeline.install(mixed.toString().getBytes(StandardCharsets.UTF_8),0,1000000);
+   CensorTimeline.Shape[] shapes=timeline.shapesAt(450000);assertEquals(1,shapes.length);assertNull("a moment without outline covers the whole box",shapes[0].outlines);
+  }
+  for(JSONArray bad:new JSONArray[]{new JSONArray().put(1).put(2),new JSONArray().put(0).put(0).put(1001).put(0).put(0).put(5),new JSONArray().put(0).put(0).put(.5).put(0).put(0).put(5)}){
+   JSONObject wrong=data(source,0,1000,false);wrong.getJSONArray("frames").getJSONArray(0).put(2,new JSONArray().put(new JSONArray().put(3).put(.1).put(.05).put(.5).put(.95).put(bad)));
+   try(CensorTimeline timeline=new CensorTimeline(directory(),source)){try{timeline.install(wrong.toString().getBytes(StandardCharsets.UTF_8),0,1000000);fail();}catch(IOException expected){}}
+  }
+ }
  @Test public void motionMarginUnionsTrackPositionsAndRejectsInvalidCoordinates()throws Exception{
   String source="a".repeat(32);JSONObject input=data(source,0,1000,false);JSONArray frames=input.getJSONArray("frames");
   frames.getJSONArray(0).put(2,new JSONArray().put(new JSONArray().put(7).put(.1).put(.1).put(.2).put(.8)));

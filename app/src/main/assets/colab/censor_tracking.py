@@ -10,7 +10,9 @@ class Track:
         self.number, self.box, self.last = number, list(box), frame
         self.velocity = [0.0]*4
         self.female = False
+        self.male = False
         self.male_votes = 0
+        self.female_votes = 0
         self.classified_at = -1000
 
     def predict(self, frame):
@@ -29,8 +31,14 @@ class Track:
         self.classified_at=frame
         if female_probability>=.55: self.female=True
         if female_probability<=.10: self.male_votes+=1
+        # Mirror rule for covering men: likely male covers, two confident female looks uncover.
+        if female_probability<=.45: self.male=True
+        if female_probability>=.90: self.female_votes+=1
 
-    def covered(self):
+    def covered(self, target='female'):
+        # Unknown stays covered until it is clearly the other group (twice), and once covered it stays covered.
+        if target=='male':
+            return self.male or self.female_votes<2
         return self.female or self.male_votes<2
 
 class Tracker:

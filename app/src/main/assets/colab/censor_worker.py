@@ -67,13 +67,16 @@ def validate(request,job):
     video=job/'input.mp4'
     if type(size) is not int or not 0<size<=20_000_000 or not video.is_file() or video.stat().st_size!=size: raise ValueError('CENSOR_INPUT_LENGTH')
     if not isinstance(digest,str) or hashlib.sha256(video.read_bytes()).hexdigest()!=digest: raise ValueError('CENSOR_INPUT_HASH')
-    return decode,start,end,source
+    target=request.get('target','female')
+    if target not in ('female','male'): raise ValueError('CENSOR_SCHEMA')
+    return decode,start,end,source,target
 
 def process(engine,job):
     from censor_profile import FINGERPRINT
     request=json.loads((job/'request.json').read_text())
-    decode,start,end,source=validate(request,job)
-    result=engine.analyze(job/'input.mp4',decode,start,end,status)
+    decode,start,end,source,target=validate(request,job)
+    result=engine.analyze(job/'input.mp4',decode,start,end,status,target)
+    if result.get('target')!=target: raise ValueError('CENSOR_SCHEMA')
     if result.get('fingerprint')!=FINGERPRINT or result.get('provider')!='cuda': raise ValueError('CENSOR_GPU_REQUIRED')
     result.update(source=source,job=job.name)
     raw=json.dumps(result,separators=(',',':'),allow_nan=False).encode()

@@ -16,6 +16,7 @@ ASSETS=ROOT/'app/src/main/assets/colab';sys.path.insert(0,str(ASSETS))
 import censor_profile as profile
 import censor_tracking as tracking
 import censor_worker as worker
+import censor_engine as engine_module
 
 class CensorTest(unittest.TestCase):
     def test_profile_matches_android_and_all_weights_are_pinned(self):
@@ -49,7 +50,9 @@ class CensorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary);(path/'input.mp4').write_bytes(b'video')
             request=dict(protocol=1,fingerprint=profile.FINGERPRINT,source='a'*32,bytes=5,sha256=hashlib.sha256(b'video').hexdigest(),decode_start_us=0,core_start_us=0,core_end_us=8000000)
-            self.assertEqual(worker.validate(request,path),(0,0,8000000,'a'*32))
+            self.assertEqual(worker.validate(request,path),(0,0,8000000,'a'*32,'female'))
+            self.assertEqual(worker.validate(dict(request,target='male'),path)[4],'male')
+            with self.assertRaises(ValueError):worker.validate(dict(request,target='both'),path)
             for key,value in [('sha256','0'*64),('bytes',6),('source','../private'),('fingerprint','legacy'),('core_start_us',True),('core_end_us',20000000)]:
                 with self.assertRaises(ValueError):worker.validate(dict(request,**{key:value}),path)
 
@@ -64,7 +67,7 @@ class CensorTest(unittest.TestCase):
                 class Engine:
                     def analyze(self,*args):
                         self_test.assertFalse((job/'timeline.json').exists())
-                        return dict(protocol=1,fingerprint=profile.FINGERPRINT,provider='cuda',core_start_us=0,core_end_us=8000000,decode_start_us=0,frames=[[0,8000000,[[0,.1,.1,.5,.9]]]])
+                        return dict(protocol=1,fingerprint=profile.FINGERPRINT,target='female',provider='cuda',core_start_us=0,core_end_us=8000000,decode_start_us=0,frames=[[0,8000000,[[0,.1,.1,.5,.9]]]])
                 self_test=self
                 with patch.object(worker,'ROOT',root):worker.process(Engine(),job)
                 manifest=json.loads((job/'result.json').read_text());data=(job/'timeline.json').read_bytes()
@@ -98,5 +101,32 @@ while True: time.sleep(.05)
             finally:
                 if p.poll() is None:p.kill();p.wait()
                 p.communicate()
+
+
+class TargetAndOutlineTest(unittest.TestCase):
+    def test_male_target_mirrors_the_female_rule(self):
+        track=tracking.Track(0,[.1,.1,.5,.9],0)
+        self.assertTrue(track.covered('male'))
+        track.vote(.97,0);self.assertTrue(track.covered('male'))
+        track.vote(.95,8);self.assertFalse(track.covered('male'))
+        self.assertTrue(track.covered('female'))
+        other=tracking.Track(1,[.1,.1,.5,.9],0)
+        other.vote(.97,0);other.vote(.96,8);other.vote(.30,16)
+        self.assertTrue(other.covered('male'),'once it looked male it stays covered')
+
+    def test_outline_is_simplified_into_thousandths(self):
+        import numpy as np
+        import cv2
+        engine=object.__new__(engine_module.Engine);engine.cv2=cv2;engine.np=np
+        angles=np.linspace(0,2*np.pi,400,endpoint=False)
+        circle=np.stack([.5+.3*np.cos(angles),.5+.4*np.sin(angles)],axis=1)
+        from types import SimpleNamespace
+        outline=engine._outline(SimpleNamespace(masks=SimpleNamespace(xyn=[circle])),0,640,360)
+        self.assertIsNotNone(outline)
+        self.assertEqual(len(outline)%2,0)
+        self.assertTrue(6<=len(outline)<=128)
+        self.assertTrue(all(isinstance(v,int) and 0<=v<=1000 for v in outline))
+        self.assertIsNone(engine._outline(SimpleNamespace(masks=None),0,640,360))
+        self.assertIsNone(engine._outline(SimpleNamespace(masks=SimpleNamespace(xyn=[np.zeros((2,2))])),0,640,360))
 
 if __name__=='__main__':unittest.main()
