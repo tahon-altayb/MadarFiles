@@ -225,4 +225,22 @@ class PartialBodyTest(unittest.TestCase):
         for p in (.3,.35,.4): standing.vote(p,0,face=False)
         self.assertFalse(standing.partial);self.assertTrue(standing.covered('female'))
 
+
+class UndetectedCutTest(unittest.TestCase):
+    def test_a_woman_inside_a_mans_track_is_covered_by_her_own_looks(self):
+        track=tracking.Track(1,[.3,.0,.7,1],0)
+        for f in range(0,30,4): track.vote(.05,f)          # the man
+        for f in range(32,60,4): track.vote(.95,f)         # the woman's close-up, same place
+        for f in range(62,100,4): track.vote(.05,f)        # a man again: the whole-track verdict is male
+        self.assertFalse(track.covered('female'))
+        self.assertTrue(track.covered_at('female',45,20));self.assertFalse(track.covered_at('female',10,20))
+
+    def test_different_colours_start_a_new_track(self):
+        tracker=tracking.Tracker(5,distance=lambda a,b:abs(a-b))
+        first,_=tracker.update([[.3,0,.7,1]],0,appearances=[0.0])
+        second,_=tracker.update([[.3,0,.7,1]],1,appearances=[0.9])
+        self.assertNotEqual(first[0].number,second[0].number)
+        third,_=tracker.update([[.3,0,.7,1]],2,appearances=[0.85])
+        self.assertEqual(second[0].number,third[0].number)
+
 if __name__=='__main__':unittest.main()

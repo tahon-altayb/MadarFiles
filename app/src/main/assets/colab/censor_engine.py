@@ -35,6 +35,9 @@ def download(path, url, digest, maximum):
 ANALYSIS_FPS = 15
 DUPLICATE_SHARE = .70
 CLASSIFY_SECONDS = .27
+CUT_DIFF = .13
+CUT_ALONE = .25
+CUT_COLOURS = .20
 
 
 def moved(seen, box):
@@ -164,6 +167,26 @@ class Engine:
                 crops.append(image[fy:fb,fx:fr] if fb>fy and fr>fx else None)
         return crops
 
+    def _colours(self, image, mask=None):
+        hsv=self.cv2.cvtColor(image,self.cv2.COLOR_BGR2HSV)
+        h=self.cv2.calcHist([hsv],[0,1],mask,[16,8],[0,180,0,256]);total=float(h.sum())
+        return h/total if total>0 else None
+
+    def _distance(self, a, b):
+        return float(self.cv2.compareHist(a.astype(self.np.float32),b.astype(self.np.float32),self.cv2.HISTCMP_BHATTACHARYYA))
+
+    def _appearance(self, image, pixel, outline):
+        """Colours of the person's own outline (clothes, skin, hair), to keep a track on ONE person."""
+        x,y,r,b=pixel;crop=image[y:b,x:r]
+        if crop.size==0 or min(crop.shape[:2])<8: return None
+        mask=None
+        if outline:
+            h,w=image.shape[:2];np=self.np
+            points=(np.array(outline,dtype=np.float32).reshape(-1,2)*[w/1000,h/1000]-[x,y]).astype(np.int32)
+            mask=np.zeros(crop.shape[:2],np.uint8);self.cv2.fillPoly(mask,[points],255)
+            if int(mask.sum())<255*32: mask=None
+        return self._colours(crop,mask)
+
     def _distinct(self, result):
         """Detections that add a body of their own. The detector also returns a second box for the same
         person (an arm or microphone stretching it) and a box around two people at once; classified on
@@ -250,7 +273,7 @@ class Engine:
         step=max(1,round(fps/ANALYSIS_FPS));rate=fps/step;skipped=step-1
         # Look again about every quarter second whatever the frame rate, so a man is uncovered quickly (two clear looks).
         stride=max(2,round(rate*CLASSIFY_SECONDS))
-        tracker=Tracker(max(2,round(rate*CONFIG['coast_seconds'])));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
+        tracker=Tracker(max(2,round(rate*CONFIG['coast_seconds'])),self._distance,max(2,round(rate*CONFIG['hold_seconds'])));reach=max(1,round(rate*CONFIG['local_seconds']));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
         shapes={}  # track number -> (box, outline) last seen: a missed frame keeps the body shape, not a jumpy box
         try:
             while True:
@@ -273,19 +296,26 @@ class Engine:
                 for image,result,at in zip(batch,detections,times):
                     index=len(observations);h,w=image.shape[:2]
                     thumb=cv2.resize(image,(32,18)).astype(np.float32)/255
-                    cut=previous is not None and float(np.abs(thumb-previous).mean())>.30
-                    previous=thumb
+                    colours=self._colours(cv2.resize(image,(160,90)))
+                    # Measured on a 6.6 min drama: every one of 48 cuts has diff>=.148 with colour distance>=.24,
+                    # moving shots stay under .13. The old .30 caught 2 of 48, so tracks ran across cuts.
+                    if previous is None: cut=False
+                    else:
+                        diff=float(np.abs(thumb-previous[0]).mean())
+                        cut=diff>CUT_DIFF and (diff>CUT_ALONE or self._distance(colours,previous[1])>CUT_COLOURS)
+                    previous=(thumb,colours)
                     raw=result.boxes.xyxy.float().cpu().tolist()
                     if len(raw)>32:
                         tracker.active=[];tracker.held=[];observations.append((at,[(-1,[0,0,1,1],None)]))
                         continue
-                    pixels=[];boxes=[];outlines=[];distinct=self._distinct(result)
+                    pixels=[];boxes=[];outlines=[];looks=[];distinct=self._distinct(result)
                     for k,(x,y,r,b) in enumerate(raw):
                         if k not in distinct: continue
                         x,y,r,b=max(0,int(x)),max(0,int(y)),min(w,int(math.ceil(r))),min(h,int(math.ceil(b)))
                         if r<=x or b<=y: continue
                         pixels.append([x,y,r,b]);boxes.append([x/w,y/h,r/w,b/h]);outlines.append(self._outline(result,k,w,h))
-                    assigned,coast=tracker.update(boxes,index,cut)
+                        looks.append(self._appearance(image,pixels[-1],outlines[-1]))
+                    assigned,coast=tracker.update(boxes,index,cut,looks)
                     classify=[i for i,t in assigned.items() if index-t.classified_at>=stride]
                     for offset in range(0,len(classify),16):
                         selected=classify[offset:offset+16]
@@ -312,7 +342,7 @@ class Engine:
             end=observations[i+1][0] if i+1<len(observations) else max(core_end_us,at+round(1e6/rate))
             # A detected person carries its outline; a coasting track or a whole-frame cover keeps its box.
             rects=[[number]+padded(box)+([outline] if outline else []) for number,box,outline in items
-                   if number<0 or tracker.all[number].covered(target)]
+                   if number<0 or tracker.all[number].covered_at(target,i,reach)]
             result.append([at,end,rects])
         return dict(protocol=1,fingerprint=FINGERPRINT,target=target,core_start_us=core_start_us,core_end_us=core_end_us,
                     decode_start_us=decode_start_us,provider='cuda' if self.device!='cpu' else 'cpu',frames=result,
