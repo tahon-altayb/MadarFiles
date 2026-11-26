@@ -19,7 +19,8 @@ report = {}
 for clip in sorted((ROOT/'qa/censor-lab').glob('c*.mp4')):
     made.clear(); cap = cv2.VideoCapture(str(clip)); fps = cap.get(cv2.CAP_PROP_FPS); n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
     dur = int(n/fps*1e6); began = time.time()
-    res = engine.analyze(str(clip), 0, 0, dur, target=target)
+    try: res = engine.analyze(str(clip), 0, 0, dur, target=target)
+    except Exception as error: print(clip.name, error); continue
     tracks = {}
     for tracker in made:
         for number, t in tracker.all.items():
