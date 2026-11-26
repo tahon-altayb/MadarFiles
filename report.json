@@ -1,0 +1,164 @@
+{
+ "L1_0.mp4": {
+  "seconds": 348,
+  "blocks": [
+   {
+    "female_tracks": 2,
+    "male_tracks": 2,
+    "covered_tracks": 2,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 2,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 3,
+    "male_tracks": 1,
+    "covered_tracks": 3,
+    "uncertain_tracks": 2
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   }
+  ]
+ },
+ "L2_120.mp4": {
+  "seconds": 281,
+  "blocks": [
+   {
+    "female_tracks": 1,
+    "male_tracks": 2,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 2,
+    "male_tracks": 2,
+    "covered_tracks": 2,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 3,
+    "male_tracks": 2,
+    "covered_tracks": 3,
+    "uncertain_tracks": 2
+   }
+  ]
+ },
+ "L3_176.mp4": {
+  "seconds": 246,
+  "blocks": [
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 0,
+    "male_tracks": 2,
+    "covered_tracks": 0,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 0,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   }
+  ]
+ },
+ "L4_232.mp4": {
+  "seconds": 269,
+  "blocks": [
+   {
+    "female_tracks": 2,
+    "male_tracks": 2,
+    "covered_tracks": 3,
+    "uncertain_tracks": 1
+   },
+   {
+    "female_tracks": 0,
+    "male_tracks": 2,
+    "covered_tracks": 1,
+    "uncertain_tracks": 1
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   }
+  ]
+ },
+ "L5_296.mp4": {
+  "seconds": 291,
+  "blocks": [
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 2,
+    "male_tracks": 1,
+    "covered_tracks": 2,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 1,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   }
+  ]
+ },
+ "L6_376.mp4": {
+  "seconds": 271,
+  "blocks": [
+   {
+    "female_tracks": 5,
+    "male_tracks": 1,
+    "covered_tracks": 5,
+    "uncertain_tracks": 2
+   },
+   {
+    "female_tracks": 3,
+    "male_tracks": 1,
+    "covered_tracks": 3,
+    "uncertain_tracks": 2
+   },
+   {
+    "female_tracks": 9,
+    "male_tracks": 7,
+    "covered_tracks": 15,
+    "uncertain_tracks": 6
+   }
+  ]
+ }
+}
