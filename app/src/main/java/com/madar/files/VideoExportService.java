@@ -24,6 +24,7 @@ public class VideoExportService extends Service {
     private volatile boolean terminal;
     private final java.util.concurrent.atomic.AtomicBoolean musicCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private Thread musicWorker;
+    private CensorTimeline censorTimeline;private int progressBase=0,progressSpan=100;
     private PowerManager.WakeLock cpuLock;
     private int latestStartId;private long began;
     private String stageText="جارٍ التجهيز…";
@@ -51,6 +52,7 @@ public class VideoExportService extends Service {
             if(tool.equals("subtitles")||tool.equals("translateReviewed")){startSpeech(input,o);return START_NOT_STICKY;}
             if(tool.equals("sound")||o.optString("kind").equals("audio")&&!tool.equals("music")){startSound(input,o);return START_NOT_STICKY;}
             if(tool.equals("music")){startMusic(input,o,duration);return START_NOT_STICKY;}
+            if(tool.equals("censor")){startCensor(input,o,duration);return START_NOT_STICKY;}
             if(tool.equals("gif")){startGif(input,o,duration);return START_NOT_STICKY;}
             MediaItem.Builder media=new MediaItem.Builder().setUri(Uri.fromFile(input));if(previewDraft)media.setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0).setEndPositionMs(Math.min(duration,10000)).build());
             if(tool.equals("trim")){
@@ -176,10 +178,45 @@ public class VideoExportService extends Service {
             finally{if(live!=null)LiveSeparation.end(live,liveSuccess?null:"لم تكتمل المعالجة أو أوقفتها");if(clean!=null&&!LiveSeparation.retain(clean))clean.delete();}
         },"madar-offline-separation");musicWorker.start();
     }
-    private final Runnable progress=new Runnable(){@Override public void run(){if(!active||terminal||transformer==null)return;try{if(System.currentTimeMillis()-began>5L*60*60*1000){finish("error","توقف التصدير بعد تجاوز خمس ساعات");return;}ProgressHolder p=new ProgressHolder();int state=transformer.getProgress(p);int value=state==Transformer.PROGRESS_STATE_AVAILABLE?p.progress:-1;publish(new JSONObject().put("type","progress").put("progress",value));notifications.notify(7,notification(value));handler.postDelayed(this,750);}catch(Exception e){finish("error","تعذر متابعة التصدير");}}};
+    /** «حجب الأشخاص» without watching: Colab analyses the whole video, then the phone draws the covers into a new copy. */
+    private void startCensor(File input,JSONObject options,long duration)throws Exception{
+        String target="male".equals(options.optString("censorTarget"))?"male":"female";
+        if(WatchCensorService.active||WatchCensorService.starting||MusicGpuSession.busy())throw new java.io.IOException("انتظر اكتمال عملية GPU الحالية أو أوقفها من إشعارها أولًا");
+        if(!ColabCredentials.ready()&&!MusicGpuSession.available(this))throw new java.io.IOException("اتصل بحساب Colab أولًا");
+        int width,height;android.media.MediaMetadataRetriever reader=new android.media.MediaMetadataRetriever();
+        try{reader.setDataSource(input.getAbsolutePath());width=Integer.parseInt(reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));height=Integer.parseInt(reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+            String turned=reader.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);if("90".equals(turned)||"270".equals(turned)){int t=width;width=height;height=t;}
+        }catch(Exception e){throw new java.io.IOException("تعذر قراءة أبعاد الفيديو");}finally{try{reader.release();}catch(Exception ignored){}}
+        if(width<2||height<2)throw new java.io.IOException("تعذر قراءة أبعاد الفيديو");
+        cpuLock=((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MadarFiles:Censor");cpuLock.acquire(5L*60*60*1000);musicCancel.set(false);
+        String id=java.util.UUID.randomUUID().toString().replace("-","");final CensorTimeline timeline=new CensorTimeline(new File(getCacheDir(),"madar_censor_save_"+id),id);censorTimeline=timeline;
+        final int w=width,h=height;
+        MusicSeparator.Progress callback=(percent,message)->handler.post(()->{if(terminal)return;try{stageText=message;publish(new JSONObject().put("type","progress").put("progress",percent).put("message",message));notifications.notify(7,notification(percent));}catch(Exception ignored){}});
+        publish(new JSONObject().put("type","progress").put("progress",-1).put("message","تجهيز جلسة Colab لحجب الأشخاص"));
+        musicWorker=new Thread(()->{
+            try{String warning=CensorAnalysis.run(this,PlayerInput.processing(input),id,duration,w,h,target,timeline,musicCancel,()->0L,(p,m)->callback.update(p<0?-1:p*85/100,m));
+                MusicSeparator.check(musicCancel);
+                handler.post(()->{musicWorker=null;if(terminal)return;try{renderCensored(input,timeline,warning);}catch(Exception e){finish("error","تعذر حفظ النسخة المحجوبة. "+(e.getMessage()==null?"":e.getMessage()));}});
+            }catch(java.util.concurrent.CancellationException e){handler.post(()->{musicWorker=null;finish("cancelled",null);});}
+            catch(Exception|OutOfMemoryError|UnsatisfiedLinkError e){handler.post(()->{musicWorker=null;if(musicCancel.get())finish("cancelled",null);else finish("error","تعذر حجب الأشخاص. "+(e.getMessage()==null?"أعد المحاولة":e.getMessage()));});}
+        },"madar-censor-save");musicWorker.start();
+    }
+    private void renderCensored(File input,CensorTimeline timeline,String warning)throws Exception{
+        stageText="رسم الحجب في نسخة جديدة";publish(new JSONObject().put("type","progress").put("progress",85).put("message",stageText));
+        timeline.synchronous=true;CensorOverlay overlay=new CensorOverlay();overlay.timeline=timeline;overlay.enabled=true;
+        output=FilesUtil.output(this,"mp4");partial=new File(output.getAbsolutePath()+".partial");progressBase=85;progressSpan=15;
+        List<Effect> effects=new ArrayList<>();effects.add(new androidx.media3.effect.OverlayEffect(Collections.singletonList(overlay)));
+        EditedMediaItem edited=new EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(input))).setEffects(new Effects(Collections.emptyList(),effects)).build();
+        transformer=new Transformer.Builder(this).setAudioMimeType(MimeTypes.AUDIO_AAC).setVideoMimeType(MimeTypes.VIDEO_H264).addListener(new Transformer.Listener(){
+            @Override public void onCompleted(Composition composition,ExportResult result){if(partial==null||partial.length()==0||!partial.renameTo(output)){finish("error","تعذر حفظ النسخة المحجوبة");return;}try{publish(FilesUtil.info(output).put("type","result").put("warning",warning==null?"":warning));}catch(Exception e){finish("error","تعذر قراءة النتيجة");return;}finish("done",null);}
+            @Override public void onError(Composition composition,ExportResult result,ExportException error){finish("error","تعذر رسم الحجب في الفيديو ("+error.errorCode+"). تأكد من المساحة المتاحة.");}
+        }).build();
+        transformer.start(edited,partial.getAbsolutePath());handler.post(progress);
+    }
+    private final Runnable progress=new Runnable(){@Override public void run(){if(!active||terminal||transformer==null)return;try{if(System.currentTimeMillis()-began>5L*60*60*1000){finish("error","توقف التصدير بعد تجاوز خمس ساعات");return;}ProgressHolder p=new ProgressHolder();int state=transformer.getProgress(p);int value=state==Transformer.PROGRESS_STATE_AVAILABLE?progressBase+p.progress*progressSpan/100:-1;publish(new JSONObject().put("type","progress").put("progress",value));notifications.notify(7,notification(value));handler.postDelayed(this,750);}catch(Exception e){finish("error","تعذر متابعة التصدير");}}};
     private void publish(JSONObject o){if(previewDraft&&o.optString("type").equals("result")){try{File original=FilesUtil.resolve(this,o.getString("name"));String name=original.getName();File draft=File.createTempFile("madar_preview_",name.substring(name.lastIndexOf('.')),getCacheDir());if(!draft.delete()||!original.renameTo(draft))throw new java.io.IOException("تعذر تجهيز المعاينة");o=FilesUtil.info(draft).put("type","draftResult");}catch(Exception e){try{o=new JSONObject().put("type","error").put("message","تعذر تجهيز المعاينة المعالجة");}catch(Exception ignored){}}}try{o.put("at",System.currentTimeMillis());}catch(org.json.JSONException ignored){}lastEvent=o.toString();if(java.util.Arrays.asList("result","text","subtitles","driveShared").contains(o.optString("type")))WorkNotifications.complete(this,740);sendBroadcast(new Intent(EVENT).setPackage(getPackageName()).putExtra("event",lastEvent));}
     private void finish(String type,String message){
-        if(terminal)return;terminal=true;musicCancel.set(true);handler.removeCallbacksAndMessages(null);if(transformer!=null){transformer.cancel();transformer=null;}if(!type.equals("done")){if(partial!=null)partial.delete();try{JSONObject event=new JSONObject().put("type",type);if(message!=null)event.put("message",message);publish(event);}catch(Exception ignored){}}
+        if(terminal)return;terminal=true;musicCancel.set(true);handler.removeCallbacksAndMessages(null);if(transformer!=null){transformer.cancel();transformer=null;}if(censorTimeline!=null){censorTimeline.close();censorTimeline=null;}if(!type.equals("done")){if(partial!=null)partial.delete();try{JSONObject event=new JSONObject().put("type",type);if(message!=null)event.put("message",message);publish(event);}catch(Exception ignored){}}
         if(cpuLock!=null&&cpuLock.isHeld())cpuLock.release();active=false;stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(latestStartId);
     }
     @Override public void onTimeout(int startId,int fgsType){finish("error","أوقف النظام المعالجة بعد انتهاء الوقت المتاح؛ جرّب فيديو أقصر");}

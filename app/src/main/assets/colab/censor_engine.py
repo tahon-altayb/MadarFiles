@@ -142,17 +142,22 @@ class Engine:
             for f in faces:
                 x,y,fw,fh=f[:4];sx=w/small.shape[1];sy=h/small.shape[0]
                 found.append((max(0,int(x*sx)),max(0,int(y*sy)),min(w,int((x+fw)*sx)),min(h,int((y+fh)*sy))))
-        crops=[]
         polygons=[self._polygon(o,w,h) for o in (outlines or [None]*len(boxes))]
-        for box,polygon in zip(boxes,polygons):
-            x,y,r,b=box;candidates=[]
-            for fx,fy,fr,fb in found:
-                area=max(1,(fr-fx)*(fb-fy))
+        # Each face belongs to ONE person: the one whose body it sits deepest in. When a woman leaned into
+        # the man beside her, his face also lay on the edge of her outline and gave her a man's verdict.
+        owner={}
+        for f,(fx,fy,fr,fb) in enumerate(found):
+            area=max(1,(fr-fx)*(fb-fy));centre=((fx+fr)/2,(fy+fb)/2);best=None
+            for k,((x,y,r,b),polygon) in enumerate(zip(boxes,polygons)):
                 inside=max(0,min(fr,r)-max(fx,x))*max(0,min(fb,b)-max(fy,y))
-                # With an outline, the face must sit on THIS person's body: in an interview the other
-                # person's face is often inside this box and gave a man a woman's verdict for good.
-                if polygon is not None and self.cv2.pointPolygonTest(polygon,((fx+fr)/2,(fy+fb)/2),True)<-.02*max(w,h): continue
-                if inside/area>.80 and fy<y+.55*(b-y): candidates.append((area,(fx,fy,fr,fb)))
+                if inside/area<=.80 or fy>=y+.55*(b-y): continue
+                depth=self.cv2.pointPolygonTest(polygon,centre,True) if polygon is not None else 0.0
+                if polygon is not None and depth<-.02*max(w,h): continue
+                if best is None or depth>best[0]: best=(depth,k)
+            if best is not None: owner.setdefault(best[1],[]).append((area,(fx,fy,fr,fb)))
+        crops=[]
+        for k in range(len(boxes)):
+            candidates=owner.get(k)
             if not candidates: crops.append(None)
             else:
                 _,(fx,fy,fr,fb)=max(candidates)
@@ -170,13 +175,25 @@ class Engine:
         data=masks.data>.5
         if data.shape[0]!=n: return set(range(n))
         order=result.boxes.conf.argsort(descending=True).tolist()
+        boxes=result.boxes.xyxy.float().cpu().tolist()
         kept=set();union=self.torch.zeros_like(data[0])
         for k in order:
             area=int(data[k].sum())
             if area==0: continue
-            if kept and int((data[k]&union).sum())>=DUPLICATE_SHARE*area: continue
+            if kept and int((data[k]&union).sum())>=DUPLICATE_SHARE*area and self._duplicate(boxes[k],[boxes[j] for j in kept]): continue
             kept.add(k);union|=data[k]
         return kept
+
+    @staticmethod
+    def _duplicate(box, kept):
+        """Overlap alone is not enough: a woman leaning into a man was dropped as 'his second box' and left
+        uncovered. A drop needs the same place as one kept person, or a box around two kept people."""
+        x,y,r,b=box
+        def iou(o):
+            area=max(0,min(r,o[2])-max(x,o[0]))*max(0,min(b,o[3])-max(y,o[1]))
+            return area/max(1e-9,(r-x)*(b-y)+(o[2]-o[0])*(o[3]-o[1])-area)
+        if any(iou(o)>=.50 for o in kept): return True
+        return sum(x<=(o[0]+o[2])/2<=r and y<=(o[1]+o[3])/2<=b for o in kept)>=2
 
     def _polygon(self, outline, w, h):
         if not outline: return None
@@ -276,8 +293,8 @@ class Engine:
                         own=[outlines[i] for i in selected]
                         crops=self._bodies(image,coords,own,outlines)
                         faces=self._face_crops(image,coords,own)
-                        for i,prob in zip(selected,self._classify(faces,crops)):
-                            assigned[i].vote(prob,index)
+                        for i,prob,face in zip(selected,self._classify(faces,crops),faces):
+                            assigned[i].vote(prob,index,face=face is not None)
                     for i,t in assigned.items():
                         if outlines[i]: shapes[t.number]=(boxes[i],outlines[i])
                     observations.append((at,[(t.number,boxes[i],outlines[i] or moved(shapes.get(t.number),boxes[i])) for i,t in assigned.items()]

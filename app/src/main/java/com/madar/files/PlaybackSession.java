@@ -18,7 +18,7 @@ final class PlaybackSession implements AutoCloseable {
  float volume=1,speed=1,pitch=1;String status="",error="",decoder="";boolean waiting;
  interface Observer {void changed();}
  private Observer observer;
- WatchCensorService.Job censorJob;boolean censorRequested,censorWaiting,censorSurfaceReady,censorFirstFrame;String censorStatus="";
+ WatchCensorService.Job censorJob;boolean censorRequested,censorWaiting,censorSurfaceReady,censorFirstFrame;private long censorNudgeAt;private int censorNudges;String censorStatus="";
  final CensorOverlay censorOverlay=new CensorOverlay();private final android.os.Handler censorMain=new android.os.Handler(android.os.Looper.getMainLooper());
  private boolean censorWanted,censorApproved;private long censorReserveMs=12000,censorUiAt;
  static PlaybackSession obtain(Context c,PlayerInput input){
@@ -87,7 +87,7 @@ final class PlaybackSession implements AutoCloseable {
  void useCensor(WatchCensorService.Job job){
   if(job==null||!job.input.identity.equals(input.identity))throw new IllegalArgumentException("بيانات الحجب تخص مقطعًا آخر");
   boolean play=wanted();long at=position();if(censorJob!=null&&censorJob!=job)WatchCensorService.release(censorJob);
-  censorJob=job;job.watching=true;censorRequested=true;censorWanted=play;censorApproved=false;censorReserveMs=12000;censorSurfaceReady=false;censorFirstFrame=false;
+  censorJob=job;job.watching=true;censorRequested=true;censorWanted=play;censorApproved=false;censorReserveMs=12000;censorSurfaceReady=false;censorFirstFrame=false;censorNudgeAt=0;censorNudges=0;
   censorOverlay.timeline=job.timeline;censorOverlay.enabled=true;censorOverlay.lastTimestampUs=-1;
   player.pause();player.stop();player.setVideoEffects(Collections.singletonList(new androidx.media3.effect.OverlayEffect(Collections.singletonList(censorOverlay))));
   prepare(input,subtitle,at,play);censorMain.removeCallbacksAndMessages(null);censorMain.post(censorTick);changed();
@@ -111,6 +111,10 @@ final class PlaybackSession implements AutoCloseable {
   boolean permit=censorPermit();if(clean==null&&!cleanRequested){if(player.getPlaybackState()==Player.STATE_ENDED)censorWanted=false;boolean desired=censorWanted&&permit;if(player.getPlayWhenReady()!=desired)player.setPlayWhenReady(desired);}
   censorWaiting=wanted()&&!permit;
   // The first frame can reach the screen before the overlay records its timestamp; once both happened the cover is live.
+  // A paused or finished player may never pass a frame through the cover after it was attached (the shield
+  // stayed up with «اكتمل التحليل»). Ask for the same frame again, a few times at most.
+  if(!censorSurfaceReady&&censorOverlay.lastTimestampUs<0){int state=player.getPlaybackState();long clock=android.os.SystemClock.elapsedRealtime();
+   if(state==Player.STATE_READY||state==Player.STATE_ENDED){if(censorNudgeAt==0)censorNudgeAt=clock;else if(clock-censorNudgeAt>900&&censorNudges<4){censorNudgeAt=clock;censorNudges++;long end=duration();long at=position();if(end>0)at=Math.min(at,Math.max(0,end-250));seekTo(at);}}else censorNudgeAt=0;}
   if(!censorSurfaceReady&&censorOverlay.lastTimestampUs>=0&&(censorFirstFrame||player.getPlaybackState()==Player.STATE_READY||player.getPlaybackState()==Player.STATE_ENDED)){censorSurfaceReady=true;changed();}
   WatchCensorService.Job job=censorJob;
   censorStatus=job==null?"تجهيز بيانات الحجب":!job.error.isEmpty()?job.error:!job.timeline.failure.isEmpty()?job.timeline.failure:job.done?("male".equals(job.target)?"حجب الرجال":"حجب النساء")+" · اكتمل التحليل":job.timeline.contiguousEnd(position())<=position()?job.stage:("male".equals(job.target)?"حجب الرجال":"حجب النساء")+" · جاهز إلى "+WatchCensorService.stamp(job.timeline.contiguousEnd(position()))+(censorWaiting?" · تجهيز احتياطي للمشاهدة":"");

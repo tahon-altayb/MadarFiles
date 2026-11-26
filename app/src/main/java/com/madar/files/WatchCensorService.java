@@ -34,12 +34,12 @@ public class WatchCensorService extends Service {
  }
  static void release(Job job){if(job==null)return;job.watching=false;job.cancel.set(true);if(!job.done)MusicGpuSession.cancelOwner(job.cancel);if(job.done)job.timeline.close();}
  private Job job;private int startId;private NotificationManager manager;private final Handler main=new Handler(Looper.getMainLooper());private PowerManager.WakeLock wake;
- @Override public void onCreate(){super.onCreate();manager=getSystemService(NotificationManager.class);manager.createNotificationChannel(new NotificationChannel("watch_censor","الحجب أثناء المشاهدة",NotificationManager.IMPORTANCE_LOW));}
+ @Override public void onCreate(){super.onCreate();manager=getSystemService(NotificationManager.class);manager.createNotificationChannel(new NotificationChannel("watch_censor","حجب الأشخاص أثناء المشاهدة",NotificationManager.IMPORTANCE_LOW));}
  private Notification notification(){
   Intent player=new Intent(this,PlayerActivity.class).putExtra("playbackSession",job.playbackId).putExtra("censorJob",job.id).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
   PendingIntent open=PendingIntent.getActivity(this,86,player,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
   PendingIntent cancel=PendingIntent.getService(this,87,new Intent(this,WatchCensorService.class).setAction("cancel").putExtra("job",job.id),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-  return new Notification.Builder(this,"watch_censor").setSmallIcon(R.drawable.ic_launcher).setContentTitle("مدار · "+("male".equals(job.target)?"حجب الرجال":"حجب النساء")+" أثناء المشاهدة").setContentText(job.stage).setContentIntent(open).setOnlyAlertOnce(true).setOngoing(true).setProgress(100,0,true).addAction(new Notification.Action.Builder(null,"إيقاف التحليل",cancel).build()).build();
+  return new Notification.Builder(this,"watch_censor").setSmallIcon(R.drawable.ic_launcher).setContentTitle("مدار · حجب الأشخاص · "+("male".equals(job.target)?"الرجال":"النساء")).setContentText(job.stage).setContentIntent(open).setOnlyAlertOnce(true).setOngoing(true).setProgress(100,0,true).addAction(new Notification.Action.Builder(null,"إيقاف التحليل",cancel).build()).build();
  }
  @Override public int onStartCommand(Intent intent,int flags,int id){
   startId=id;
@@ -53,24 +53,12 @@ public class WatchCensorService extends Service {
   }catch(Exception error){starting=false;job.failed=true;job.done=true;job.error=job.stage="تعذر بدء الحجب في الخلفية";if(!job.watching)job.timeline.close();stopSelfResult(id);}return START_NOT_STICKY;
  }
  private void update(String message){job.stage=message;main.post(()->{if(active)manager.notify(86,notification());});}
- private void process(){ColabMusic.Session session=null;String failure=null;
+ private void process(){String failure=null;
   try{
-   session=MusicGpuSession.acquireVision(this,ColabCredentials.take(),job.cancel,(p,m)->update(m));session.startWarmup();
-   long next;while((next=CensorPlan.next(job.requestedMs,job.durationMs,job.timeline::has))>=0){
-    ColabProbe.check(job.cancel);long end=Math.min(job.durationMs,next+CensorPlan.CORE_MS),decode=Math.max(0,next-CensorPlan.CONTEXT_MS),decodeEnd=Math.min(job.durationMs,end+CensorPlan.CONTEXT_MS);
-    update("تجهيز المشهد للحجب · "+next/1000+" — "+end/1000+" ثانية");long began=SystemClock.elapsedRealtime();File input=null;
-    try{
-     input=CensorVideoWindow.extract(this,job.input,decode,decodeEnd,job.width,job.height,job.cancel);
-     session.diagnostic.measure("CENSOR_VIDEO",SystemClock.elapsedRealtime()-began,input.length(),0);
-     byte[] result=CensorCloudJob.run(session,input,job.id,decode,next,end,job.target,(p,m)->update(m));
-     ColabProbe.check(job.cancel);job.timeline.install(result,next*1000,end*1000);session.healthy=true;
-     update("الحجب جاهز عند موضع المشاهدة حتى "+stamp(job.timeline.contiguousEnd(job.requestedMs)));
-    }finally{if(input!=null)input.delete();}
-   }
+   job.warning=CensorAnalysis.run(this,job.input,job.id,job.durationMs,job.width,job.height,job.target,job.timeline,job.cancel,()->job.requestedMs,(p,m)->update(m));
   }catch(java.util.concurrent.CancellationException cancelled){failure="توقف التحليل؛ المشاهد غير المجهزة تبقى مغطاة";}
-  catch(Exception|OutOfMemoryError|UnsatisfiedLinkError error){failure="تعذر استكمال الحجب: "+(error.getMessage()==null?"أعد المحاولة":error.getMessage());if(session!=null)session.diagnostic.failed(error instanceof Exception?(Exception)error:new IOException("LOCAL_MEMORY"));}
+  catch(Exception|OutOfMemoryError|UnsatisfiedLinkError error){failure=job.cancel.get()?"توقف التحليل؛ المشاهد غير المجهزة تبقى مغطاة":"تعذر استكمال الحجب: "+(error.getMessage()==null?"أعد المحاولة":error.getMessage());}
   finally{
-   if(session!=null){if(failure!=null)session.healthy=false;session.close();if(job.cancel.get())MusicGpuSession.awaitCancelled(job.cancel,(p,m)->update(m));job.warning=session.warning;}
    job.error=failure==null?"":failure;job.failed=failure!=null;job.done=true;job.stage=failure==null?"اكتمل تحليل الحجب":failure;if(!job.watching)job.timeline.close();
    main.post(()->{active=false;starting=false;if(wake!=null&&wake.isHeld())wake.release();stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(startId);});
   }

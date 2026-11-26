@@ -170,10 +170,59 @@ class DistinctDetectionTest(unittest.TestCase):
         masks[2,:,0:9]=1      # the woman again, box stretched by the microphone
         masks[3,:,2:18]=1     # one box around both of them
         result=SimpleNamespace(boxes=SimpleNamespace(conf=torch.tensor([.9,.8,.3,.35]),__len__=None),masks=SimpleNamespace(data=masks))
-        result.boxes=type('B',(),{'conf':torch.tensor([.9,.8,.3,.35]),'__len__':lambda self:4})()
+        xyxy=torch.tensor([[0,0,8,10],[12,0,20,10],[0,0,9,10],[2,0,18,10]],dtype=torch.float32)
+        result.boxes=type('B',(),{'conf':torch.tensor([.9,.8,.3,.35]),'xyxy':xyxy,'__len__':lambda self:4})()
         engine=object.__new__(engine_module.Engine);engine.torch=torch
         self.assertEqual(engine._distinct(result),{0,1})
         masks[2]=0;masks[2,:,9:12]=1  # a third person between them stays
         self.assertEqual(engine._distinct(result),{0,1,2})
+
+    def test_a_woman_leaning_into_a_man_is_kept(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('torch not installed on this runner')
+        from types import SimpleNamespace
+        masks=torch.zeros((2,10,20))
+        masks[0,:,4:20]=1     # the man, his mask bleeding over her
+        masks[1,:,2:9]=1      # the woman leaning in: mostly inside his mask, but her own place
+        result=SimpleNamespace(masks=SimpleNamespace(data=masks))
+        result.boxes=type('B',(),{'conf':torch.tensor([.9,.6]),'xyxy':torch.tensor([[8,0,20,10],[1,0,9,10]],dtype=torch.float32),'__len__':lambda self:2})()
+        engine=object.__new__(engine_module.Engine);engine.torch=torch
+        self.assertEqual(engine._distinct(result),{0,1})
+
+
+class FaceOwnerTest(unittest.TestCase):
+    def test_a_face_on_two_outlines_belongs_to_the_deeper_one(self):
+        try:
+            import numpy as np
+            import cv2
+        except ImportError:
+            self.skipTest('opencv not installed on this runner')
+        engine=object.__new__(engine_module.Engine);engine.cv2=cv2;engine.np=np
+        image=np.zeros((100,200,3),dtype=np.uint8)
+        class Faces:
+            def setInputSize(self,size): pass
+            def detect(self,small): return None,np.array([[52,10,14,14,0,0,0,0,0,0,0,0,0,0,.9]],dtype=np.float32)  # the man's face (small image)
+        engine.faces=Faces()
+        man=[500,0,1000,0,1000,1000,500,1000]
+        woman=[0,0,600,0,600,1000,0,1000]   # her hair reaches just over his face
+        crops=engine._face_crops(image,[[100,0,200,100],[0,0,140,100]],[man,woman])
+        self.assertIsNotNone(crops[0]);self.assertIsNone(crops[1])
+
+
+class PartialBodyTest(unittest.TestCase):
+    def test_legs_without_a_head_follow_the_average(self):
+        legs=tracking.Track(1,[.0,.0,.2,.6],0)
+        legs.vote(.6,0,face=False);self.assertTrue(legs.covered('female'))   # one look: still covered
+        legs.vote(.3,5,face=False);legs.vote(.35,10,face=False)
+        self.assertTrue(legs.partial);self.assertFalse(legs.covered('female'));self.assertTrue(legs.covered('male'))
+        woman=tracking.Track(2,[.0,.0,.2,.6],0)
+        for p in (.6,.7,.55): woman.vote(p,0,face=False)
+        self.assertTrue(woman.covered('female'))
+        # A body whose head is in the picture keeps the cautious rule.
+        standing=tracking.Track(3,[.0,.2,.2,.9],0)
+        for p in (.3,.35,.4): standing.vote(p,0,face=False)
+        self.assertFalse(standing.partial);self.assertTrue(standing.covered('female'))
 
 if __name__=='__main__':unittest.main()

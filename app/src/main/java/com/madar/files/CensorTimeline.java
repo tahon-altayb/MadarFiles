@@ -8,7 +8,7 @@ import org.json.*;
 
 /** Verified, media-time masks. Missing/invalid data is NEVER equivalent to an empty mask. */
 final class CensorTimeline implements AutoCloseable {
- static final String FINGERPRINT="e12b056b3439d8a492cd8e882087439822f6147a9a620bd33b37065f519c8431";
+ static final String FINGERPRINT="9f1caf3cb2a8f9a81b8cfe0c99557310d54d778e39edd965c89a0a9abff00567";
  static final long MARGIN_US=100000;
  static final int MAX_BYTES=4000000;
  private final String source;private final File directory;
@@ -18,6 +18,8 @@ final class CensorTimeline implements AutoCloseable {
  private final Set<Long> loading=new HashSet<>();
  private final ExecutorService reader=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"madar-censor-masks");t.setDaemon(true);return t;});
  private boolean closed;volatile String failure="";
+ /** Saving a copy: the encoder waits for the masks instead of drawing a black frame on a cache miss. */
+ volatile boolean synchronous;
  /** boxes[i] = {id,x,y,r,b}; outlines[i] = the person's outline (x,y pairs, 0..1) or null when only the box is known. */
  static final class Frame {final long at,end;final double[][] boxes;final float[][] outlines;Frame(long a,long e,double[][] b,float[][] o){at=a;end=e;boxes=b;outlines=o;}Frame(long a,long e,double[][] b){this(a,e,b,new float[b.length][]);}}
  /** What to cover for one person at a moment: the outlines seen within the motion margin, or the union box when any moment lacked one. */
@@ -76,10 +78,14 @@ final class CensorTimeline implements AutoCloseable {
    synchronized(CensorTimeline.this){loading.remove(block.start);if(!closed){if(result!=null)remember(result);else failure=error;}}
   });
  }
- /** GL thread never performs disk I/O. Main/GL misses schedule one bounded load. */
+ private Clip loadNow(Block block){
+  try{if(block.path.length()>MAX_BYTES)return null;byte[] raw=java.nio.file.Files.readAllBytes(block.path.toPath());if(!java.security.MessageDigest.isEqual(block.digest,java.security.MessageDigest.getInstance("SHA-256").digest(raw)))return null;
+   Clip clip=parse(new JSONObject(new String(raw,StandardCharsets.UTF_8)),source,block.start,block.end);remember(clip);return clip;}catch(Exception bad){return null;}
+ }
+ /** GL thread never performs disk I/O (except when saving a copy). Main/GL misses schedule one bounded load. */
  synchronized double[][] boxesAt(long timeUs){
   if(closed)return null;Map.Entry<Long,Block> entry=blocks.floorEntry(timeUs);if(entry==null||timeUs>=entry.getValue().end)return null;
-  Block block=entry.getValue();Clip clip=cache.get(block.start);if(clip==null){request(block);return null;}
+  Block block=entry.getValue();Clip clip=cache.get(block.start);if(clip==null&&synchronous)clip=loadNow(block);if(clip==null){request(block);return null;}
   Map.Entry<Long,Block> next=blocks.higherEntry(block.start);if(next!=null&&next.getKey()==block.end)request(next.getValue());
   Frame[] frames=clip.frames;int low=0,high=frames.length;
   while(low<high){int mid=(low+high)>>>1;if(frames[mid].at<=timeUs)low=mid+1;else high=mid;}
@@ -92,7 +98,7 @@ final class CensorTimeline implements AutoCloseable {
  /** Like boxesAt, with each person's outlines. Null means unknown (cover everything). */
  synchronized Shape[] shapesAt(long timeUs){
   if(closed)return null;Map.Entry<Long,Block> entry=blocks.floorEntry(timeUs);if(entry==null||timeUs>=entry.getValue().end)return null;
-  Block block=entry.getValue();Clip clip=cache.get(block.start);if(clip==null){request(block);return null;}
+  Block block=entry.getValue();Clip clip=cache.get(block.start);if(clip==null&&synchronous)clip=loadNow(block);if(clip==null){request(block);return null;}
   Map.Entry<Long,Block> next=blocks.higherEntry(block.start);if(next!=null&&next.getKey()==block.end)request(next.getValue());
   Frame[] frames=clip.frames;int low=0,high=frames.length;
   while(low<high){int mid=(low+high)>>>1;if(frames[mid].at<=timeUs)low=mid+1;else high=mid;}

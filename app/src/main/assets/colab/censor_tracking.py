@@ -8,6 +8,8 @@ def iou(a, b):
 LOOKS = 9
 MALE_LOOK = .20
 FEMALE_LOOK = .80
+EDGE = .02          # box top this close to the frame top: the head is cut off
+PARTIAL_LOOKS = 2
 
 
 class Track:
@@ -15,6 +17,8 @@ class Track:
         self.number, self.box, self.last = number, list(box), frame
         self.velocity = [0.0]*4
         self.looks = []
+        self.faced = 0      # looks that had this person's own face
+        self.headless = 0   # looks with the body cut by the top of the frame (head out of the picture)
         self.classified_at = -1000
 
     def predict(self, frame):
@@ -27,11 +31,18 @@ class Track:
         self.velocity=[.5*v+.5*(b-a)/gap for a,b,v in zip(self.box,box,self.velocity)]
         self.box, self.last = list(box), frame
 
-    def vote(self, female_probability, frame):
+    def vote(self, female_probability, frame, face=True):
         if not math.isfinite(female_probability) or not 0<=female_probability<=1:
             raise ValueError('CENSOR_MODEL_OUTPUT')
         self.classified_at=frame
         self.looks=(self.looks+[female_probability])[-LOOKS:]
+        if face: self.faced+=1
+        elif self.box[1]<=EDGE: self.headless+=1
+
+    @property
+    def partial(self):
+        """Only legs or a torso: the head is outside the picture and no face was ever seen."""
+        return self.faced==0 and len(self.looks)>=PARTIAL_LOOKS and self.headless*2>=len(self.looks)
 
     # One look used to decide for good: a man whose box held the interviewer's face once stayed covered.
     # Now the recent looks vote. Anyone not yet clearly the other group (two clear looks, a majority,
@@ -48,6 +59,10 @@ class Track:
     def male(self): return bool(self.looks) and self.mean<.5
 
     def covered(self, target='female'):
+        # The legs of a man standing behind someone were covered for good as 'not yet clear'. With no
+        # head in the picture the body looks decide by their average instead.
+        if self.partial:
+            return self.mean>=.5 if target=='female' else self.mean<.5
         # Uncovered only with at least two more clear looks for the other group than for this one.
         if target=='male':
             return not (self.female_votes>=self.male_votes+2 and self.mean>=.55)
