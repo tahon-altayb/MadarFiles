@@ -16,7 +16,15 @@ for clip in sorted((ROOT/'qa/censor-lab').glob('L*.mp4')):
     while core < duration-.05:
         end = min(duration, core+CORE); decode = max(0, core-CONTEXT); decode_end = min(duration, end+CONTEXT)
         window = out/'window.mp4'
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', f'{decode:.3f}', '-to', f'{decode_end:.3f}', '-i', str(clip), '-an', '-c:v', 'libx264', '-crf', '22', '-preset', 'veryfast', str(window)], check=True)
+        source = cv2.VideoCapture(str(clip)); writer = None; k = 0
+        while True:
+            ok, img = source.read()
+            if not ok: break
+            t = k/fps; k += 1
+            if t < decode-1e-6 or t >= decode_end-1e-6: continue
+            if writer is None: writer = cv2.VideoWriter(str(window), cv2.VideoWriter_fourcc(*'mp4v'), fps, (img.shape[1], img.shape[0]))
+            writer.write(img)
+        source.release(); writer.release()
         res = engine.analyze(str(window), int(decode*1e6), int(core*1e6), int(end*1e6), target=target)
         frames += [f for f in res['frames'] if f[0] < int(end*1e6)]
         stats.append({k: res[k] for k in ('female_tracks', 'male_tracks', 'covered_tracks', 'uncertain_tracks')})
