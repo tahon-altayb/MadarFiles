@@ -5,6 +5,7 @@ on:
 jobs:
   lab:
     runs-on: ubuntu-latest
+    permissions: {contents: write}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -18,6 +19,12 @@ jobs:
           python -m pip install --disable-pip-version-check torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check numpy==2.2.6 opencv-python-headless==4.12.0.88 ultralytics==8.3.203 timm==0.8.13.dev0 huggingface-hub==0.36.0 safetensors==0.6.2
       - run: python qa/censor-lab.py "$RUNNER_TEMP/models" lab-out ${{ matrix.target }}
+      - name: Publish results to a branch
+        if: always()
+        run: |
+          cd lab-out && git init -q && git checkout -q -b lab-results-${{ matrix.target }}
+          git -c user.name=lab -c user.email=lab@madar add -A && git -c user.name=lab -c user.email=lab@madar commit -qm results
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" lab-results-${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
