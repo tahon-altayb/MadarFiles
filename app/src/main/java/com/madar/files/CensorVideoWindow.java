@@ -49,6 +49,9 @@ final class CensorVideoWindow {
     List<Effect> effects=new ArrayList<>();
     // AV-CASS reads 4 frames a second at 224 px: sending 4 (same bits per frame as 8 at 450 kb/s) halves the upload.
     if(sound)effects.add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(4));
+    // Censor: Colab analyses about 15 frames a second (the cover joins neighbouring frames), so a 60 fps
+    // source is not uploaded and decoded four times over.
+    else effects.add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(15));
     effects.add(Presentation.createForHeight(target));
     EditedMediaItem edited=new EditedMediaItem.Builder(media.build()).setRemoveAudio(true).setEffects(new Effects(Collections.emptyList(),effects)).build();
     transformer.start(edited,video.getPath());

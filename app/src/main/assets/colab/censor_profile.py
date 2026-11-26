@@ -17,7 +17,8 @@ TARGETS = ('female', 'male')
 CONFIG = dict(protocol=1, model='mivolo_v2', detector='yolov8m-seg', face='yunet_2023mar', targets=list(TARGETS),
               outline='polygon', outline_points=64, outline_units=1000,
               hashes={k:v[1] for k,v in WEIGHTS.items()}, classifier_size=384, detector_size=640,
-              female_threshold=.55, male_threshold=.90, male_votes=2, classify_stride=8,
+              female_threshold=.55, male_threshold=.90, male_votes=2, classify_seconds=.27, analysis_fps=15,
+              outline_hold='track', coast_seconds=.5,
               body_padding=.10, timestamp_margin_us=100_000, unknown='cover', tracking=1, orientation_auto=True)
 FINGERPRINT = hashlib.sha256(json.dumps(CONFIG, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 

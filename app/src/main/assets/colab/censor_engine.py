@@ -32,6 +32,23 @@ def download(path, url, digest, maximum):
     except urllib.error.URLError as error: raise ValueError('CENSOR_MODEL_NETWORK') from error
     finally: temporary.unlink(missing_ok=True)
 
+ANALYSIS_FPS = 15
+CLASSIFY_SECONDS = .27
+
+
+def moved(seen, box):
+    """The last outline of a track mapped onto its current (or predicted) box; None when there is none."""
+    if not seen: return None
+    (x,y,r,b),outline=seen
+    w,h=max(1e-6,r-x),max(1e-6,b-y)
+    X,Y,R,B=box
+    out=[]
+    for k in range(0,len(outline),2):
+        px=X+(outline[k]/1000-x)/w*(R-X);py=Y+(outline[k+1]/1000-y)/h*(B-Y)
+        out+= [int(min(1000,max(0,round(px*1000)))),int(min(1000,max(0,round(py*1000))))]
+    return out
+
+
 class Engine:
     def __init__(self, cache, status=lambda *args:None, require_gpu=True, drive_token=""):
         if os.environ.get('MADAR_CUDNN_LIB'):
@@ -164,11 +181,22 @@ class Engine:
         fps=capture.get(cv2.CAP_PROP_FPS)
         if not capture.isOpened() or not math.isfinite(fps) or not 1<=fps<=120:
             capture.release();raise ValueError('CENSOR_VIDEO_FORMAT')
-        tracker=Tracker(round(fps*.20));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
+        # At most ~15 analysed frames a second: a 60 fps clip cost four times the GPU for no safer cover
+        # (the phone joins neighbouring frames within 100 ms), and the analysis fell behind playback.
+        step=max(1,round(fps/ANALYSIS_FPS));rate=fps/step;skipped=step-1
+        # Look again about every quarter second whatever the frame rate, so a man is uncovered quickly (two clear looks).
+        stride=max(2,round(rate*CLASSIFY_SECONDS))
+        tracker=Tracker(max(2,round(rate*.50)));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
+        shapes={}  # track number -> (box, outline) last seen: a missed frame keeps the body shape, not a jumpy box
         try:
             while True:
                 batch=[];times=[]
-                for _ in range(8):
+                while len(batch)<8:
+                    if skipped<step-1:
+                        skipped+=1
+                        if not capture.grab(): break
+                        continue
+                    skipped=0
                     ok,image=capture.read()
                     if not ok: break
                     if image.shape[0]>1280 or image.shape[1]>1280: raise ValueError('CENSOR_VIDEO_FORMAT')
@@ -193,7 +221,7 @@ class Engine:
                         if r<=x or b<=y: continue
                         pixels.append([x,y,r,b]);boxes.append([x/w,y/h,r/w,b/h]);outlines.append(self._outline(result,k,w,h))
                     assigned,coast=tracker.update(boxes,index,cut)
-                    classify=[i for i,t in assigned.items() if index-t.classified_at>=8]
+                    classify=[i for i,t in assigned.items() if index-t.classified_at>=stride]
                     for offset in range(0,len(classify),16):
                         selected=classify[offset:offset+16]
                         coords=[pixels[i] for i in selected]
@@ -201,10 +229,13 @@ class Engine:
                         faces=self._face_crops(image,coords)
                         for i,prob in zip(selected,self._classify(faces,crops)):
                             assigned[i].vote(prob,index)
-                    observations.append((at,[(t.number,boxes[i],outlines[i]) for i,t in assigned.items()]+[(n,b,None) for n,b in coast]))
+                    for i,t in assigned.items():
+                        if outlines[i]: shapes[t.number]=(boxes[i],outlines[i])
+                    observations.append((at,[(t.number,boxes[i],outlines[i] or moved(shapes.get(t.number),boxes[i])) for i,t in assigned.items()]
+                                         +[(n,b,moved(shapes.get(n),b)) for n,b in coast]))
                 status('separate',min(95,40+round(50*max(0,last_us-core_start_us)/max(1,core_end_us-core_start_us))))
         finally: capture.release()
-        if not observations or observations[0][0]>core_start_us+100_000 or last_us+round(1e6/fps)+100_000<core_end_us:
+        if not observations or observations[0][0]>core_start_us+100_000 or last_us+round(1e6/rate)+100_000<core_end_us:
             raise ValueError('CENSOR_VIDEO_LENGTH')
         # No intermediate verdict is published. A woman recognised late in a
         # shot is covered from her FIRST detection in the analysed window.
@@ -212,7 +243,7 @@ class Engine:
         if observations[0][0]>core_start_us:
             result.append([core_start_us,observations[0][0],[[-1,0,0,1,1]]])
         for i,(at,items) in enumerate(observations):
-            end=observations[i+1][0] if i+1<len(observations) else max(core_end_us,at+round(1e6/fps))
+            end=observations[i+1][0] if i+1<len(observations) else max(core_end_us,at+round(1e6/rate))
             # A detected person carries its outline; a coasting track or a whole-frame cover keeps its box.
             rects=[[number]+padded(box)+([outline] if outline else []) for number,box,outline in items
                    if number<0 or tracker.all[number].covered(target)]

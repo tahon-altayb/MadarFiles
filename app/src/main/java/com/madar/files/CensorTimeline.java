@@ -8,7 +8,7 @@ import org.json.*;
 
 /** Verified, media-time masks. Missing/invalid data is NEVER equivalent to an empty mask. */
 final class CensorTimeline implements AutoCloseable {
- static final String FINGERPRINT="2485e7d142f316e4ca4b99b832252f33434805076063b421c592129376d54c21";
+ static final String FINGERPRINT="ef537fffa1a1bb846098f80f7ea9716094e3d1f20cfe631b8f05556c00ee1b79";
  static final long MARGIN_US=100000;
  static final int MAX_BYTES=4000000;
  private final String source;private final File directory;

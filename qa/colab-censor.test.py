@@ -132,4 +132,13 @@ class TargetAndOutlineTest(unittest.TestCase):
         self.assertIsNone(engine._outline(SimpleNamespace(masks=None),0,640,360))
         self.assertIsNone(engine._outline(SimpleNamespace(masks=SimpleNamespace(xyn=[np.zeros((2,2))])),0,640,360))
 
+
+class CoastOutlineTest(unittest.TestCase):
+    def test_last_outline_follows_the_predicted_box(self):
+        seen=([.1,.1,.3,.5],[100,100,300,100,300,500,100,500])
+        self.assertEqual(engine_module.moved(seen,[.2,.1,.4,.5]),[200,100,400,100,400,500,200,500])
+        self.assertEqual(engine_module.moved(seen,[.1,.1,.5,.9]),[100,100,500,100,500,900,100,900])
+        self.assertIsNone(engine_module.moved(None,[0,0,1,1]))
+        self.assertTrue(all(0<=v<=1000 for v in engine_module.moved(seen,[.9,.9,1.2,1.3])))
+
 if __name__=='__main__':unittest.main()
