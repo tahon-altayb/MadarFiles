@@ -1,57 +1,48 @@
-"""Runs the real censor engine (CPU) over short clips and writes per-track diagnostics and contact sheets."""
-import json, sys, time
+"""Real censor engine (CPU) over clips, in the phone's 8 s blocks with 2 s context; contact sheets + report."""
+import json, subprocess, sys, time
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT/'app/src/main/assets/colab'))
+assets, cache, out, target = sys.argv[1], sys.argv[2], Path(sys.argv[3]), sys.argv[4]
+sys.path.insert(0, assets)
 import censor_engine, censor_tracking
-
-made = []
-class Recording(censor_tracking.Tracker):
-    def __init__(self, *a, **k):
-        super().__init__(*a, **k); made.append(self)
-censor_engine.Tracker = Recording
-
-out = Path(sys.argv[2]); out.mkdir(parents=True, exist_ok=True)
-engine = censor_engine.Engine(sys.argv[1], require_gpu=False)
+out.mkdir(parents=True, exist_ok=True)
+engine = censor_engine.Engine(cache, require_gpu=False)
 import cv2, numpy as np
-target = sys.argv[3] if len(sys.argv) > 3 else 'female'
+CORE, CONTEXT = 8.0, 2.0
 report = {}
-for clip in sorted((ROOT/'qa/censor-lab').glob('c*.mp4')):
-    made.clear(); cap = cv2.VideoCapture(str(clip)); fps = cap.get(cv2.CAP_PROP_FPS); n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
-    dur = int(n/fps*1e6); began = time.time()
-    try: res = engine.analyze(str(clip), 0, 0, dur, target=target)
-    except Exception as error: print(clip.name, error); continue
-    tracks = {}
-    for tracker in made:
-        for number, t in tracker.all.items():
-            tracks[number] = dict(looks=[round(x, 2) for x in t.looks], faced=t.faced, headless=t.headless, partial=t.partial,
-                                  covered=t.covered(target), box=[round(v, 2) for v in t.box])
-    report[clip.name] = dict(seconds=round(time.time()-began), summary={k: v for k, v in res.items() if k != 'frames'}, tracks=tracks)
-    print(clip.name, report[clip.name]['summary'], flush=True)
-    # contact sheet: one tile every second with covers drawn as outlines + track id
-    frames = res['frames']; cap = cv2.VideoCapture(str(clip)); i = 0; tiles = []
+for clip in sorted((ROOT/'qa/censor-lab').glob('L*.mp4')):
+    cap = cv2.VideoCapture(str(clip)); fps = cap.get(cv2.CAP_PROP_FPS); n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
+    duration = n/fps; frames = []; began = time.time(); core = 0.0; stats = []
+    while core < duration-.05:
+        end = min(duration, core+CORE); decode = max(0, core-CONTEXT); decode_end = min(duration, end+CONTEXT)
+        window = out/'window.mp4'
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', f'{decode:.3f}', '-to', f'{decode_end:.3f}', '-i', str(clip), '-an', '-c:v', 'libx264', '-crf', '22', '-preset', 'veryfast', str(window)], check=True)
+        res = engine.analyze(str(window), int(decode*1e6), int(core*1e6), int(end*1e6), target=target)
+        frames += [f for f in res['frames'] if f[0] < int(end*1e6)]
+        stats.append({k: res[k] for k in ('female_tracks', 'male_tracks', 'covered_tracks', 'uncertain_tracks')})
+        core = end
+    report[clip.name] = dict(seconds=round(time.time()-began), blocks=stats)
+    print(clip.name, report[clip.name], flush=True)
+    cap = cv2.VideoCapture(str(clip)); i = 0; tiles = []
     while True:
         ok, img = cap.read()
         if not ok: break
         t = round(i/fps*1e6); i += 1
-        if (i-1) % max(1, round(fps)) != 0: continue
-        h, w = img.shape[:2]
-        for at, end, rects in frames:
-            if at-100000 <= t <= end+100000:
-                for rc in rects:
-                    color = (0, 0, 255)
-                    if len(rc) == 6 and rc[5]:
-                        pts = (np.array(rc[5], dtype=np.float32).reshape(-1, 2)*[w/1000, h/1000]).astype(np.int32)
-                        overlay = img.copy(); cv2.fillPoly(overlay, [pts], (0, 0, 0)); img = cv2.addWeighted(overlay, .55, img, .45, 0)
-                        cv2.polylines(img, [pts], True, color, 2)
-                    else:
-                        cv2.rectangle(img, (int(rc[1]*w), int(rc[2]*h)), (int(rc[3]*w), int(rc[4]*h)), color, 2)
-                    info = tracks.get(rc[0], {})
-                    label = f"#{rc[0]} m={np.mean(info['looks']):.2f} f={info['faced']}" if info.get('looks') else f"#{rc[0]} ?"
-                    cv2.putText(img, label, (int(rc[1]*w)+3, int(rc[2]*h)+16), cv2.FONT_HERSHEY_SIMPLEX, .45, (0, 255, 255), 1)
-                break
-        cv2.putText(img, f"{clip.stem} {t/1e6:.0f}s", (5, h-8), cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 255, 0), 2)
-        tiles.append(cv2.resize(img, (480, 270)))
-    while len(tiles) % 4: tiles.append(np.zeros((270, 480, 3), np.uint8))
-    cv2.imwrite(str(out/f'{clip.stem}.jpg'), np.vstack([np.hstack(tiles[k:k+4]) for k in range(0, len(tiles), 4)]))
+        if (i-1) % 8: continue   # about two tiles a second
+        h, w = img.shape[:2]; shown = None
+        for at, until, rects in frames:
+            if at <= t < until: shown = rects; break
+        for rc in shown or []:
+            if rc[0] < 0: img[:] = 0; continue
+            if len(rc) == 6 and rc[5]:
+                pts = (np.array(rc[5], dtype=np.float32).reshape(-1, 2)*[w/1000, h/1000]).astype(np.int32)
+                cv2.fillPoly(img, [pts], (0, 0, 0)); cv2.polylines(img, [pts], True, (0, 0, 0), 12)
+            else:
+                cv2.rectangle(img, (int(rc[1]*w), int(rc[2]*h)), (int(rc[3]*w), int(rc[4]*h)), (0, 0, 0), -1)
+        stamp = int(clip.stem.split('_')[1])+t/1e6
+        cv2.putText(img, f"{int(stamp//60)}:{stamp%60:04.1f}", (5, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        tiles.append(cv2.resize(img, (320, 180)))
+    while len(tiles) % 6: tiles.append(np.zeros((180, 320, 3), np.uint8))
+    cv2.imwrite(str(out/f'{clip.stem}.jpg'), np.vstack([np.hstack(tiles[k:k+6]) for k in range(0, len(tiles), 6)]), [cv2.IMWRITE_JPEG_QUALITY, 80])
+(out/'window.mp4').unlink(missing_ok=True)
 (out/'report.json').write_text(json.dumps(report, indent=1))
