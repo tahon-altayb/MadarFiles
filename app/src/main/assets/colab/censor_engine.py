@@ -33,6 +33,7 @@ def download(path, url, digest, maximum):
     finally: temporary.unlink(missing_ok=True)
 
 ANALYSIS_FPS = 15
+DUPLICATE_SHARE = .70
 CLASSIFY_SECONDS = .27
 
 
@@ -130,7 +131,7 @@ class Engine:
         if not torch.isfinite(logits).all(): raise ValueError('CENSOR_MODEL_OUTPUT')
         return logits if raw else logits.softmax(-1)[:,1].float().cpu().tolist()
 
-    def _face_crops(self, image, boxes):
+    def _face_crops(self, image, boxes, outlines=None):
         h,w=image.shape[:2]
         # Face detection is only needed for classification samples, not every frame.
         small=self.cv2.resize(image,(max(1,w//2),max(1,h//2)))
@@ -142,16 +143,62 @@ class Engine:
                 x,y,fw,fh=f[:4];sx=w/small.shape[1];sy=h/small.shape[0]
                 found.append((max(0,int(x*sx)),max(0,int(y*sy)),min(w,int((x+fw)*sx)),min(h,int((y+fh)*sy))))
         crops=[]
-        for box in boxes:
+        polygons=[self._polygon(o,w,h) for o in (outlines or [None]*len(boxes))]
+        for box,polygon in zip(boxes,polygons):
             x,y,r,b=box;candidates=[]
             for fx,fy,fr,fb in found:
                 area=max(1,(fr-fx)*(fb-fy))
                 inside=max(0,min(fr,r)-max(fx,x))*max(0,min(fb,b)-max(fy,y))
+                # With an outline, the face must sit on THIS person's body: in an interview the other
+                # person's face is often inside this box and gave a man a woman's verdict for good.
+                if polygon is not None and self.cv2.pointPolygonTest(polygon,((fx+fr)/2,(fy+fb)/2),True)<-.02*max(w,h): continue
                 if inside/area>.80 and fy<y+.55*(b-y): candidates.append((area,(fx,fy,fr,fb)))
             if not candidates: crops.append(None)
             else:
                 _,(fx,fy,fr,fb)=max(candidates)
                 crops.append(image[fy:fb,fx:fr] if fb>fy and fr>fx else None)
+        return crops
+
+    def _distinct(self, result):
+        """Detections that add a body of their own. The detector also returns a second box for the same
+        person (an arm or microphone stretching it) and a box around two people at once; classified on
+        its own, such a box covered a man because the woman next to him was inside it. Taken by
+        confidence, a mask mostly inside the masks already kept is dropped."""
+        n=len(result.boxes)
+        masks=getattr(result,'masks',None)
+        if masks is None or n<2: return set(range(n))
+        data=masks.data>.5
+        if data.shape[0]!=n: return set(range(n))
+        order=result.boxes.conf.argsort(descending=True).tolist()
+        kept=set();union=self.torch.zeros_like(data[0])
+        for k in order:
+            area=int(data[k].sum())
+            if area==0: continue
+            if kept and int((data[k]&union).sum())>=DUPLICATE_SHARE*area: continue
+            kept.add(k);union|=data[k]
+        return kept
+
+    def _polygon(self, outline, w, h):
+        if not outline: return None
+        np=self.np
+        return (np.asarray(outline,dtype=np.float32).reshape(-1,2)*np.asarray([w/1000,h/1000],dtype=np.float32)).reshape(-1,1,2)
+
+    def _bodies(self, image, coords, outlines, everyone):
+        """Body crops with the OTHER people blanked out (as MiVOLO does with overlapping boxes), using outlines."""
+        cv2,np=self.cv2,self.np
+        h,w=image.shape[:2];crops=[]
+        for (x,y,r,b),own in zip(coords,outlines):
+            crop=image[y:b,x:r]
+            others=[o for o in everyone if o is not None and o is not own]
+            if own is None or not others or crop.size==0: crops.append(crop);continue
+            crop=crop.copy()
+            blank=np.zeros(crop.shape[:2],dtype=np.uint8)
+            for o in others:
+                cv2.fillPoly(blank,[(self._polygon(o,w,h).reshape(-1,2)-[x,y]).astype(np.int32)],255)
+            mine=np.zeros(crop.shape[:2],dtype=np.uint8)
+            cv2.fillPoly(mine,[(self._polygon(own,w,h).reshape(-1,2)-[x,y]).astype(np.int32)],255)
+            crop[(blank>0)&(mine==0)]=0
+            crops.append(crop)
         return crops
 
     def _outline(self, result, index, w, h):
@@ -215,8 +262,9 @@ class Engine:
                     if len(raw)>32:
                         tracker.active=[];observations.append((at,[(-1,[0,0,1,1],None)]))
                         continue
-                    pixels=[];boxes=[];outlines=[]
+                    pixels=[];boxes=[];outlines=[];distinct=self._distinct(result)
                     for k,(x,y,r,b) in enumerate(raw):
+                        if k not in distinct: continue
                         x,y,r,b=max(0,int(x)),max(0,int(y)),min(w,int(math.ceil(r))),min(h,int(math.ceil(b)))
                         if r<=x or b<=y: continue
                         pixels.append([x,y,r,b]);boxes.append([x/w,y/h,r/w,b/h]);outlines.append(self._outline(result,k,w,h))
@@ -225,8 +273,9 @@ class Engine:
                     for offset in range(0,len(classify),16):
                         selected=classify[offset:offset+16]
                         coords=[pixels[i] for i in selected]
-                        crops=[image[y:b,x:r] for x,y,r,b in coords]
-                        faces=self._face_crops(image,coords)
+                        own=[outlines[i] for i in selected]
+                        crops=self._bodies(image,coords,own,outlines)
+                        faces=self._face_crops(image,coords,own)
                         for i,prob in zip(selected,self._classify(faces,crops)):
                             assigned[i].vote(prob,index)
                     for i,t in assigned.items():
@@ -253,5 +302,5 @@ class Engine:
                     female_tracks=sum(t.female for t in tracker.all.values()),
                     male_tracks=sum(t.male for t in tracker.all.values()),
                     covered_tracks=sum(t.covered(target) for t in tracker.all.values()),
-                    uncertain_tracks=sum(not t.female and t.male_votes<2 for t in tracker.all.values()),
+                    uncertain_tracks=sum(len(t.looks)<2 for t in tracker.all.values()),
                     gpu_ms=round((time.monotonic()-began)*1000))

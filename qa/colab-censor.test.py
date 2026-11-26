@@ -27,7 +27,10 @@ class CensorTest(unittest.TestCase):
     def test_late_female_verdict_covers_the_entire_track(self):
         tracker=tracking.Tracker();assigned,_=tracker.update([[.1,.1,.3,.9]],0);track=assigned[0]
         track.vote(.01,0);track.vote(.02,8);self.assertFalse(track.covered())
-        track.vote(.95,16);self.assertTrue(track.covered());track.vote(.001,24);self.assertTrue(track.covered())
+        # One clear female look covers again; it takes two more clear male looks to outweigh it
+        # (a single wrong look, e.g. the interviewer's face inside a man's box, no longer decides for good).
+        track.vote(.95,16);self.assertTrue(track.covered());track.vote(.001,24);self.assertFalse(track.covered())
+        track.vote(.97,32);self.assertTrue(track.covered())
 
     def test_unknown_is_covered_and_male_needs_multiple_confident_observations(self):
         track=tracking.Track(0,[.1,.1,.5,.9],0);self.assertTrue(track.covered())
@@ -111,8 +114,8 @@ class TargetAndOutlineTest(unittest.TestCase):
         track.vote(.95,8);self.assertFalse(track.covered('male'))
         self.assertTrue(track.covered('female'))
         other=tracking.Track(1,[.1,.1,.5,.9],0)
-        other.vote(.97,0);other.vote(.96,8);other.vote(.30,16)
-        self.assertTrue(other.covered('male'),'once it looked male it stays covered')
+        other.vote(.97,0);other.vote(.96,8);other.vote(.10,16)
+        self.assertTrue(other.covered('male'),'one clear male look keeps a man-target covered')
 
     def test_outline_is_simplified_into_thousandths(self):
         try:
@@ -140,5 +143,25 @@ class CoastOutlineTest(unittest.TestCase):
         self.assertEqual(engine_module.moved(seen,[.1,.1,.5,.9]),[100,100,500,100,500,900,100,900])
         self.assertIsNone(engine_module.moved(None,[0,0,1,1]))
         self.assertTrue(all(0<=v<=1000 for v in engine_module.moved(seen,[.9,.9,1.2,1.3])))
+
+
+class DistinctDetectionTest(unittest.TestCase):
+    def test_second_box_of_a_person_and_a_box_around_two_people_are_dropped(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('torch not installed on this runner')
+        from types import SimpleNamespace
+        masks=torch.zeros((4,10,20))
+        masks[0,:,0:8]=1      # woman (most confident)
+        masks[1,:,12:20]=1    # man
+        masks[2,:,0:9]=1      # the woman again, box stretched by the microphone
+        masks[3,:,2:18]=1     # one box around both of them
+        result=SimpleNamespace(boxes=SimpleNamespace(conf=torch.tensor([.9,.8,.3,.35]),__len__=None),masks=SimpleNamespace(data=masks))
+        result.boxes=type('B',(),{'conf':torch.tensor([.9,.8,.3,.35]),'__len__':lambda self:4})()
+        engine=object.__new__(engine_module.Engine);engine.torch=torch
+        self.assertEqual(engine._distinct(result),{0,1})
+        masks[2]=0;masks[2,:,9:12]=1  # a third person between them stays
+        self.assertEqual(engine._distinct(result),{0,1,2})
 
 if __name__=='__main__':unittest.main()

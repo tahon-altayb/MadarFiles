@@ -5,14 +5,16 @@ def iou(a, b):
     area = max(0, min(a[2],b[2])-max(a[0],b[0])) * max(0, min(a[3],b[3])-max(a[1],b[1]))
     return area/max(1e-9, (a[2]-a[0])*(a[3]-a[1])+(b[2]-b[0])*(b[3]-b[1])-area)
 
+LOOKS = 9
+MALE_LOOK = .20
+FEMALE_LOOK = .80
+
+
 class Track:
     def __init__(self, number, box, frame):
         self.number, self.box, self.last = number, list(box), frame
         self.velocity = [0.0]*4
-        self.female = False
-        self.male = False
-        self.male_votes = 0
-        self.female_votes = 0
+        self.looks = []
         self.classified_at = -1000
 
     def predict(self, frame):
@@ -29,17 +31,27 @@ class Track:
         if not math.isfinite(female_probability) or not 0<=female_probability<=1:
             raise ValueError('CENSOR_MODEL_OUTPUT')
         self.classified_at=frame
-        if female_probability>=.55: self.female=True
-        if female_probability<=.10: self.male_votes+=1
-        # Mirror rule for covering men: likely male covers, two confident female looks uncover.
-        if female_probability<=.45: self.male=True
-        if female_probability>=.90: self.female_votes+=1
+        self.looks=(self.looks+[female_probability])[-LOOKS:]
+
+    # One look used to decide for good: a man whose box held the interviewer's face once stayed covered.
+    # Now the recent looks vote. Anyone not yet clearly the other group (two clear looks, a majority,
+    # and the average on that side) stays covered.
+    @property
+    def male_votes(self): return sum(p<=MALE_LOOK for p in self.looks)
+    @property
+    def female_votes(self): return sum(p>=FEMALE_LOOK for p in self.looks)
+    @property
+    def mean(self): return sum(self.looks)/len(self.looks) if self.looks else .5
+    @property
+    def female(self): return bool(self.looks) and self.mean>=.5
+    @property
+    def male(self): return bool(self.looks) and self.mean<.5
 
     def covered(self, target='female'):
-        # Unknown stays covered until it is clearly the other group (twice), and once covered it stays covered.
+        # Uncovered only with at least two more clear looks for the other group than for this one.
         if target=='male':
-            return self.male or self.female_votes<2
-        return self.female or self.male_votes<2
+            return not (self.female_votes>=self.male_votes+2 and self.mean>=.55)
+        return not (self.male_votes>=self.female_votes+2 and self.mean<=.45)
 
 class Tracker:
     def __init__(self, coast_frames=5):
