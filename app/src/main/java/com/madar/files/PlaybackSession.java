@@ -18,7 +18,7 @@ final class PlaybackSession implements AutoCloseable {
  float volume=1,speed=1,pitch=1;String status="",error="",decoder="";boolean waiting;
  interface Observer {void changed();}
  private Observer observer;
- WatchCensorService.Job censorJob;boolean censorRequested,censorWaiting,censorSurfaceReady;String censorStatus="";
+ WatchCensorService.Job censorJob;boolean censorRequested,censorWaiting,censorSurfaceReady,censorFirstFrame;String censorStatus="";
  final CensorOverlay censorOverlay=new CensorOverlay();private final android.os.Handler censorMain=new android.os.Handler(android.os.Looper.getMainLooper());
  private boolean censorWanted,censorApproved;private long censorReserveMs=12000,censorUiAt;
  static PlaybackSession obtain(Context c,PlayerInput input){
@@ -31,7 +31,7 @@ final class PlaybackSession implements AutoCloseable {
   player=new ExoPlayer.Builder(context).setSeekBackIncrementMs(10000).setSeekForwardIncrementMs(10000).setRenderersFactory(new DefaultRenderersFactory(context).setExtensionRendererMode(context.getSharedPreferences("player",0).getBoolean("software_audio",false)?DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER:DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON).setEnableDecoderFallback(true)).setMediaSourceFactory(sources).build();
   player.setWakeMode(C.WAKE_MODE_LOCAL);player.setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),true);player.setHandleAudioBecomingNoisy(true);
   player.addAnalyticsListener(new androidx.media3.exoplayer.analytics.AnalyticsListener(){@Override public void onAudioDecoderInitialized(androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime t,String name,long at,long duration){decoder=name;}});
-  player.addListener(new Player.Listener(){@Override public void onEvents(Player p,Player.Events events){changed();}@Override public void onPlayerError(PlaybackException failure){error=MediaFailure.describe(failure,false);changed();}@Override public void onRenderedFirstFrame(){if(censorRequested&&censorOverlay.lastTimestampUs>=0){censorSurfaceReady=true;changed();}}@Override public void onPlayWhenReadyChanged(boolean play,int reason){if(censorRequested&&clean==null&&!play&&(reason==Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS||reason==Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY))censorWanted=false;}});
+  player.addListener(new Player.Listener(){@Override public void onEvents(Player p,Player.Events events){changed();}@Override public void onPlayerError(PlaybackException failure){error=MediaFailure.describe(failure,false);changed();}@Override public void onRenderedFirstFrame(){if(censorRequested){censorFirstFrame=true;if(censorOverlay.lastTimestampUs>=0){censorSurfaceReady=true;changed();}}}@Override public void onPlayWhenReadyChanged(boolean play,int reason){if(censorRequested&&clean==null&&!play&&(reason==Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS||reason==Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY))censorWanted=false;}});
   controls=new ForwardingPlayer(player){
    @Override public boolean getPlayWhenReady(){return wanted();}
    @Override public long getCurrentPosition(){return position();}
@@ -87,7 +87,7 @@ final class PlaybackSession implements AutoCloseable {
  void useCensor(WatchCensorService.Job job){
   if(job==null||!job.input.identity.equals(input.identity))throw new IllegalArgumentException("بيانات الحجب تخص مقطعًا آخر");
   boolean play=wanted();long at=position();if(censorJob!=null&&censorJob!=job)WatchCensorService.release(censorJob);
-  censorJob=job;job.watching=true;censorRequested=true;censorWanted=play;censorApproved=false;censorReserveMs=12000;censorSurfaceReady=false;
+  censorJob=job;job.watching=true;censorRequested=true;censorWanted=play;censorApproved=false;censorReserveMs=12000;censorSurfaceReady=false;censorFirstFrame=false;
   censorOverlay.timeline=job.timeline;censorOverlay.enabled=true;censorOverlay.lastTimestampUs=-1;
   player.pause();player.stop();player.setVideoEffects(Collections.singletonList(new androidx.media3.effect.OverlayEffect(Collections.singletonList(censorOverlay))));
   prepare(input,subtitle,at,play);censorMain.removeCallbacksAndMessages(null);censorMain.post(censorTick);changed();
@@ -97,19 +97,23 @@ final class PlaybackSession implements AutoCloseable {
  private boolean censorPermit(){
   if(!censorRequested)return true;WatchCensorService.Job job=censorJob;if(job==null)return false;
   long at=position();job.requestedMs=at;long left=Math.max(0,job.durationMs-at);if(left==0)return true;
-  if(job.timeline.boxesAt(at*1000)==null)return false;
+  if(job.timeline.boxesAt(censorLookup(job,at))==null)return false;
   if(job.waitComplete&&(!job.done||job.failed))return false;
   long ahead=job.timeline.contiguousEnd(at)-at;
   if(!censorApproved){if(ahead<Math.min(left,Math.round(censorReserveMs*Math.max(1,speed))))return false;censorApproved=true;}
   if(ahead<300&&ahead<left){censorApproved=false;censorReserveMs=8000;return false;}
   return true;
  }
- boolean censorShielded(){return censorRequested&&(!censorSurfaceReady||censorJob==null||censorJob.timeline.boxesAt(position()*1000)==null);}
+ // The last frame sits at duration-1: asking the timeline AT the duration found nothing and showed the shield after a finished analysis.
+ private static long censorLookup(WatchCensorService.Job job,long at){long last=Math.max(0,job.durationMs-1);return Math.min(Math.max(0,at),last)*1000;}
+ boolean censorShielded(){WatchCensorService.Job job=censorJob;return censorRequested&&(!censorSurfaceReady||job==null||job.timeline.boxesAt(censorLookup(job,position()))==null);}
  private final Runnable censorTick=new Runnable(){@Override public void run(){if(closed||!censorRequested)return;
   boolean permit=censorPermit();if(clean==null&&!cleanRequested){if(player.getPlaybackState()==Player.STATE_ENDED)censorWanted=false;boolean desired=censorWanted&&permit;if(player.getPlayWhenReady()!=desired)player.setPlayWhenReady(desired);}
   censorWaiting=wanted()&&!permit;
+  // The first frame can reach the screen before the overlay records its timestamp; once both happened the cover is live.
+  if(!censorSurfaceReady&&censorOverlay.lastTimestampUs>=0&&(censorFirstFrame||player.getPlaybackState()==Player.STATE_READY||player.getPlaybackState()==Player.STATE_ENDED)){censorSurfaceReady=true;changed();}
   WatchCensorService.Job job=censorJob;
-  censorStatus=job==null?"تجهيز بيانات الحجب":!job.error.isEmpty()?job.error:!job.timeline.failure.isEmpty()?job.timeline.failure:job.done?("male".equals(job.target)?"حجب الرجال":"حجب النساء")+" · اكتمل التحليل":job.timeline.contiguousEnd(position())<=position()?job.stage:"حجب النساء · جاهز إلى "+WatchCensorService.stamp(job.timeline.contiguousEnd(position()))+(censorWaiting?" · تجهيز احتياطي للمشاهدة":"");
+  censorStatus=job==null?"تجهيز بيانات الحجب":!job.error.isEmpty()?job.error:!job.timeline.failure.isEmpty()?job.timeline.failure:job.done?("male".equals(job.target)?"حجب الرجال":"حجب النساء")+" · اكتمل التحليل":job.timeline.contiguousEnd(position())<=position()?job.stage:("male".equals(job.target)?"حجب الرجال":"حجب النساء")+" · جاهز إلى "+WatchCensorService.stamp(job.timeline.contiguousEnd(position()))+(censorWaiting?" · تجهيز احتياطي للمشاهدة":"");
   long now=android.os.SystemClock.elapsedRealtime();if(now-censorUiAt>=250){censorUiAt=now;changed();}censorMain.postDelayed(this,30);
  }};
  private void releaseSource(){if(watchJob!=null)WatchMusicService.release(watchJob);else if(legacyClean&&cleanSession!=null)LiveSeparation.leave(cleanSession);watchJob=null;cleanSession=null;legacyClean=false;}

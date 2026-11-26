@@ -233,7 +233,7 @@ class Engine:
         step=max(1,round(fps/ANALYSIS_FPS));rate=fps/step;skipped=step-1
         # Look again about every quarter second whatever the frame rate, so a man is uncovered quickly (two clear looks).
         stride=max(2,round(rate*CLASSIFY_SECONDS))
-        tracker=Tracker(max(2,round(rate*.50)));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
+        tracker=Tracker(max(2,round(rate*CONFIG['coast_seconds'])));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
         shapes={}  # track number -> (box, outline) last seen: a missed frame keeps the body shape, not a jumpy box
         try:
             while True:
@@ -260,7 +260,7 @@ class Engine:
                     previous=thumb
                     raw=result.boxes.xyxy.float().cpu().tolist()
                     if len(raw)>32:
-                        tracker.active=[];observations.append((at,[(-1,[0,0,1,1],None)]))
+                        tracker.active=[];tracker.held=[];observations.append((at,[(-1,[0,0,1,1],None)]))
                         continue
                     pixels=[];boxes=[];outlines=[];distinct=self._distinct(result)
                     for k,(x,y,r,b) in enumerate(raw):

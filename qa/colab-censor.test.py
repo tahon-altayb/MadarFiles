@@ -44,6 +44,18 @@ class CensorTest(unittest.TestCase):
         assigned,coast=tracker.update([],2);self.assertEqual(coast[0][0],number)
         third,_=tracker.update([[.14,.1,.34,.9]],3);self.assertEqual(third[0].number,number)
         fourth,_=tracker.update([[.14,.1,.34,.9]],4,cut=True);self.assertNotEqual(fourth[0].number,number)
+        # The old place stays covered through the transition, but is never matched to the new shot.
+        _,coast=tracker.update([],5);self.assertIn(number,[n for n,_ in coast])
+        _,coast=tracker.update([],8);self.assertNotIn(number,[n for n,_ in coast])
+
+    def test_missed_woman_during_a_wipe_stays_covered(self):
+        tracker=tracking.Tracker(4);first,_=tracker.update([[.5,.1,.8,.9]],0);woman=first[0]
+        for frame in range(1,4): tracker.update([[.5,.1,.8,.9]],frame)
+        woman.looks=[.95,.9,.92]
+        for frame in (4,5,6):
+            assigned,coast=tracker.update([],frame,cut=frame==4)
+            self.assertEqual([n for n,_ in coast],[woman.number])
+            self.assertTrue(tracker.all[woman.number].covered('female'))
 
     def test_padding_is_clamped_and_finite(self):
         self.assertEqual(tracking.padded([0,0,1,1]),[0,0,1,1])

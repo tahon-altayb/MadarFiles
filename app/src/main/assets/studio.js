@@ -1,9 +1,9 @@
 'use strict';
 catalog.audio=[['subtitles','T','ترجمة وتفريغ'],['convert','⇄','تحويل'],['trim','✂','قص الصوت'],['sound','≋','تعديل الصوت'],['music','♫','إزالة الموسيقى'],['player','▷','المشغل']];
-catalog.video.push(['subtitles','T','ترجمة وتفريغ'],['editor','✂','المحرر'],['sound','≋','تعديل الصوت'],['player','▷','المشغل']);
+catalog.video.push(['subtitles','T','ترجمة وتفريغ'],['editor','✂','المحرر'],['sound','≋','تعديل الصوت'],['player','▷','المشغل'],['censor','◐','الحجب']);
 catalog.pdf.push(['mergePdf','⊕','دمج PDF'],['imagesPdf','▧','صور إلى PDF'],['protectPdf','⌑','حماية بكلمة مرور'],['compressPdf','⇣','ضغط PDF'],['layoutWord','W','Word بالتخطيط'],['pages','▤','ترتيب الصفحات']);
 catalog.image.push(['imageBatch','▦','دفعات الصور'],['targetImage','⇣','ضغط لحجم محدد'],['removebg','◐','عزل شخص'],['adjust','☼','إضاءة وألوان'],['flip','⇆','انعكاس']);
-Object.assign(titles,{targetImage:'ضغط الصورة لحجم محدد',protectPdf:'حماية PDF بكلمة مرور',compressPdf:'تقليل حجم PDF',removebg:'عزل الشخص وتبديل الخلفية',layoutWord:'Word مع تخطيط الصفحة',subtitles:'ترجمة وتفريغ الكلام',editor:'محرر الفيديو',sound:'تعديل الصوت',player:'مشغل مدار',pages:'ترتيب صفحات PDF',adjust:'الإضاءة والألوان',flip:'انعكاس الصورة'});
+Object.assign(titles,{targetImage:'ضغط الصورة لحجم محدد',protectPdf:'حماية PDF بكلمة مرور',compressPdf:'تقليل حجم PDF',removebg:'عزل الشخص وتبديل الخلفية',layoutWord:'Word مع تخطيط الصفحة',subtitles:'ترجمة وتفريغ الكلام',editor:'محرر الفيديو',sound:'تعديل الصوت',player:'مشغل مدار',censor:'حجب الأشخاص أثناء المشاهدة',pages:'ترتيب صفحات PDF',adjust:'الإضاءة والألوان',flip:'انعكاس الصورة'});
 const studioRender=render;render=function(){studioRender();if(state.kind==='audio'){$('meta').textContent=state.source?time(state.source.duration)+' · '+state.source.mime:'اختر ملفًا صوتيًا';$('previewBtn').hidden=!state.source;$('previewBtn').textContent='▷ مشغل مدار';}else $('previewBtn').textContent='▷ مشغل مدار';const many=catalog[state.kind].length>7;$('tools').classList.toggle('manyTools',many);$('orbit')?.classList.toggle('expandedTools',many);let search=$('toolsSearch');if(!search&&$('tools').before){search=document.createElement('input');search.id='toolsSearch';search.type='search';search.placeholder='ابحث عن أداة…';search.setAttribute('aria-label','البحث في أدوات القسم');$('orbit').before(search);}if(search){search.hidden=!many;search.value='';search.oninput=()=>{const normalize=s=>s.normalize('NFKC').replace(/[\u064b-\u065f]/g,'').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').toLowerCase();const query=normalize(search.value.trim());for(const button of $('tools').children)button.hidden=!normalize(button.textContent).includes(query);};}};
 $('previewBtn').onclick=()=>native('play');
 const studioOpen=openTool;
@@ -12,6 +12,7 @@ openTool=function(tool){
  if(tool==='mergePdf'||tool==='imagesPdf')return native('pickCollection',{images:tool==='imagesPdf'});
  if(!state.source)return native('pick',{kind:state.kind});
  if(tool==='player')return native('play');
+ if(tool==='censor')return native('play',{censor:true});
  if(!['targetImage','protectPdf','compressPdf','removebg','layoutWord','subtitles','editor','sound','pages','adjust','flip'].includes(tool)&&state.kind!=='audio')return studioOpen(tool);
  if(tool==='music'){studioOpen(tool);$('musicOutput').value='audio';$('musicOutput').parentElement.querySelector('.hint').textContent='فصل الموسيقى محليًا مع إبقاء الصوت البشري. النتيجة M4A. قد تتأثر المؤثرات.';return;}
  pausePreviews();state.tool=tool;state.previewToken=(state.previewToken||0)+1;$('toolTitle').textContent=state.kind==='audio'&&tool==='trim'?'قص الصوت':titles[tool]||'أدوات الصوت';$('toolKicker').textContent='استوديو مدار · معالجة محلية';

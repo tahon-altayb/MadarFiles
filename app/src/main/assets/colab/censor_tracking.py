@@ -56,10 +56,17 @@ class Track:
 class Tracker:
     def __init__(self, coast_frames=5):
         self.active, self.all, self.next = [], {}, 0
+        self.held = []
         self.coast_frames = max(1,min(30,coast_frames))
 
     def update(self, boxes, frame, cut=False):
-        if cut: self.active=[]
+        # A cut (or a wipe/fade between shots) used to drop every track at once, so a woman the detector
+        # missed during the transition was briefly uncovered. Her last place stays covered for the coast
+        # time; held tracks are never matched to people in the new shot.
+        if cut:
+            self.held=self.held+[(t,frame) for t in self.active]
+            self.active=[]
+        self.held=[(t,since) for t,since in self.held if frame-since<=self.coast_frames]
         self.active=[t for t in self.active if frame-t.last<=self.coast_frames]
         pairs=[]
         for track in self.active:
@@ -77,6 +84,7 @@ class Tracker:
             self.active.append(track);self.all[track.number]=track;assigned[index]=track
             used_tracks.add(track.number)
         coast=[(t.number,t.predict(frame)) for t in self.active if t.number not in used_tracks]
+        coast+=[(t.number,list(t.box)) for t,_ in self.held]
         return assigned,coast
 
 def padded(box, amount=.10):
