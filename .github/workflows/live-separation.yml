@@ -185,8 +185,8 @@ jobs:
       - name: Verify original update certificate and version
         run: |
           if [ "${GITHUB_REF_NAME}" = "fixes/l4-drive-audit-20261123" ]; then
-            version=1.9.97
-            code=132
+            version=1.9.98
+            code=133
           elif [ "${GITHUB_REF_NAME}" = "fixes/avcass-recovery-20261121" ]; then
             version=1.9.86
             code=121
