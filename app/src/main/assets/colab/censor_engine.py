@@ -12,7 +12,7 @@ import urllib.error
 import zipfile
 
 from censor_profile import CONFIG, WEIGHTS, FINGERPRINT
-from censor_tracking import Tracker, padded
+from censor_tracking import Tracker, padded, NEAR_HEIGHT
 
 def download(path, url, digest, maximum):
     path=Path(path)
@@ -38,6 +38,7 @@ CLASSIFY_SECONDS = .27
 CUT_DIFF = .13
 CUT_ALONE = .25
 CUT_COLOURS = .20
+STEADY_CAMERA = .03
 
 
 def moved(seen, box):
@@ -148,6 +149,7 @@ class Engine:
         polygons=[self._polygon(o,w,h) for o in (outlines or [None]*len(boxes))]
         # Each face belongs to ONE person: the one whose body it sits deepest in. When a woman leaned into
         # the man beside her, his face also lay on the edge of her outline and gave her a man's verdict.
+        heads=[self._head(polygon,box) for polygon,box in zip(polygons,boxes)]
         owner={}
         for f,(fx,fy,fr,fb) in enumerate(found):
             area=max(1,(fr-fx)*(fb-fy));centre=((fx+fr)/2,(fy+fb)/2);best=None
@@ -156,6 +158,10 @@ class Engine:
                 if inside/area<=.80 or fy>=y+.55*(b-y): continue
                 depth=self.cv2.pointPolygonTest(polygon,centre,True) if polygon is not None else 0.0
                 if polygon is not None and depth<-.02*max(w,h): continue
+                # The face has to sit on the person's OWN head: the top of their outline. A woman in red with her
+                # back turned took the face of the man over her shoulder (inside her outline) and was uncovered.
+                hx,hr,hy=heads[k];margin=.5*(fr-fx)
+                if not (hx-margin<=centre[0]<=hr+margin and centre[1]<=hy+(fb-fy)): continue
                 if best is None or depth>best[0]: best=(depth,k)
             if best is not None: owner.setdefault(best[1],[]).append((area,(fx,fy,fr,fb)))
         crops=[]
@@ -186,6 +192,17 @@ class Engine:
             mask=np.zeros(crop.shape[:2],np.uint8);self.cv2.fillPoly(mask,[points],255)
             if int(mask.sum())<255*32: mask=None
         return self._colours(crop,mask)
+
+    def _head(self, polygon, box):
+        """Horizontal span and lower edge of the top of a person's outline (where their head is)."""
+        x,y,r,b=box
+        if polygon is None: return x,r,y+.30*(b-y)
+        np=self.np;points=polygon.reshape(-1,2);left,top=points.min(0);right,bottom=points.max(0)
+        width,height=max(2,int(right-left)+1),max(2,int(bottom-top)+1)
+        mask=np.zeros((height,width),np.uint8);self.cv2.fillPoly(mask,[(points-[left,top]).astype(np.int32)],1)
+        columns=np.nonzero(mask[:max(1,int(.18*height))].any(0))[0]
+        if len(columns)==0: return x,r,top+.30*height
+        return float(left+columns[0]),float(left+columns[-1]),float(top+.30*height)
 
     def _distinct(self, result):
         """Detections that add a body of their own. The detector also returns a second box for the same
@@ -273,7 +290,7 @@ class Engine:
         step=max(1,round(fps/ANALYSIS_FPS));rate=fps/step;skipped=step-1
         # Look again about every quarter second whatever the frame rate, so a man is uncovered quickly (two clear looks).
         stride=max(2,round(rate*CLASSIFY_SECONDS))
-        tracker=Tracker(max(2,round(rate*CONFIG['coast_seconds'])),self._distance,max(2,round(rate*CONFIG['hold_seconds'])));reach=max(1,round(rate*CONFIG['local_seconds']));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
+        tracker=Tracker(max(2,round(rate*CONFIG['coast_seconds'])),self._distance,max(2,round(rate*CONFIG['hold_seconds'])));reach=max(1,round(rate*CONFIG['local_seconds']));observations=[];previous=None;still_grey=None;diff=0.0;last_us=-1;frames=0;began=time.monotonic()
         shapes={}  # track number -> (box, outline) last seen: a missed frame keeps the body shape, not a jumpy box
         try:
             while True:
@@ -303,6 +320,10 @@ class Engine:
                     else:
                         diff=float(np.abs(thumb-previous[0]).mean())
                         cut=diff>CUT_DIFF and (diff>CUT_ALONE or self._distance(colours,previous[1])>CUT_COLOURS)
+                    # Inner movement of each person while the camera holds still: a suit of armour or a statue
+                    # never moves (p90 change ~0.05 grey levels) while a seated, silent person stays above 1.
+                    grey=cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
+                    steady=previous is not None and not cut and diff<STEADY_CAMERA and still_grey is not None and still_grey.shape==grey.shape
                     previous=(thumb,colours)
                     raw=result.boxes.xyxy.float().cpu().tolist()
                     if len(raw)>32:
@@ -316,6 +337,13 @@ class Engine:
                         pixels.append([x,y,r,b]);boxes.append([x/w,y/h,r/w,b/h]);outlines.append(self._outline(result,k,w,h))
                         looks.append(self._appearance(image,pixels[-1],outlines[-1]))
                     assigned,coast=tracker.update(boxes,index,cut,looks)
+                    if steady:
+                        for i,t in assigned.items():
+                            x,y,r,b=pixels[i]
+                            if r-x>=8 and b-y>=8:
+                                now=cv2.resize(grey[y:b,x:r],(32,64)).astype(np.float32);before=cv2.resize(still_grey[y:b,x:r],(32,64)).astype(np.float32)
+                                t.stir(float(np.percentile(np.abs(now-before),90)))
+                    still_grey=grey
                     classify=[i for i,t in assigned.items() if index-t.classified_at>=stride]
                     for offset in range(0,len(classify),16):
                         selected=classify[offset:offset+16]
@@ -324,7 +352,7 @@ class Engine:
                         crops=self._bodies(image,coords,own,outlines)
                         faces=self._face_crops(image,coords,own)
                         for i,prob,face in zip(selected,self._classify(faces,crops),faces):
-                            assigned[i].vote(prob,index,face=face is not None)
+                            assigned[i].vote(prob,index,face=face is not None,near=boxes[i][3]-boxes[i][1]>=NEAR_HEIGHT)
                     for i,t in assigned.items():
                         if outlines[i]: shapes[t.number]=(boxes[i],outlines[i])
                     observations.append((at,[(t.number,boxes[i],outlines[i] or moved(shapes.get(t.number),boxes[i])) for i,t in assigned.items()]

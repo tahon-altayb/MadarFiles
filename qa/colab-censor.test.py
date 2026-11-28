@@ -212,19 +212,38 @@ class FaceOwnerTest(unittest.TestCase):
 
 
 class PartialBodyTest(unittest.TestCase):
-    def test_legs_without_a_head_follow_the_average(self):
+    def test_bodies_without_a_face_need_their_own_looks(self):
         legs=tracking.Track(1,[.0,.0,.2,.6],0)
-        legs.vote(.6,0,face=False);self.assertTrue(legs.covered('female'))   # one look: still covered
-        legs.vote(.3,5,face=False);legs.vote(.35,10,face=False)
-        self.assertTrue(legs.partial);self.assertFalse(legs.covered('female'));self.assertTrue(legs.covered('male'))
-        woman=tracking.Track(2,[.0,.0,.2,.6],0)
-        for p in (.6,.7,.55): woman.vote(p,0,face=False)
+        legs.vote(.6,0,face=False);self.assertTrue(legs.covered('female'))   # close and not yet clear
+        legs.vote(.2,5,face=False);legs.vote(.25,10,face=False)
+        self.assertFalse(legs.covered('female'));self.assertTrue(legs.covered('male'))
+        woman=tracking.Track(2,[.0,.2,.2,.9],0)
+        for p in (.85,.7,.82): woman.vote(p,0,face=False)
         self.assertTrue(woman.covered('female'))
-        # A body whose head is in the picture keeps the cautious rule.
-        standing=tracking.Track(3,[.0,.2,.2,.9],0)
-        for p in (.3,.35,.4): standing.vote(p,0,face=False)
-        self.assertFalse(standing.partial);self.assertTrue(standing.covered('female'))
 
+    def test_far_figures_wait_until_they_come_close(self):
+        rider=tracking.Track(1,[.4,.4,.45,.5],0)
+        for f in range(0,40,4): rider.vote(.9,f,face=False,near=False)
+        self.assertFalse(rider.covered('female'))
+        rider.vote(.95,44,face=True,near=True)    # she comes close and her face is seen
+        self.assertTrue(rider.covered('female'))
+
+    def test_a_suit_of_armour_is_not_a_person(self):
+        armour=tracking.Track(1,[.3,.0,.55,1],0)
+        for f in range(0,40,4): armour.vote(.98,f,face=False)
+        self.assertTrue(armour.covered('female'))
+        for _ in range(12): armour.stir(.05)
+        self.assertTrue(armour.lifeless);self.assertFalse(armour.covered('female'));self.assertFalse(armour.clearly('female',20,30))
+        queen=tracking.Track(2,[.0,.1,.3,1],0)
+        for f in range(0,40,4): queen.vote(.99,f)
+        for _ in range(12): queen.stir(.05)       # very still, but her face was seen
+        self.assertTrue(queen.covered('female'))
+
+    def test_a_neighbours_face_does_not_uncover_a_clear_woman(self):
+        woman=tracking.Track(1,[.2,0,.5,1],0)
+        for f in range(0,40,4): woman.vote(.96,f,face=False)
+        for f in range(40,80,4): woman.vote(.01,f,face=True)   # the man over her shoulder
+        self.assertTrue(woman.covered('female'))
 
 class UndetectedCutTest(unittest.TestCase):
     def test_a_woman_inside_a_mans_track_is_covered_by_her_own_looks(self):
