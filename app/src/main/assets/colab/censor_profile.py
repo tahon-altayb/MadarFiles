@@ -19,7 +19,11 @@ CONFIG = dict(protocol=1, model='mivolo_v2', detector='yolov8m-seg', face='yunet
               hashes={k:v[1] for k,v in WEIGHTS.items()}, classifier_size=384, detector_size=640,
               verdict='recent_looks', looks=9, male_look=.20, female_look=.80, clear_votes=2, classify_seconds=.27, analysis_fps=15,
               isolate_others=True, face_on_outline=True, duplicate_share=.70,
+<<<<<<< HEAD
               outline_hold='track', coast_seconds=.8, hold_across_cuts=True, face_owner='deepest', duplicate_rule='same_place_or_two', partial_body='mean', partial_edge=.02, partial_looks=2, cut='diff.13_colour.20_or_diff.25', appearance_split=.55, local_seconds=1.5, local_verdict='clear_target',
+=======
+              outline_hold='track', coast_seconds=.8, hold_across_cuts=True, hold_seconds=.3, face_owner='deepest', duplicate_rule='same_place_or_two', partial_body='mean', partial_edge=.02, partial_looks=2, cut='diff.13_colour.20_or_diff.25', appearance_split=.55, local_seconds=1.5, local_verdict='clear_target',
+>>>>>>> fixes/l4-drive-audit-20261123
               body_padding=.10, timestamp_margin_us=100_000, unknown='cover', tracking=1, orientation_auto=True)
 FINGERPRINT = hashlib.sha256(json.dumps(CONFIG, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 

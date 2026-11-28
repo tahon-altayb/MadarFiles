@@ -273,7 +273,11 @@ class Engine:
         step=max(1,round(fps/ANALYSIS_FPS));rate=fps/step;skipped=step-1
         # Look again about every quarter second whatever the frame rate, so a man is uncovered quickly (two clear looks).
         stride=max(2,round(rate*CLASSIFY_SECONDS))
+<<<<<<< HEAD
         tracker=Tracker(max(2,round(rate*CONFIG['coast_seconds'])),self._distance);reach=max(1,round(rate*CONFIG['local_seconds']));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
+=======
+        tracker=Tracker(max(2,round(rate*CONFIG['coast_seconds'])),self._distance,max(2,round(rate*CONFIG['hold_seconds'])));reach=max(1,round(rate*CONFIG['local_seconds']));observations=[];previous=None;last_us=-1;frames=0;began=time.monotonic()
+>>>>>>> fixes/l4-drive-audit-20261123
         shapes={}  # track number -> (box, outline) last seen: a missed frame keeps the body shape, not a jumpy box
         try:
             while True:
