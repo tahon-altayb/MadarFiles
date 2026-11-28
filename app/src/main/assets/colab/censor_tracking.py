@@ -40,7 +40,7 @@ class Track:
             raise ValueError('CENSOR_MODEL_OUTPUT')
         self.classified_at=frame
         self.looks=(self.looks+[female_probability])[-LOOKS:]
-        self.history.append((frame,female_probability))
+        self.history.append((frame,female_probability,bool(face)))
         if face: self.faced+=1
         elif self.box[1]<=EDGE: self.headless+=1
 
@@ -77,7 +77,7 @@ class Track:
         """The looks around this frame clearly show the target group. A track that silently ran across an
         undetected cut (a man's track continuing on a woman's close-up) took the verdict of its last
         person for its whole length; the woman's own part is now covered by her own looks."""
-        near=[p for f,p in self.history if abs(f-frame)<=reach]
+        near=[p for f,p,_ in self.history if abs(f-frame)<=reach]
         if len(near)<LOCAL_LOOKS: return False
         female=sum(p>=FEMALE_LOOK for p in near);male=sum(p<=MALE_LOOK for p in near);mean=sum(near)/len(near)
         if target=='male': return male>=female+2 and mean<=.45
