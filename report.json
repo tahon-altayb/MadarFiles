@@ -1,0 +1,122 @@
+{
+ "L1_36.mp4": {
+  "seconds": 166,
+  "blocks": [
+   {
+    "female_tracks": 3,
+    "male_tracks": 4,
+    "covered_tracks": 3,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 3,
+    "male_tracks": 8,
+    "covered_tracks": 3,
+    "uncertain_tracks": 2
+   }
+  ]
+ },
+ "L2_56.mp4": {
+  "seconds": 145,
+  "blocks": [
+   {
+    "female_tracks": 12,
+    "male_tracks": 17,
+    "covered_tracks": 14,
+    "uncertain_tracks": 14
+   },
+   {
+    "female_tracks": 10,
+    "male_tracks": 17,
+    "covered_tracks": 14,
+    "uncertain_tracks": 13
+   }
+  ]
+ },
+ "L3_90.mp4": {
+  "seconds": 346,
+  "blocks": [
+   {
+    "female_tracks": 9,
+    "male_tracks": 6,
+    "covered_tracks": 9,
+    "uncertain_tracks": 4
+   },
+   {
+    "female_tracks": 15,
+    "male_tracks": 8,
+    "covered_tracks": 14,
+    "uncertain_tracks": 6
+   },
+   {
+    "female_tracks": 3,
+    "male_tracks": 6,
+    "covered_tracks": 5,
+    "uncertain_tracks": 1
+   }
+  ]
+ },
+ "L4_214.mp4": {
+  "seconds": 242,
+  "blocks": [
+   {
+    "female_tracks": 12,
+    "male_tracks": 18,
+    "covered_tracks": 12,
+    "uncertain_tracks": 8
+   },
+   {
+    "female_tracks": 5,
+    "male_tracks": 7,
+    "covered_tracks": 5,
+    "uncertain_tracks": 4
+   },
+   {
+    "female_tracks": 2,
+    "male_tracks": 1,
+    "covered_tracks": 3,
+    "uncertain_tracks": 0
+   }
+  ]
+ },
+ "L5_382.mp4": {
+  "seconds": 124,
+  "blocks": [
+   {
+    "female_tracks": 2,
+    "male_tracks": 2,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 9,
+    "male_tracks": 11,
+    "covered_tracks": 9,
+    "uncertain_tracks": 9
+   }
+  ]
+ },
+ "L6_170.mp4": {
+  "seconds": 153,
+  "blocks": [
+   {
+    "female_tracks": 1,
+    "male_tracks": 2,
+    "covered_tracks": 1,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 2,
+    "male_tracks": 2,
+    "covered_tracks": 2,
+    "uncertain_tracks": 0
+   },
+   {
+    "female_tracks": 1,
+    "male_tracks": 3,
+    "covered_tracks": 2,
+    "uncertain_tracks": 1
+   }
+  ]
+ }
+}
