@@ -5,6 +5,13 @@ ROOT = Path(__file__).resolve().parents[1]
 assets, cache, out, target = sys.argv[1], sys.argv[2], Path(sys.argv[3]), sys.argv[4]
 sys.path.insert(0, assets)
 import censor_engine, censor_tracking
+DUMP = len(sys.argv) > 5 and sys.argv[5] == 'dump'
+made = []
+if DUMP:
+    censor_tracking.Track.covered_at = lambda self, *a: True   # keep every person in the frames
+    class Recording(censor_tracking.Tracker):
+        def __init__(self, *a, **k): super().__init__(*a, **k); made.append(self)
+    censor_engine.Tracker = Recording
 out.mkdir(parents=True, exist_ok=True)
 engine = censor_engine.Engine(cache, require_gpu=False)
 import cv2, numpy as np
@@ -12,6 +19,7 @@ CORE, CONTEXT = 8.0, 2.0
 report = {}
 for clip in sorted((ROOT/'qa/censor-lab').glob('L*.mp4')):
     cap = cv2.VideoCapture(str(clip)); fps = cap.get(cv2.CAP_PROP_FPS); n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)); cap.release()
+    dump = []
     duration = n/fps; frames = []; began = time.time(); core = 0.0; stats = []
     while core < duration-.05:
         end = min(duration, core+CORE); decode = max(0, core-CONTEXT); decode_end = min(duration, end+CONTEXT)
@@ -25,11 +33,17 @@ for clip in sorted((ROOT/'qa/censor-lab').glob('L*.mp4')):
             if writer is None: writer = cv2.VideoWriter(str(window), cv2.VideoWriter_fourcc(*'mp4v'), fps, (img.shape[1], img.shape[0]))
             writer.write(img)
         source.release(); writer.release()
+        made.clear()
         res = engine.analyze(str(window), int(decode*1e6), int(core*1e6), int(end*1e6), target=target)
+        if DUMP:
+            tr = made[0]
+            dump.append(dict(decode=decode, core=core, end=end, frames=res['frames'],
+                             tracks={n: dict(history=t.history, faced=t.faced, headless=t.headless) for n, t in tr.all.items()}))
         frames += [f for f in res['frames'] if f[0] < int(end*1e6)]
         stats.append({k: res[k] for k in ('female_tracks', 'male_tracks', 'covered_tracks', 'uncertain_tracks')})
         core = end
     report[clip.name] = dict(seconds=round(time.time()-began), blocks=stats)
+    if DUMP: (out/f'{clip.stem}.json').write_text(json.dumps(dump))
     print(clip.name, report[clip.name], flush=True)
     cap = cv2.VideoCapture(str(clip)); i = 0; tiles = []
     while True:
