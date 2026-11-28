@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [dump]
+        variant: [new]
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -21,7 +21,7 @@ jobs:
           python -m pip install --disable-pip-version-check numpy==2.2.6 opencv-python-headless==4.12.0.88 ultralytics==8.3.203 timm==0.8.13.dev0 huggingface-hub==0.36.0 safetensors==0.6.2
       - run: |
           if [ "${{ matrix.variant }}" = old ]; then mkdir -p "$RUNNER_TEMP/old" && for f in censor_engine censor_tracking censor_profile; do git show fe02da9:app/src/main/assets/colab/$f.py > "$RUNNER_TEMP/old/$f.py"; done; cp app/src/main/assets/colab/drive_model_cache.py "$RUNNER_TEMP/old/" 2>/dev/null || true; ASSETS="$RUNNER_TEMP/old"; else ASSETS=app/src/main/assets/colab; fi
-          python qa/censor-lab.py "$ASSETS" "$RUNNER_TEMP/models" lab-out female dump
+          python qa/censor-lab.py "$ASSETS" "$RUNNER_TEMP/models" lab-out female
       - name: Publish results to a branch
         if: always()
         run: |
